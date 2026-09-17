@@ -348,6 +348,8 @@ emergency_lxmf_destination = "" # optional 32-hex lxmf.delivery hash: every new 
 portal_addr = ""            # Go Reticulum Lifesaver: captive survival dashboard for any phone that joins this node's Wi-Fi; empty binds nothing
 gps_port = ""               # GNSS receiver streaming NMEA-0183 (for example /dev/ttyACM0); enables the live fix
 gps_fix = ""                # static position for a headless node (for example "37.7553,-122.4527"); used when gps_port is empty
+compass_port = ""           # electronic compass streaming NMEA-0183 headings ($HCHDG/$HCHDM/$HCHDT); gives a heading while standing still
+compass_heading = ""        # static magnetic heading for a node with no sensor ("042" or "NE"); converted to true north from the node's position
 
 # One [[hubs]] entry per hub. Every entry is dialed on startup.
 [[hubs]]
@@ -370,21 +372,29 @@ receiver** with no Cgo and no third-party library (`gps_port`, or a static
 zero radio hops**:
 
 - **`/whereami`** prints the operational location card: the Plus Code, both
-  coordinates, the Maidenhead grid, the altitude, the fix status, the local
-  solar time, and the sunset countdown — plus the GCJ-02 "Mars coordinate" when
-  the position is inside China, so it can be pasted straight into Amap, Gaode,
-  or WeChat.
+  coordinates, the Maidenhead grid, the altitude, the heading, the fix status,
+  the local solar time, and the sunset countdown — plus the GCJ-02 "Mars
+  coordinate" when the position is inside China, so it can be pasted straight
+  into Amap, Gaode, or WeChat.
 - **Zero-argument context injection:** with a live fix, `tower near`,
   `tide near`, and `sun` use the operator's own position, and `/sos` raises a RED
   beacon there, attaching the satellites, HDOP, altitude, fix quality, and
   receiver timestamp to the alert. A typed location always wins.
+- **An electronic compass, so the device knows which way it points while
+  standing still:** `compass_port` reads `$HCHDG`/`$HCHDM`/`$HCHDT` heading
+  sentences from any magnetometer, or `compass_heading` supplies a static
+  bearing. The heading is converted from magnetic to **true north** with the
+  **World Magnetic Model (WMM2025)**, evaluated in pure Go from its published
+  coefficients — so `/whereami` prints a real heading, and `tower near` adds the
+  relative turn that aims a directional antenna: `[Turn 15° RIGHT · 1 o'clock]`.
 - **A captive portal with no app to install:** set `portal_addr` and any
   smartphone that joins the node's Wi-Fi has the survival dashboard opened for it
   by the operating system itself, answering the Apple, Android, and Windows
   captive-network probes. The page is one self-contained document served from the
-  binary — the big Plus Code with a copy button, the SOS button, and the offline
-  field assistant (`med hypothermia`, `tower near`, `sun`) — with
-  `/api/whereami` and `/api/query` JSON endpoints behind it.
+  binary — the big Plus Code with a copy button, a **live compass rose** with a
+  needle at the heading and another at the nearest repeater, the SOS button, and
+  the offline field assistant (`med hypothermia`, `tower near`, `sun`) — with
+  `/api/whereami`, `/api/compass`, and `/api/query` JSON endpoints behind it.
 
 **Addressing contract.** The bot is silent unless one of these is true, and it
 then answers with a NOTICE:
@@ -464,7 +474,7 @@ the announce cache the bot already keeps.
 | `buoy <station_id>` | the sea state from an offshore weather buoy: wave height, dominant period and direction, wind, water temperature, and the pressure trend. The period, not the height, decides whether the sea is groundswell or chop, and the answer names it (needs `buoy_url`). `buoy search <query>`, `buoy near <place>`, and `buoy list [region\|state]` find the buoy offline first |
 | `river <gauge_id>` | a stream gauge's stage and discharge, how the stage has moved over three hours, and the flood category (needs `river_url`; `river_flood_url` adds the flood thresholds and the action stage). The gauge is a USGS site number: a river *name* is deliberately not accepted, because resolving one offline would risk answering for a different river of the same name |
 | `coldwater [temp_f\|temp_c]` (alias `immersion`) | the 1-10-1 cold-water rule, or the swim-failure and survival windows for a water temperature (`48F`, `8.9C`; a bare number is Fahrenheit). Entirely offline |
-| `tower near <place\|coords\|pluscode>` (aliases `repeater`, `cell`, `mast`) | the nearest communications sites — cellular masts, amateur VHF/UHF repeaters, emergency/public-safety relays, and marine VHF — with the **distance in kilometers and the bearing** to aim a directional antenna or choose a direction to walk, plus the frequency, the repeater offset, the CTCSS/PL tone, and the operator. Entirely offline: the catalog is embedded and no provider is needed |
+| `tower near <place\|coords\|pluscode>` (aliases `repeater`, `cell`, `mast`) | the nearest communications sites — cellular masts, amateur VHF/UHF repeaters, emergency/public-safety relays, and marine VHF — with the **distance in kilometers and the bearing** to aim a directional antenna or choose a direction to walk, plus the frequency, the repeater offset, the CTCSS/PL tone, and the operator. With no argument and a live compass heading it adds the **relative steering instruction** that aims an antenna with no arithmetic: `[Turn 15° RIGHT · 1 o'clock]`. Entirely offline: the catalog is embedded and no provider is needed |
 | `tower search <query> [page]` | find a site offline by callsign, identifier, name, city, pinyin place name, state or province, frequency, or operator (`sutro`, `beijing`, `sichuan`, `145.150`, `china mobile`) |
 | `tower list [country\|region] [page]` | every site, or one country's (`US`, `CN`, `GB`), one country's by name (`china`, `germany`), one US state's (`CA`, `CO`) or its name, or one Chinese province's (`BJ`, `GD`, `SC`, `XJ`) |
 | `tower info <id>` | one site in full: the exact WGS-84 position, the GCJ-02 "Mars coordinate" when the site is in China, the Maidenhead grid, the elevation, the frequency, the offset, the tone, and the operator |

@@ -36,6 +36,22 @@ func TestLocCommandRendersEveryNotation(t *testing.T) {
 	}
 }
 
+// TestLocCommandAcceptsLeadingAt asserts that coordinates prefixed with an '@'
+// (such as copied from Google Maps URLs) are accepted seamlessly.
+func TestLocCommandAcceptsLeadingAt(t *testing.T) {
+	t.Parallel()
+
+	reg, session, _ := commandFixture(t, nil)
+	lines := runLines(t, reg, session, "loc @28.405832,-81.4716354")
+	if len(lines) != 1 {
+		t.Fatalf("loc returned %v lines, want 1: %v", len(lines), lines)
+	}
+	want := "DD: 28.4058°N, 81.4716°W | DDM: 28°24.35'N 81°28.30'W | Grid: EL98gj | OLC: 76WWCG4H+88"
+	if lines[0] != want {
+		t.Errorf("loc =\n  %v\nwant\n  %v", lines[0], want)
+	}
+}
+
 // TestLocCommandUsage asserts an empty or unusable loc request explains what a
 // location may look like instead of guessing.
 func TestLocCommandUsage(t *testing.T) {

@@ -122,8 +122,17 @@ gobot tide near             # the three closest tide stations to the bot
 gobot sun                   # today's light at the bot's position
 ```
 
+When the bot also has an **electronic compass** (`compass_port`, or a static
+`compass_heading`), the card gains a heading line and `tower near` gains the
+relative turn that aims a directional antenna:
+
+```bash
+gobot whereami              # adds: Heading / Course  : 042° True (029° Mag, Var: +13.0° E) · NE
+gobot tower near            # adds: [Turn 15° RIGHT · 1 o'clock]
+```
+
 See [The Go Reticulum Lifesaver](gorrcbot.md#the-go-reticulum-lifesaver-grl) for
-the receiver, the `/whereami` card, and the captive portal.
+the receiver, the compass, the `/whereami` card, and the captive portal.
 
 ### Options
 
@@ -186,11 +195,13 @@ gobot tide list OR
 gobot loc 849VCWC8+R9
 
 # The operational location card: Plus Code, coordinates, grid, elevation,
-# fix status, local solar time, and the sunset countdown
+# heading, fix status, local solar time, and the sunset countdown
 gobot whereami 37.7553,-122.4527
 
 # With no argument, whereami uses the bot's own GNSS fix (if the node has a
-# receiver, or a gps_fix configured), so a field operator types one word
+# receiver, or a gps_fix configured), so a field operator types one word.
+# A compass (compass_port, or a static compass_heading) adds the heading, and
+# "tower near" then aims an antenna with "[Turn 15° RIGHT · 1 o'clock]".
 gobot whereami
 gobot /whereami
 

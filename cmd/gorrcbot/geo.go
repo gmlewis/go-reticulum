@@ -65,7 +65,8 @@ var CompassPoints = []string{
 // ParseLocation turns a location a human typed into a coordinate. It accepts a
 // full Plus Code, decimal degrees with or without hemisphere letters, degrees
 // and minutes and seconds, degrees and decimal minutes, and a Maidenhead grid
-// locator, in any mix of upper and lower case. A form that cannot be placed
+// locator, in any mix of upper and lower case. A leading '@' (such as copied
+// out of a Google Maps URL) is stripped. A form that cannot be placed
 // without more information — a short Plus Code above all — is refused rather
 // than guessed, because a wrong position is worse than no position.
 //
@@ -74,6 +75,11 @@ var CompassPoints = []string{
 // notation is WGS-84 and is returned as given.
 func ParseLocation(input string) (LatLng, error) {
 	text := strings.TrimSpace(input)
+	if text == "" {
+		return LatLng{}, fmt.Errorf("%w: empty", ErrLocationUnrecognized)
+	}
+	text = strings.TrimPrefix(text, "@")
+	text = strings.TrimSpace(text)
 	if text == "" {
 		return LatLng{}, fmt.Errorf("%w: empty", ErrLocationUnrecognized)
 	}
@@ -314,7 +320,7 @@ func coordinateTokens(text string) ([]string, error) {
 			// A sign only belongs to a number at the start of one; a '+' or '-'
 			// in the middle is malformed, and parseFloat refuses it.
 			current.WriteRune(r)
-		case r == ',', r == '°', r == '\'', r == '"', r == '′', r == '″', unicode.IsSpace(r):
+		case r == ',', r == '@', r == '°', r == '\'', r == '"', r == '′', r == '″', unicode.IsSpace(r):
 			flush()
 		case unicode.IsLetter(r):
 			flush()

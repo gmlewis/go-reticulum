@@ -7,6 +7,8 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,6 +21,14 @@ import (
 // in. A zero fix leaves the portal with no receiver at all.
 func portalFixture(t *testing.T, fix GPSFix) *PortalServer {
 	t.Helper()
+	return portalCompassFixture(t, fix, CompassHeading{})
+}
+
+// portalCompassFixture builds the same portal with a live compass reading
+// behind it, which is the state a phone finds a device that carries a
+// magnetometer as well as a receiver.
+func portalCompassFixture(t *testing.T, fix GPSFix, heading CompassHeading) *PortalServer {
+	t.Helper()
 	reg, _, _ := commandFixture(t, nil)
 	reader := NewGPSReader(nil)
 	if fix.Valid {
@@ -28,6 +38,12 @@ func portalFixture(t *testing.T, fix GPSFix) *PortalServer {
 	// One receiver feeds both the dashboard and the command registry, exactly
 	// as the running bot wires it.
 	reg.gps = reader
+	if heading.Valid {
+		compass := NewCompassReader(nil)
+		compass.SetHeading(heading)
+		t.Cleanup(func() { _ = compass.Close() })
+		reg.compass = compass
+	}
 	portal := newPortalServer("127.0.0.1:0", reader, reg)
 	// The solar clock and the sunset countdown are pinned, so the dashboard
 	// tests do not depend on the hour the suite happens to run at.
@@ -36,6 +52,16 @@ func portalFixture(t *testing.T, fix GPSFix) *PortalServer {
 	}
 	t.Cleanup(func() { _ = portal.Close() })
 	return portal
+}
+
+// portalReferenceHeading is the heading the Phase 0.6 brief prints on the card:
+// 029° magnetic, 13° east variation, 042° true, in the north-east sector.
+func portalReferenceHeading() CompassHeading {
+	return CompassHeading{
+		Valid: true, MagneticDeg: 29, TrueDeg: 42, DeclinationDeg: 13,
+		HasDeclination: true, HasMagnetic: true, HasTrue: true, Cardinal: "NE",
+		TimeUTC: time.Date(2026, time.September, 16, 20, 45, 33, 0, time.UTC),
+	}
 }
 
 // portalGet issues one GET against the portal's handler.
@@ -441,5 +467,298 @@ func TestPortalWhereAmIApiReportsAnUnmeasuredAltitude(t *testing.T) {
 	body := portalGet(t, portal, "/").Body.String()
 	if strings.Contains(body, "0 m (0 ft) MSL") {
 		t.Error("the dashboard invented a sea-level altitude")
+	}
+}
+
+// decodeCompass decodes one /api/compass answer.
+func decodeCompass(t *testing.T, rec *httptest.ResponseRecorder) portalCompass {
+	t.Helper()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("compass status = %v, want 200 (body %q)", rec.Code, rec.Body.String())
+	}
+	var got portalCompass
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("compass answer is not JSON: %v (%q)", err, rec.Body.String())
+	}
+	return got
+}
+
+// TestPortalCompassApiServesTheLiveHeading asserts the compass endpoint answers
+// the whole reading, including the nearest site the rose vectors toward.
+func TestPortalCompassApiServesTheLiveHeading(t *testing.T) {
+	t.Parallel()
+
+	portal := portalCompassFixture(t, sfFix(), portalReferenceHeading())
+	rec := portalGet(t, portal, "/api/compass")
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Errorf("Content-Type = %q, want JSON", ct)
+	}
+	got := decodeCompass(t, rec)
+	if !got.Valid {
+		t.Fatal("valid = false with a live compass")
+	}
+	if got.MagneticDeg != 29 || got.TrueDeg != 42 || got.DeclinationDeg != 13 {
+		t.Errorf("headings = mag %v, true %v, var %v, want 29/42/13",
+			got.MagneticDeg, got.TrueDeg, got.DeclinationDeg)
+	}
+	if !got.HasTrue || !got.HasMagnetic || !got.HasDeclination {
+		t.Errorf("frame flags = %v/%v/%v, want all true",
+			got.HasTrue, got.HasMagnetic, got.HasDeclination)
+	}
+	if got.Cardinal != "NE" {
+		t.Errorf("cardinal = %q, want NE", got.Cardinal)
+	}
+	if got.Target == nil {
+		t.Fatal("the compass carries no nearest site")
+	}
+	if got.Target.ID != "W6PW-2M" {
+		t.Errorf("target = %q, want the nearest site W6PW-2M", got.Target.ID)
+	}
+	want := InitialBearing(sfFix().Position(), targetPoint(t, "W6PW-2M"))
+	if math.Abs(got.Target.BearingDeg-want) > 0.5 {
+		t.Errorf("target bearing = %v, want %v", got.Target.BearingDeg, want)
+	}
+	if got.Target.Steering == "" {
+		t.Error("a target with a true heading carries no steering instruction")
+	}
+	if !strings.Contains(got.Target.Steering, "RIGHT") {
+		t.Errorf("steering = %q, want a right turn toward the site", got.Target.Steering)
+	}
+}
+
+// targetPoint returns the position of one catalog site.
+func targetPoint(t *testing.T, id string) LatLng {
+	t.Helper()
+	record, ok := towerRecordByID(towerRecords, id)
+	if !ok {
+		t.Fatalf("the embedded catalog no longer holds %v", id)
+	}
+	return LatLng{Lat: record.Lat, Lng: record.Lng}
+}
+
+// TestPortalCompassApiWithoutACompass asserts a device with no compass says so
+// instead of reporting a heading of zero, which would point the operator due
+// north.
+func TestPortalCompassApiWithoutACompass(t *testing.T) {
+	t.Parallel()
+
+	portal := portalFixture(t, sfFix())
+	got := decodeCompass(t, portalGet(t, portal, "/api/compass"))
+	if got.Valid {
+		t.Error("valid = true with no compass")
+	}
+	if got.Message == "" {
+		t.Error("the answer says nothing about why there is no heading")
+	}
+	if got.Target != nil {
+		t.Errorf("target = %+v with no compass, want none", got.Target)
+	}
+}
+
+// TestPortalCompassApiWorksStandingStill asserts the one thing a compass does
+// that a receiver cannot: it answers with no position fix at all. A device
+// whose receiver has not locked still knows which way it is facing.
+func TestPortalCompassApiWorksStandingStill(t *testing.T) {
+	t.Parallel()
+
+	portal := portalCompassFixture(t, GPSFix{}, portalReferenceHeading())
+	got := decodeCompass(t, portalGet(t, portal, "/api/compass"))
+	if !got.Valid {
+		t.Fatal("valid = false without a fix, want the compass to answer anyway")
+	}
+	if got.Cardinal != "NE" {
+		t.Errorf("cardinal = %q, want NE", got.Cardinal)
+	}
+	if got.Target != nil {
+		t.Errorf("target = %+v with no fix, want none", got.Target)
+	}
+}
+
+// TestPortalWhereAmIApiCarriesTheHeading asserts the dashboard's main endpoint
+// carries the same heading object, so a phone makes one request to draw the
+// whole page.
+func TestPortalWhereAmIApiCarriesTheHeading(t *testing.T) {
+	t.Parallel()
+
+	portal := portalCompassFixture(t, sfFix(), portalReferenceHeading())
+	rec := portalGet(t, portal, "/api/whereami")
+	var got portalWhereAmI
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("whereami answer is not JSON: %v", err)
+	}
+	if got.Heading == nil {
+		t.Fatal("the answer carries no heading")
+	}
+	if got.Heading.TrueDeg != 42 || got.Heading.MagneticDeg != 29 || got.Heading.Cardinal != "NE" {
+		t.Errorf("heading = %+v, want 42 true / 29 magnetic / NE", got.Heading)
+	}
+	if !strings.Contains(strings.Join(got.Lines, "\n"), "Heading / Course  : 042° True") {
+		t.Errorf("the card lines carry no heading:\n%v", strings.Join(got.Lines, "\n"))
+	}
+	if !strings.Contains(rec.Body.String(), `"heading"`) {
+		t.Error("the heading is not on the wire")
+	}
+}
+
+// TestPortalWhereAmIApiOmitsTheHeadingWithoutACompass asserts the JSON stays
+// exactly what it was on a node with no compass: no empty object, no zeroes to
+// mistake for a heading.
+func TestPortalWhereAmIApiOmitsTheHeadingWithoutACompass(t *testing.T) {
+	t.Parallel()
+
+	portal := portalFixture(t, sfFix())
+	rec := portalGet(t, portal, "/api/whereami")
+	if strings.Contains(rec.Body.String(), `"heading"`) {
+		t.Errorf("answer = %v, want no heading field", rec.Body.String())
+	}
+}
+
+// TestPortalDashboardDrawsTheCompassRose asserts the dashboard carries a real
+// compass: a dial, a heading needle at the heading's own angle, a target needle
+// at the site's bearing, and the numbers beside them.
+func TestPortalDashboardDrawsTheCompassRose(t *testing.T) {
+	t.Parallel()
+
+	portal := portalCompassFixture(t, sfFix(), portalReferenceHeading())
+	body := portalGet(t, portal, "/").Body.String()
+	for _, want := range []string{
+		`id="compass-rose"`,
+		`id="compass"`,
+		`id="heading-needle"`,
+		`id="target-needle"`,
+		`id="compass-heading"`,
+		"042° NE",
+		"True 042° (var +13.0° E)",
+		"Mag 029°",
+		"W6PW-2M",
+		"Your heading",
+		"Beacon or nearest site",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the dashboard does not contain %q", want)
+		}
+	}
+	// The dial is north-up, so the heading needle is drawn at the heading's own
+	// true bearing and the target needle at the site's.
+	if !strings.Contains(body, "rotate(42.0 100 100)") {
+		t.Errorf("the dashboard does not rotate the heading needle to 42 degrees")
+	}
+	wantBearing := InitialBearing(sfFix().Position(), targetPoint(t, "W6PW-2M"))
+	if !strings.Contains(body, fmt.Sprintf("rotate(%.1f 100 100)", wantBearing)) {
+		t.Errorf("the dashboard does not rotate the target needle to %.1f degrees", wantBearing)
+	}
+}
+
+// TestPortalDashboardCompassPanelWithoutACompass asserts the empty state is a
+// sentence rather than a dial pointing at nothing.
+func TestPortalDashboardCompassPanelWithoutACompass(t *testing.T) {
+	t.Parallel()
+
+	portal := portalFixture(t, sfFix())
+	body := portalGet(t, portal, "/").Body.String()
+	if !strings.Contains(body, "no compass configured") {
+		t.Errorf("the dashboard does not explain the missing compass")
+	}
+	if !strings.Contains(body, `id="compass-rose"`) {
+		t.Errorf("the dashboard dropped the compass panel entirely")
+	}
+}
+
+// TestPortalCompassMethodHandling asserts the compass endpoint takes a GET and
+// nothing else, like every other read-only route.
+func TestPortalCompassMethodHandling(t *testing.T) {
+	t.Parallel()
+
+	portal := portalCompassFixture(t, sfFix(), portalReferenceHeading())
+	for _, path := range []string{"/api/compass"} {
+		if rec := portalPost(t, portal, path, "{}"); rec.Code != http.StatusMethodNotAllowed {
+			t.Errorf("POST %v = %v, want 405", path, rec.Code)
+		}
+	}
+}
+
+// TestPortalDashboardLeavesNoTokensBehind asserts every @@TOKEN@@ the template
+// declares is substituted before the page is served. An unsubstituted token is
+// a page a traveler reads as garbage on the worst day of their life, and it is
+// invisible to a test that only looks for the parts that did render.
+func TestPortalDashboardLeavesNoTokensBehind(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name    string
+		heading CompassHeading
+	}{
+		{"with a compass", portalReferenceHeading()},
+		{"without a compass", CompassHeading{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			portal := portalCompassFixture(t, sfFix(), tc.heading)
+			body := portalGet(t, portal, "/").Body.String()
+			if strings.Contains(body, "@@") {
+				index := strings.Index(body, "@@")
+				t.Errorf("the dashboard still carries a template token: %q", body[index:index+20])
+			}
+			for _, forbidden := range []string{"http://", "https://", "//cdn", "<link rel=\"stylesheet\""} {
+				if strings.Contains(body, forbidden) {
+					t.Errorf("the dashboard references %q; it must be entirely self-contained", forbidden)
+				}
+			}
+		})
+	}
+}
+
+// TestPortalCompassVectorsTowardAnActiveBeacon asserts the rose points at the
+// person in trouble rather than at the nearest repeater: an active distress
+// beacon outranks every routine site, because the operator looking at the phone
+// is looking for somebody.
+func TestPortalCompassVectorsTowardAnActiveBeacon(t *testing.T) {
+	t.Parallel()
+
+	portal := portalCompassFixture(t, sfFix(), portalReferenceHeading())
+	// A beacon close to the device, east of it, so the expected bearing is easy
+	// to reason about.
+	beaconPoint := LatLng{Lat: refLat, Lng: refLng + 0.05}
+	portal.run.(*registry).bot.sos = newSOSStore(tempDir(t))
+	if _, err := portal.run.(*registry).sos().add(SOSRecord{
+		Sender: "@hiker", LatLng: beaconPoint, Location: "test", Triage: "RED",
+		Details: "twisted ankle",
+	}); err != nil {
+		t.Fatalf("recording a beacon: %v", err)
+	}
+
+	got := decodeCompass(t, portalGet(t, portal, "/api/compass"))
+	if got.Target == nil {
+		t.Fatal("the compass carries no target")
+	}
+	if got.Target.Kind != "beacon" {
+		t.Errorf("target kind = %q, want a beacon to outrank the site", got.Target.Kind)
+	}
+	if got.Target.Triage != "RED" {
+		t.Errorf("target triage = %q, want RED", got.Target.Triage)
+	}
+	want := normalizeDegrees(InitialBearing(sfFix().Position(), beaconPoint))
+	if math.Abs(got.Target.BearingDeg-want) > 0.5 {
+		t.Errorf("beacon bearing = %v, want %v", got.Target.BearingDeg, want)
+	}
+	if got.Target.Steering == "" {
+		t.Error("a beacon with a true heading carries no steering instruction")
+	}
+
+	body := portalGet(t, portal, "/").Body.String()
+	if !strings.Contains(body, "SOS RED beacon") {
+		t.Error("the dashboard does not name the distress beacon it points at")
+	}
+}
+
+// TestPortalCompassVectorsTowardASiteWithNoBeacon asserts a quiet device points
+// at the nearest communications site and says that is what it is.
+func TestPortalCompassVectorsTowardASiteWithNoBeacon(t *testing.T) {
+	t.Parallel()
+
+	portal := portalCompassFixture(t, sfFix(), portalReferenceHeading())
+	got := decodeCompass(t, portalGet(t, portal, "/api/compass"))
+	if got.Target == nil || got.Target.Kind != "site" {
+		t.Fatalf("target = %+v, want the nearest site when nothing is in distress", got.Target)
 	}
 }

@@ -231,12 +231,16 @@ journalctl -u gornsd -u golxmd -u gorrcd -f
 On a portable or vehicle node, `gorrcbot` takes on a second role: it is the
 **Go Reticulum Lifesaver**, the survival communicator described in
 [gorrcbot — The Go Reticulum Lifesaver](../tools/gorrcbot.md#the-go-reticulum-lifesaver-grl).
-Two settings turn it on, and both are optional:
+Three settings turn it on, and all are optional:
 
 ```toml
 [bot]
 # A GNSS receiver streaming NMEA-0183 sentences (or a static position)
 gps_port = "/dev/ttyACM0"
+
+# An electronic compass streaming heading sentences (or a static heading):
+# the heading a GNSS receiver cannot give while the operator stands still
+compass_port = "/dev/ttyACM1"
 
 # The captive survival portal: a phone that joins this node's Wi-Fi opens it
 portal_addr = ":80"
@@ -245,15 +249,22 @@ portal_addr = ":80"
 What that buys a field node:
 
 - **A position the node knows without a network.** `/whereami` prints the Plus
-  Code, both coordinates, the Maidenhead grid, the altitude, the fix quality, the
-  local solar time, and the daylight remaining — all computed in-process.
+  Code, both coordinates, the Maidenhead grid, the altitude, the heading, the fix
+  quality, the local solar time, and the daylight remaining — all computed
+  in-process.
 - **One-word questions.** `tower near`, `tide near`, and `sun` inherit the live
   fix, so nothing has to be typed with cold hands. `/sos` raises a RED beacon at
   the verified position and attaches the receiver facts to it.
+- **A heading while standing still.** A magnetometer supplies the orientation a
+  receiver cannot, the World Magnetic Model converts it to true north from the
+  node's own position, and `tower near` then prints the turn that aims a
+  directional antenna — `[Turn 15° RIGHT · 1 o'clock]` — instead of a bearing to
+  interpret.
 - **A dashboard with no app.** A traveler's phone in airplane mode that joins the
   node's Wi-Fi has the survival dashboard opened for it by the operating
-  system's captive-network probe, with the Plus Code, a copy button, the SOS
-  button, and the offline field assistant.
+  system's captive-network probe, with the Plus Code, a copy button, a live
+  compass rose pointing at the nearest repeater, the SOS button, and the offline
+  field assistant.
 - **The same answers on both paths.** The portal and the radio commands share one
   command registry restricted to its offline commands, and one GNSS receiver, so
   the two can never disagree.

@@ -147,12 +147,26 @@ type whereAmI struct {
 	ZoneLabel string
 	// FixStatus is the one-line receiver status.
 	FixStatus string
+	// Heading is the device's own orientation, valid only when HasHeading is
+	// true. It is the device's heading, not the position's: the card shows it
+	// on the live-fix card, where "which way am I facing" belongs beside "where
+	// am I", and never on a card about somewhere the operator is not standing.
+	Heading CompassHeading
+	// HasHeading reports that a live heading is behind the card.
+	HasHeading bool
 }
 
-// buildWhereAmI synthesizes the card's content for one position. A manual
-// position carries no altitude and no fix quality, and the card says so instead
-// of printing the zero values as if a receiver had reported them.
+// buildWhereAmI synthesizes the card's content for one position with no device
+// heading, which is the answer on a node with no compass.
 func buildWhereAmI(fix GPSFix, point LatLng, source string, now time.Time) (whereAmI, error) {
+	return buildWhereAmIHeading(fix, point, source, now, CompassHeading{})
+}
+
+// buildWhereAmIHeading synthesizes the card's content for one position together
+// with the device's own heading. A manual position carries no altitude and no
+// fix quality, and the card says so instead of printing the zero values as if a
+// receiver had reported them.
+func buildWhereAmIHeading(fix GPSFix, point LatLng, source string, now time.Time, heading CompassHeading) (whereAmI, error) {
 	code, err := EncodeOLC(point.Lat, point.Lng, whereamiPlusPrecision)
 	if err != nil {
 		return whereAmI{}, fmt.Errorf("whereami: could not build a Plus Code: %w", err)
@@ -185,6 +199,8 @@ func buildWhereAmI(fix GPSFix, point LatLng, source string, now time.Time) (wher
 		Almanac:       SolarAlmanac(point.Lat, point.Lng, localDay),
 		Zone:          zone,
 		ZoneLabel:     label,
+		Heading:       heading,
+		HasHeading:    heading.Valid,
 	}
 	if gcj := FormatGCJ02(point.Lat, point.Lng); gcj != "" {
 		result.GCJLat, result.GCJLng = WGS84ToGCJ02(point.Lat, point.Lng)
@@ -229,6 +245,55 @@ func whereamiFixStatus(w whereAmI) string {
 	return status
 }
 
+// whereamiHeadingText renders the orientation line: the heading the operator
+// would read off a compass, in whichever frames the instrument actually
+// reported, with the local variation that separates them.
+//
+// The line never claims more than it knows. A compass sentence that carried its
+// own variation, or a heading the World Magnetic Model corrected from the live
+// fix, prints both frames and the variation between them; a true-only heading
+// from a fluxgate prints the true one alone; and a magnetic-only heading prints
+// the magnetic one alone rather than passing it off as true north.
+func whereamiHeadingText(h CompassHeading) string {
+	cardinal := h.Cardinal
+	if cardinal == "" {
+		cardinal = CardinalDirection(headingReference(h))
+	}
+	switch {
+	case h.HasTrue && h.HasMagnetic:
+		text := fmt.Sprintf("%03.0f° True (%03.0f° Mag", h.TrueDeg, h.MagneticDeg)
+		if h.HasDeclination {
+			text += fmt.Sprintf(", Var: %+.1f° %v",
+				h.DeclinationDeg, variationHemisphere(h.DeclinationDeg))
+		}
+		return text + ") · " + cardinal
+	case h.HasTrue:
+		return fmt.Sprintf("%03.0f° True · %v", h.TrueDeg, cardinal)
+	case h.HasMagnetic:
+		return fmt.Sprintf("%03.0f° Mag · %v", h.MagneticDeg, cardinal)
+	}
+	return ""
+}
+
+// headingReference returns the angle a heading is best described by: true north
+// when the heading has been corrected, and magnetic north otherwise.
+func headingReference(h CompassHeading) float64 {
+	if h.HasTrue {
+		return h.TrueDeg
+	}
+	return h.MagneticDeg
+}
+
+// variationHemisphere names the hemisphere a magnetic variation is measured
+// toward. The word is printed beside the angle's own sign, so a positive
+// variation reads east and a negative one reads west.
+func variationHemisphere(declination float64) string {
+	if declination < 0 {
+		return "W"
+	}
+	return "E"
+}
+
 // renderWhereAmICard renders the operational card itself.
 func renderWhereAmICard(w whereAmI) []string {
 	lines := []string{"/whereami", whereamiCardRule}
@@ -237,6 +302,9 @@ func renderWhereAmICard(w whereAmI) []string {
 	lines = append(lines, fmt.Sprintf("Coordinates       : %v", formatCardCoordinates(w.Point)))
 	lines = append(lines, fmt.Sprintf("Maidenhead Grid   : %v (Amateur Radio QTH)", w.Maidenhead))
 	lines = append(lines, "Elevation         : "+whereamiElevation(w))
+	if w.HasHeading {
+		lines = append(lines, "Heading / Course  : "+whereamiHeadingText(w.Heading))
+	}
 	lines = append(lines, "GNSS Fix Status   : "+w.FixStatus)
 	lines = append(lines, fmt.Sprintf("Local Solar Time  : %v %v (Solar noon: %v)",
 		w.Now.In(w.Zone).Format("15:04"), w.ZoneLabel, w.Almanac.Noon.In(w.Zone).Format("15:04")))
@@ -322,14 +390,33 @@ func (c *commandContext) runWhereami() []string {
 }
 
 // renderWhereami builds and renders one card, downgrading an unexpected
-// geodetic failure to a single readable line rather than a panic on a link.
+// geodetic failure to a single readable line rather than a panic on a link. The
+// device's own heading is attached only to the card about the device's own
+// position: it describes which way the operator is facing, so printing it
+// beside a remote coordinate would invite the reader to think the two belong
+// together.
 func (c *commandContext) renderWhereami(point LatLng, source string) []string {
-	card, err := buildWhereAmI(currentFixFor(c.reg, point, source), point, source, c.now())
+	card, err := buildWhereAmIHeading(currentFixFor(c.reg, point, source), point, source,
+		c.now(), c.deviceHeading(source))
 	if err != nil {
 		logf("whereami: %v", err)
 		return []string{"whereami: " + err.Error()}
 	}
 	return renderWhereAmICard(card)
+}
+
+// deviceHeading returns the heading to print on a card, which is the live
+// compass reading on the card about the device's own position and nothing at
+// all on a card about somewhere else.
+func (c *commandContext) deviceHeading(source string) CompassHeading {
+	if source != whereamiSourceGNSS || c.reg == nil {
+		return CompassHeading{}
+	}
+	heading, ok := c.reg.currentHeading()
+	if !ok {
+		return CompassHeading{}
+	}
+	return heading
 }
 
 // currentFixFor returns the fix a card is built from: the live one for a GNSS

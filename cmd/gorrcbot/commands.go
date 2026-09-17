@@ -180,6 +180,10 @@ type registry struct {
 	// when the request names no location. It is nil when no receiver is
 	// configured, and nil means "no fix", never a panic.
 	gps *GPSReader
+	// compass is the live electronic compass every heading-aware answer reads.
+	// It is nil when no compass is configured, and nil means "no heading",
+	// never a panic.
+	compass *CompassReader
 }
 
 // newRegistry builds the command table for one bot.
@@ -249,6 +253,20 @@ func (r *registry) currentFix() (GPSFix, bool) {
 	}
 	fix := r.gps.LastFix()
 	return fix, fix.Valid
+}
+
+// currentHeading returns the live compass heading and whether it is usable. The
+// reader has already converted a magnetic-only reading to true north with the
+// World Magnetic Model at the device's own position, so every caller gets the
+// same corrected heading. A node with no compass, and a compass that has not
+// reported yet, both report no heading: the answer is "I do not know which way
+// I am facing", never a guess.
+func (r *registry) currentHeading() (CompassHeading, bool) {
+	if r == nil || r.compass == nil {
+		return CompassHeading{}, false
+	}
+	heading := r.compass.LastHeading()
+	return heading, heading.Valid
 }
 
 // localNames returns the names the offline portal can run, in registry order.

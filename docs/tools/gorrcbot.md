@@ -156,6 +156,16 @@ gps_port = ""
 # Static position for a node with no receiver (any location notation).
 gps_fix = ""
 
+# Electronic compass streaming NMEA-0183 heading sentences ($HCHDG, $HCHDM,
+# $HCHDT), for example a QMC5883L or LSM303 magnetometer behind a serial
+# bridge. It supplies the heading a GNSS receiver cannot while standing still.
+compass_port = ""
+
+# Static magnetic heading for a node with no compass sensor: degrees ("042")
+# or a compass point ("NE"). The World Magnetic Model converts it to true north
+# from the node's position.
+compass_heading = ""
+
 # Captive survival dashboard for any phone that joins this node's Wi-Fi:
 # "127.0.0.1:8080" while testing, ":80" in the field. Empty binds nothing.
 portal_addr = ""
@@ -427,6 +437,15 @@ and compass point, the service, and the radio details needed to use the site:
   [Page 1 of 1: end of results]
 ```
 
+With a live compass heading and no typed argument, each row adds the **relative
+steering instruction** that aims an antenna at the site without arithmetic — see
+[Radio direction finding](#radio-direction-finding-aiming-an-antenna-in-one-step):
+
+```text
+/msg gobot tower near
+    W6PW-2M (14.2 km 144° True SE) [RPT]: 145.150 MHz -0.6 (PL 114.8) - Sutro Tower, San Francisco, CA [Turn 15° RIGHT · 1 o'clock]
+```
+
 Search and list are offline lookups over the whole catalog, and both paginate to
 the reply budget:
 
@@ -602,6 +621,64 @@ constant and no device is opened.
 Every position-aware command shares **one** receiver, so the radio reply and the
 web dashboard can never disagree about where the device is.
 
+### Electronic compass, true north & direction finding
+
+A GNSS receiver has one blind spot that matters most exactly when it hurts: it
+derives **course over ground** from motion, so an operator who is standing
+still — injured, pinned down by weather, lost in fog, or aiming a Yagi at a
+mountain-top repeater — has **no heading at all**. The receiver reports the last
+course it saw, noise, or nothing.
+
+Pairing the node with an inexpensive 3-axis magnetometer (a QMC5883L or an
+LSM303 on I2C, behind any serial bridge) removes that blind spot. `gorrcbot`
+reads the standard marine/electronic heading sentences directly, with the same
+pure-Go NMEA parser and the same byte-for-byte XOR checksum validation it uses
+for the receiver:
+
+| Sentence | Carries | Example |
+|----------|---------|---------|
+| `$HCHDG` | Magnetic heading, deviation, and variation | `$HCHDG,101.1,,,13.1,E*1B` → 101.1° magnetic, +13.1° east → **114.2° true** |
+| `$HCHDM` | Magnetic heading only | `$HCHDM,101.1,M*28` |
+| `$HCHDT` | True heading only | `$HCHDT,114.2,T*2F` |
+
+A sentence that fails its checksum is dropped in silence, because a corrupted
+heading is a **wrong direction**, and a wrong direction is worse than none.
+
+```toml
+# A streaming compass, for example /dev/ttyUSB1 or /dev/ttyACM1.
+compass_port = ""
+
+# Or a static magnetic heading for a node with no sensor.
+compass_heading = "042"   # or "NE"
+```
+
+With neither key set, the node simply has no heading, and every answer that
+would use one says so instead of guessing. With `compass_port` set, the
+sentences are parsed in the background as they arrive; with `compass_heading`,
+the bearing is constant and no device is opened.
+
+**True north, automatically.** A magnetic compass points at magnetic north,
+which is not the north a map, a bearing, or a rescue grid uses — the difference
+ranges from a fraction of a degree to more than twenty depending on where the
+operator stands, and thirteen degrees of error at fourteen kilometers is more
+than three kilometers of error. `gorrcbot` therefore converts every magnetic
+heading to true north with the **World Magnetic Model (WMM2025)**, evaluated in
+pure Go from the published spherical-harmonic coefficient table: no data files,
+no network, no third-party library. The model reproduces its own published test
+vectors to the precision they are printed at, and its declination is checked
+against the reference values for San Francisco, Denver, Boston, London, and
+Tokyo.
+
+Three sources of variation are used in that order of preference:
+
+1. The **variation field of the sentence itself** (`$HCHDG`), which the
+   instrument measured where it stands.
+2. The **World Magnetic Model** at the node's live GNSS fix, which is what
+   turns a `$HCHDM` magnetic heading into a true one with no operator input.
+3. Nothing at all, when the node has neither — in which case the heading is
+   reported as **magnetic** and labelled as such everywhere, never passed off as
+   true north.
+
 ### `/whereami` — the operational location card
 
 `whereami` (also typed `/whereami`) prints the card an operator reads before
@@ -614,11 +691,25 @@ Plus Code (OLC)   : 849VQG4W+4W (Area: ~14m x 14m)
 Coordinates       : 37.75532° N, 122.45272° W
 Maidenhead Grid   : CM87ss (Amateur Radio QTH)
 Elevation         : 142 m (467 ft) MSL
+Heading / Course  : 042° True (029° Mag, Var: +13.0° E) · NE
 GNSS Fix Status   : 3D Fix (9 satellites, HDOP 0.8)
 Local Solar Time  : 12:45 UTC-8 (Solar noon: 12:04)
 Sunset Countdown  : Sunset at 18:15 (5h 29m daylight remaining)
 ------------------------------------------------------------
 ```
+
+The **Heading / Course** line appears only when the device actually has a
+heading, and only on the card about the device's own position — a heading
+describes which way the operator is facing, so printing it beside a remote
+coordinate would invite the reader to think the two belong together. The line
+never claims more than it knows:
+
+| State | Line |
+|-------|------|
+| Variation known (sentence or WMM) | `042° True (029° Mag, Var: +13.0° E) · NE` |
+| True only (`$HCHDT`) | `042° True · NE` |
+| Magnetic only (no position) | `029° Mag · NNE` |
+| No compass at all | the line is omitted cleanly; the card is unchanged |
 
 Every notation is there because somebody else needs it: a Plus Code is what a
 dispatcher can paste into a map, a Maidenhead square is what an amateur operator
@@ -650,7 +741,7 @@ GNSS fix is live, the field commands inherit it automatically:
 
 | Command | With a fix | Without a fix |
 |---------|-----------|---------------|
-| `tower near` | The three closest masts and repeaters to the operator's own position. | Asks for `<place\|coords\|pluscode>`. |
+| `tower near` | The three closest masts and repeaters to the operator's own position — and, with a live compass heading, the relative turn that aims an antenna at each one. | Asks for `<place\|coords\|pluscode>`. |
 | `cell near`, `repeater near`, `mast near` | Same, for one service. | Same. |
 | `tide near` | The three closest tide stations, offline. | Asks for a location. |
 | `sun` | The almanac at the current position; `sun 2026-06-21` keeps the date and takes the position from the fix. | Asks for a location. |
@@ -672,6 +763,40 @@ A **typed location always wins**: `sos 39.7392,-104.9903 RED climber hurt` stays
 about the climber in Denver, never about the device's own position. And with no
 fix at all, the automatic fallback never fires, so a mistyped request can never
 become a beacon somewhere arbitrary.
+
+### Radio direction finding: aiming an antenna in one step
+
+A bearing is a fact; a **turn is an instruction**. With a live heading, a
+zero-argument `tower near` stops printing a bearing to interpret and starts
+printing the turn to make:
+
+```text
+/msg gobot tower near
+  Tower sites near 849VQG4W+4W (Page 1 of 1):
+    W6PW-2M (14.2 km 144° True SE) [RPT]: 145.150 MHz -0.6 (PL 114.8) - Sutro Tower, San Francisco, CA [Turn 15° RIGHT · 1 o'clock]
+    W6PW-70C (14.6 km 148° True SSE) [RPT]: 442.700 MHz +5.0 (PL 114.8) - Sutro Tower 70cm, San Francisco, CA [Turn 19° RIGHT · 2 o'clock]
+    US-CA-T042 (15.1 km 139° True SE) [CELL]: Band 2/4/12/71 - Sutro Cell Mast, San Francisco, CA [Turn 10° RIGHT · 1 o'clock]
+  [Page 1 of 1: end of results]
+```
+
+The instruction is a real clock face — **twelve straight ahead, three to the
+right, six behind, nine to the left** — so it can be acted on in the dark
+without arithmetic:
+
+| Relative bearing | Instruction |
+|------------------|-------------|
+| within ±5° | `[Ahead · 12 o'clock]` |
+| +5° to +165° | `[Turn X° RIGHT · N o'clock]` |
+| −165° to −5° | `[Turn X° LEFT · N o'clock]` |
+| beyond ±165° | `[Behind · 6 o'clock]` |
+
+The steering appears only when it is meaningful, which is a deliberately narrow
+condition: the answer must be about the **device's own position** (a live or
+static fix, no typed argument) and the heading must be **true**, never magnetic.
+A target bearing is a true bearing, so steering against an uncorrected magnetic
+heading would send the operator off by the local variation. A named place, or a
+node with no compass, gets exactly the distance-and-bearing answer it always
+got.
 
 ### Captive portal & smartphone dashboard
 
@@ -703,9 +828,42 @@ no-store`.
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/` | `GET` | The dashboard: the large Plus Code with a **Copy Plus Code** button, coordinates, grid, elevation, fix status, the local solar clock, the sunset countdown, the red **SOS** button (with a confirmation dialog), and the field-assistant chat box. |
-| `/api/whereami` | `GET` | The current fix and its full geodetic synthesis as JSON: both Plus Codes, the grid, the coordinates, altitude, speed, course, satellites, HDOP, fix quality, the local solar clock, the sunset, the GCJ-02 pair inside China, and the card's own lines. |
+| `/` | `GET` | The dashboard: the large Plus Code with a **Copy Plus Code** button, coordinates, grid, elevation, fix status, the local solar clock, the sunset countdown, the **live compass rose**, the red **SOS** button (with a confirmation dialog), and the field-assistant chat box. |
+| `/api/whereami` | `GET` | The current fix and its full geodetic synthesis as JSON: both Plus Codes, the grid, the coordinates, altitude, speed, course, satellites, HDOP, fix quality, the local solar clock, the sunset, the GCJ-02 pair inside China, the **live heading**, and the card's own lines. |
+| `/api/compass` | `GET` | The live compass reading as JSON, with the nearest communications site the rose vectors toward: `{"valid": true, "mag_deg": 29, "true_deg": 42, "declination_deg": 13, "cardinal": "NE", "target": {"kind": "site", "id": "W6PW-2M", "name": "Sutro Tower", "bearing_deg": 144.4, "distance_km": 0.0, "steering": "[Turn 102° RIGHT · 3 o'clock]"}}`. It answers even with **no GNSS fix**, because a compass works standing still. |
 | `/api/query` | `POST` | Runs one **local** command and returns its reply lines: `{"command": "med hypothermia"}` → `{"command": "med hypothermia", "lines": ["[HYPOTHERMIA] …"]}`. An addressed nick and a leading slash are both accepted, so `@gobot med hypothermia`, `/med hypothermia`, and `med hypothermia` are the same request. |
+
+### The live compass rose
+
+The dashboard carries a **north-up compass dial**: a blue needle at the device's
+own heading and a red needle at the nearest repeater — or at an **active SOS
+beacon**, which outranks every routine site, because an operator looking at the
+phone is looking for a person — together with the digital true and magnetic
+readouts, the local variation, and the target's distance, frequency, and
+steering instruction:
+
+```text
+Compass & Direction Finding
+        N
+    W       E        042° NE
+        S            True 042° (var +13.0° E)
+                     Mag 029°
+                     Sutro Tower · 14.2 km at 144° · 145.150 MHz -0.6 (PL 114.8) [Turn 102° RIGHT · 3 o'clock]
+■ Your heading   ■ Beacon or nearest site
+```
+
+With an unresolved beacon in the registry the red needle and the vector line
+switch to it instead:
+
+```text
+                     SOS RED beacon · 0.6 km at 088° [Turn 46° RIGHT · 2 o'clock]
+```
+
+The dial is drawn entirely with inline SVG and CSS — no image, no external font,
+no script from a network — so it renders on a phone in airplane mode with the
+browser it already has. It refreshes on the same ten-second cadence as the rest
+of the page, and a node with no compass shows a sentence in place of the dial
+rather than a needle pointing at nothing.
 
 The chat box is restricted to the commands whose answers are computed
 in-process — `med` (first aid), `tower near`, `tide near`, `sun`, `whereami`,
@@ -785,7 +943,7 @@ back to the WGS-84 GPS position before anything else is computed. See
 | `loc` | `@gobot loc <location>` | Converts any supported coordinate format and outputs it in all five notations simultaneously. A position inside China also prints the GCJ-02 "Mars coordinate" that Amap and Gaode expect. |
 | `dist` | `@gobot dist <from> <to>` | Calculates great-circle distance (km, statute miles, nautical miles) and forward/reverse bearings between two points. |
 | `proj` | `@gobot proj <origin> <bearing°> <distance>` | Dead reckoning: calculates the destination coordinate from a starting location, course, and distance (e.g. `@gobot proj CM87uk 045 15km`). |
-| `whereami` | `@gobot whereami [location]` | The operational location card: Plus Code, coordinates, Maidenhead grid, elevation, fix status, local solar time, and the sunset countdown. With no argument it uses the live GNSS fix. Also accepted as `/whereami`. See [The Go Reticulum Lifesaver](#the-go-reticulum-lifesaver-grl). |
+| `whereami` | `@gobot whereami [location]` | The operational location card: Plus Code, coordinates, Maidenhead grid, elevation, the **heading**, fix status, local solar time, and the sunset countdown. With no argument it uses the live GNSS fix. Also accepted as `/whereami`. See [The Go Reticulum Lifesaver](#the-go-reticulum-lifesaver-grl). |
 
 ---
 
@@ -853,7 +1011,7 @@ back to the WGS-84 GPS position before anything else is computed. See
 
 | Command | Syntax | Description & Example |
 |---------|--------|-----------------------|
-| `tower` / `repeater` / `cell` / `mast` | `@gobot tower near [place\|coords\|pluscode]` | The three closest communications sites, with the distance in kilometers, the bearing, the service, the frequency with its offset and tone, and the place. Entirely offline; a site inside China also prints the GCJ-02 coordinate for Amap/Gaode/WeChat. With no argument beyond `near` it uses the live GNSS fix. See [Cell & Radio Tower Finder](#cell-radio-tower-finder-tower-repeater-cell). |
+| `tower` / `repeater` / `cell` / `mast` | `@gobot tower near [place\|coords\|pluscode]` | The three closest communications sites, with the distance in kilometers, the bearing, the service, the frequency with its offset and tone, and the place. Entirely offline; a site inside China also prints the GCJ-02 coordinate for Amap/Gaode/WeChat. With no argument beyond `near` it uses the live GNSS fix, and with a live compass heading it adds the relative steering instruction that aims an antenna — `[Turn 15° RIGHT · 1 o'clock]`. See [Cell & Radio Tower Finder](#cell-radio-tower-finder-tower-repeater-cell) and [Radio direction finding](#radio-direction-finding-aiming-an-antenna-in-one-step). |
 | `tower search` | `@gobot tower search <query> [page]` | Finds a site offline by callsign, identifier, name, city, pinyin place name, state or province, frequency, or operator (`sutro`, `beijing`, `sichuan`, `145.150`, `china mobile`). |
 | `tower list` | `@gobot tower list [country\|region] [page]` | Every site, or one country's (`US`, `CN`, `GB`), one country's by name (`china`, `germany`), one US state's (`CA`, `CO`) or its name, or one Chinese province's (`BJ`, `GD`, `SC`, `XJ`). |
 | `tower info` | `@gobot tower info <id>` | One site in full: the exact WGS-84 position, the GCJ-02 position when the site is in China, the Maidenhead grid, the elevation, the frequency, the offset, the tone, and the operator. |

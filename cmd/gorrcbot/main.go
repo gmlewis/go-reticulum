@@ -161,6 +161,31 @@ func main() {
 		}
 	}
 
+	// The electronic compass is optional and is the other half of the position
+	// picture: the receiver says where the device is, and the compass says
+	// which way it is pointing. It reads the same one fix the commands do, so a
+	// magnetic heading is corrected to true north with the variation at the
+	// device's own position.
+	compass, err := openCompass(cfg)
+	if err != nil {
+		log.Fatalf("gorrcbot: %v", err)
+	}
+	if compass != nil {
+		defer func() {
+			if err := compass.Close(); err != nil {
+				log.Printf("gorrcbot: closing the compass source: %v", err)
+			}
+		}()
+		compass.SetLocationSource(reg.currentFix)
+		reg.compass = compass
+		switch {
+		case cfg.CompassPort != "":
+			log.Printf("gorrcbot: reading compass sentences from %v", cfg.CompassPort)
+		default:
+			log.Printf("gorrcbot: static compass heading %v", cfg.CompassHeading)
+		}
+	}
+
 	// LXMF is opt-in. With lxmf_enabled = false this returns nothing at all, so
 	// no router, no job loop and no state under the storage directory can come
 	// into existence; with it true the bot owns the router from here on and
@@ -380,6 +405,13 @@ func configSummary(paths BotPaths, cfg *BotConfig, ownHash []byte) string {
 		fmt.Fprintf(&sb, "gps:        static fix %v\n", cfg.GPSFix)
 	} else {
 		fmt.Fprintf(&sb, "gps:        (no receiver)\n")
+	}
+	if cfg.CompassPort != "" {
+		fmt.Fprintf(&sb, "compass:    reading %v\n", cfg.CompassPort)
+	} else if cfg.CompassHeading != "" {
+		fmt.Fprintf(&sb, "compass:    static heading %v\n", cfg.CompassHeading)
+	} else {
+		fmt.Fprintf(&sb, "compass:    (no compass)\n")
 	}
 	fmt.Fprintf(&sb, "hubs:       %v\n", len(cfg.Hubs))
 	for _, hub := range cfg.Hubs {

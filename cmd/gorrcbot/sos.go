@@ -629,3 +629,16 @@ func (r *registry) sos() *sosStore {
 	}
 	return r.bot.sos
 }
+
+// activeBeacons returns the unresolved distress beacons, newest last, or
+// nothing when the registry was built without a beacon store. The captive
+// portal vectors its compass rose toward the closest of them, so an operator
+// holding a phone is pointed at the person in trouble rather than at the
+// nearest repeater.
+func (r *registry) activeBeacons() []SOSRecord {
+	store := r.sos()
+	if store == nil {
+		return nil
+	}
+	return store.active()
+}

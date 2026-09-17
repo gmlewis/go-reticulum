@@ -74,6 +74,23 @@ input[type=text] {
 .reply .who { color: var(--muted); font-size: .78rem; display: block; margin-bottom: 4px; }
 .reply pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: inherit; }
 .hint { color: var(--muted); font-size: .8rem; margin: 8px 0 0; }
+.compass-wrap { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.compass { flex: 0 0 auto; width: 44vw; max-width: 220px; min-width: 150px; height: auto; }
+.compass .dial { fill: none; stroke: var(--rule); stroke-width: 2; }
+.compass .dial.inner { stroke-dasharray: 2 5; }
+.compass text { fill: var(--muted); font-size: 15px; font-weight: 700; text-anchor: middle; }
+.compass .target-needle path { fill: var(--danger); }
+.compass .heading-needle path { fill: var(--accent); }
+.compass .hub { fill: var(--ink); }
+.compass-readout { flex: 1 1 140px; display: grid; gap: 6px; }
+.compass-readout .deg { font-size: 1.7rem; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+.compass-readout .frame { color: var(--muted); font-size: .85rem; font-variant-numeric: tabular-nums; }
+.compass-readout .vector { font-size: .9rem; }
+.compass-readout .vector strong { color: var(--danger); }
+.legend { display: flex; gap: 12px; color: var(--muted); font-size: .75rem; margin-top: 10px; }
+.legend span::before { content: "■ "; }
+.legend .key-heading::before { color: var(--accent); }
+.legend .key-target::before { color: var(--danger); }
 </style>
 </head>
 <body>
@@ -94,6 +111,39 @@ input[type=text] {
       <div><dt>Local solar time</dt><dd id="solar-clock">@@SOLAR_CLOCK@@</dd></div>
       <div><dt>Sunset</dt><dd id="sunset">@@SUNSET@@</dd></div>
     </dl>
+  </section>
+
+  <section class="card" id="compass">
+    <h2>Compass &amp; Direction Finding</h2>
+    <div class="compass-wrap">
+      <svg class="compass" id="compass-rose" viewBox="0 0 200 200" role="img"
+           aria-label="Compass rose showing the device heading and the nearest beacon or site">
+        <circle class="dial" cx="100" cy="100" r="94"></circle>
+        <circle class="dial inner" cx="100" cy="100" r="72"></circle>
+        <text x="100" y="30">N</text>
+        <text x="172" y="106">E</text>
+        <text x="100" y="182">S</text>
+        <text x="28" y="106">W</text>
+        <g class="target-needle" id="target-needle" transform="rotate(@@TARGET_ROTATION@@ 100 100)">
+          <path d="M100 18 L108 100 L100 116 L92 100 Z"></path>
+        </g>
+        <g class="heading-needle" id="heading-needle" transform="rotate(@@HEADING_ROTATION@@ 100 100)">
+          <path d="M100 40 L107 104 L100 94 L93 104 Z"></path>
+        </g>
+        <circle class="hub" cx="100" cy="100" r="4"></circle>
+      </svg>
+      <div class="compass-readout">
+        <div class="deg" id="compass-heading">@@COMPASS_HEADING@@</div>
+        <div class="frame" id="compass-true">@@COMPASS_TRUE@@</div>
+        <div class="frame" id="compass-mag">@@COMPASS_MAG@@</div>
+        <div class="vector" id="compass-target">@@COMPASS_TARGET@@</div>
+      </div>
+    </div>
+    <div class="legend">
+      <span class="key-heading">Your heading</span>
+      <span class="key-target">Beacon or nearest site</span>
+    </div>
+    <p class="hint">A compass knows which way the device points while you stand still, so you can aim a directional antenna without walking a single step.</p>
   </section>
 
   <section class="card" id="emergency">
@@ -133,6 +183,66 @@ input[type=text] {
     setText('fix-status', view.valid ? view.fix_status : (view.message || 'acquiring a GNSS fix'));
     setText('solar-clock', view.local_solar_time);
     setText('sunset', view.sunset);
+    renderCompass(view.heading);
+  }
+
+  function bearing(compass) {
+    if (compass.has_true) { return compass.true_deg; }
+    return compass.mag_deg;
+  }
+
+  function frameText(compass, wantTrue) {
+    if (wantTrue) {
+      if (!compass.has_true) { return ''; }
+      if (compass.has_declination) {
+        return 'True ' + pad(compass.true_deg) + '° (var ' + signed(compass.declination_deg) + '° ' +
+          (compass.declination_deg < 0 ? 'W' : 'E') + ')';
+      }
+      return 'True ' + pad(compass.true_deg) + '°';
+    }
+    if (!compass.has_magnetic) { return ''; }
+    return 'Mag ' + pad(compass.mag_deg) + '°';
+  }
+
+  function pad(value) {
+    var text = String(Math.round(value));
+    while (text.length < 3) { text = '0' + text; }
+    return text;
+  }
+
+  function signed(value) {
+    return (value >= 0 ? '+' : '-') + Math.abs(value).toFixed(1);
+  }
+
+  function targetText(target) {
+    if (!target) { return 'no beacon or site within range of the catalog'; }
+    var text = target.name + ' · ' + target.distance_km.toFixed(1) + ' km at ' + pad(target.bearing_deg) + '°';
+    if (target.frequency) { text += ' · ' + target.frequency; }
+    if (target.steering) { text += ' ' + target.steering; }
+    return text;
+  }
+
+  function rotateNeedle(id, degrees) {
+    var needle = document.getElementById(id);
+    if (needle) { needle.setAttribute('transform', 'rotate(' + degrees + ' 100 100)'); }
+  }
+
+  function renderCompass(compass) {
+    if (!compass || !compass.valid) {
+      setText('compass-heading', compass && compass.message ? compass.message : 'no compass');
+      setText('compass-true', '');
+      setText('compass-mag', '');
+      setText('compass-target', '');
+      rotateNeedle('heading-needle', 0);
+      rotateNeedle('target-needle', 0);
+      return;
+    }
+    setText('compass-heading', pad(bearing(compass)) + '° ' + compass.cardinal);
+    setText('compass-true', frameText(compass, true));
+    setText('compass-mag', frameText(compass, false));
+    setText('compass-target', targetText(compass.target));
+    rotateNeedle('heading-needle', bearing(compass));
+    rotateNeedle('target-needle', compass.target ? compass.target.bearing_deg : 0);
   }
 
   function refresh() {

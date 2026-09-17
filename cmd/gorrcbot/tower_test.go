@@ -6,6 +6,7 @@
 package main
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -617,5 +618,211 @@ func TestTowerRepliesFitTheReplyBudget(t *testing.T) {
 	lines := runLines(t, reg, session, "tower list US")
 	if len(lines) > cfg.MaxReplyLines {
 		t.Errorf("tower list US = %v lines, want at most %v", len(lines), cfg.MaxReplyLines)
+	}
+}
+
+// TestRelativeBearingWrapsIntoPlusMinus180 asserts the angular difference
+// between a target bearing and a heading is reported as a signed turn: positive
+// to the right, negative to the left, and never more than half a turn, so the
+// operator is always told the shorter way round.
+func TestRelativeBearingWrapsIntoPlusMinus180(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		target  float64
+		heading float64
+		want    float64
+	}{
+		{"dead ahead", 42, 42, 0},
+		{"a little right", 42, 27, 15},
+		{"a little left", 42, 57, -15},
+		{"due right", 90, 0, 90},
+		{"due left", 270, 0, -90},
+		{"straight behind", 180, 0, -180},
+		{"behind the other way", 0, 180, -180},
+		{"a full turn is no turn", 30, 390, 0},
+		{"across the zero crossing", 10, 350, 20},
+		{"across the zero crossing the other way", 350, 10, -20},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := RelativeBearingOf(tc.target, tc.heading)
+			if math.Abs(got-tc.want) > 1e-9 {
+				t.Errorf("RelativeBearingOf(%v, %v) = %v, want %v", tc.target, tc.heading, got, tc.want)
+			}
+			if got < -180 || got > 180 {
+				t.Errorf("RelativeBearingOf(%v, %v) = %v, want a signed half turn", tc.target, tc.heading, got)
+			}
+		})
+	}
+}
+
+// TestClockPositionNamesTheClockFace asserts the clock position an operator
+// reads is a real clock face: twelve straight ahead, three to the right, six
+// behind, and nine to the left.
+func TestClockPositionNamesTheClockFace(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		delta float64
+		want  int
+	}{
+		{0, 12}, {15, 1}, {30, 1}, {44, 1}, {45, 2}, {60, 2}, {90, 3},
+		{120, 4}, {150, 5}, {180, 6}, {-15, 11}, {-45, 10}, {-90, 9},
+		{-120, 8}, {-150, 7}, {-180, 6},
+	}
+	for _, tc := range cases {
+		if got := ClockPositionOf(tc.delta); got != tc.want {
+			t.Errorf("ClockPositionOf(%v) = %v, want %v", tc.delta, got, tc.want)
+		}
+	}
+}
+
+// TestFormatSteeringInstructionAcrossTheFourQuadrants asserts the four things a
+// steering instruction may say — ahead, a graded right turn, a graded left
+// turn, and behind — and pins the Phase 0.6 worked example, a fifteen-degree
+// right turn at one o'clock.
+func TestFormatSteeringInstructionAcrossTheFourQuadrants(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		target  float64
+		heading float64
+		want    string
+	}{
+		{"dead ahead", 42, 42, "[Ahead · 12 o'clock]"},
+		{"two degrees off is still ahead", 42, 40, "[Ahead · 12 o'clock]"},
+		{"the ahead boundary", 42, 37, "[Ahead · 12 o'clock]"},
+		{"the brief's worked example", 42, 27, "[Turn 15° RIGHT · 1 o'clock]"},
+		{"due right", 90, 0, "[Turn 90° RIGHT · 3 o'clock]"},
+		{"due left", 270, 0, "[Turn 90° LEFT · 9 o'clock]"},
+		{"a little left", 42, 60, "[Turn 18° LEFT · 11 o'clock]"},
+		{"the near-behind boundary", 165, 0, "[Turn 165° RIGHT · 6 o'clock]"},
+		{"just past behind, right", 166, 0, "[Behind · 6 o'clock]"},
+		{"just past behind, left", 194, 0, "[Behind · 6 o'clock]"},
+		{"straight behind", 180, 0, "[Behind · 6 o'clock]"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := FormatSteeringInstruction(tc.target, tc.heading); got != tc.want {
+				t.Errorf("FormatSteeringInstruction(%v, %v) = %q, want %q",
+					tc.target, tc.heading, got, tc.want)
+			}
+		})
+	}
+}
+
+// towerSteeringFixture builds a tower-catalog session whose device holds a live
+// fix and a compass heading. A reading that already carries true north is used
+// exactly as given; a magnetic-only reading is left uncorrected when the reader
+// is not wired to the fix, which is what a node with no position source looks
+// like.
+func towerSteeringFixture(t *testing.T, heading CompassHeading, wireFix bool) (*registry, *hubSession) {
+	t.Helper()
+	reg, session := whereamiFixture(t, sfFix())
+	if !heading.Valid {
+		return reg, session
+	}
+	reader := NewCompassReader(nil)
+	reader.SetHeading(heading)
+	if wireFix {
+		reader.SetLocationSource(reg.currentFix)
+	}
+	t.Cleanup(func() { _ = reader.Close() })
+	reg.compass = reader
+	return reg, session
+}
+
+// sutroTargetBearing returns the true bearing from the reference fix to the
+// nearest catalog site, which is the row a proximity answer puts first.
+func sutroTargetBearing(t *testing.T) float64 {
+	t.Helper()
+	record, ok := towerRecordByID(towerRecords, "W6PW-2M")
+	if !ok {
+		t.Fatal("the embedded catalog no longer holds W6PW-2M")
+	}
+	return InitialBearing(sfFix().Position(), LatLng{Lat: record.Lat, Lng: record.Lng})
+}
+
+// TestTowerNearSteersTheAntennaWithALiveHeading asserts the direction-finding
+// payoff: with a live fix and a true heading, a proximity answer stops being a
+// bearing to interpret and becomes a turn to make.
+func TestTowerNearSteersTheAntennaWithALiveHeading(t *testing.T) {
+	t.Parallel()
+
+	target := sutroTargetBearing(t)
+	reg, session := towerSteeringFixture(t, CompassHeading{
+		Valid: true, HasMagnetic: true, MagneticDeg: normalizeDegrees(target - 15),
+		HasTrue: true, TrueDeg: normalizeDegrees(target - 15), HasDeclination: true, DeclinationDeg: 0,
+	}, false)
+	lines := runLines(t, reg, session, "tower near")
+	first := lines[1]
+	if !strings.Contains(first, "[Turn 15° RIGHT · 1 o'clock]") {
+		t.Errorf("tower near with a heading = %q, want the one-o'clock steering", first)
+	}
+	if !strings.Contains(first, "True") {
+		t.Errorf("tower near with a heading = %q, want the bearing named as true", first)
+	}
+
+	reg, session = towerSteeringFixture(t, CompassHeading{
+		Valid: true, HasMagnetic: true, MagneticDeg: target,
+		HasTrue: true, TrueDeg: target, HasDeclination: true, DeclinationDeg: 0,
+	}, false)
+	if first := runLines(t, reg, session, "tower near")[1]; !strings.Contains(first, "[Ahead · 12 o'clock]") {
+		t.Errorf("tower near aimed at the site = %q, want it reported as ahead", first)
+	}
+}
+
+// TestTowerNearOmitsSteeringWithoutACompass asserts the answer an operator with
+// no compass gets is exactly the answer the command gave before the compass
+// existed: a distance and a bearing, with nothing invented.
+func TestTowerNearOmitsSteeringWithoutACompass(t *testing.T) {
+	t.Parallel()
+
+	reg, session := towerSteeringFixture(t, CompassHeading{}, false)
+	first := runLines(t, reg, session, "tower near")[1]
+	if strings.Contains(first, "o'clock") {
+		t.Errorf("tower near without a compass = %q, want no steering", first)
+	}
+	if strings.Contains(first, "True") {
+		t.Errorf("tower near without a compass = %q, want the plain bearing", first)
+	}
+}
+
+// TestTowerNearOmitsSteeringForANamedPlace asserts a proximity answer about
+// somewhere else never steers: the operator is not standing at the place they
+// asked about, so a relative turn from their own heading would be nonsense.
+func TestTowerNearOmitsSteeringForANamedPlace(t *testing.T) {
+	t.Parallel()
+
+	target := sutroTargetBearing(t)
+	reg, session := towerSteeringFixture(t, CompassHeading{
+		Valid: true, HasTrue: true, TrueDeg: normalizeDegrees(target - 15),
+		HasMagnetic: true, MagneticDeg: normalizeDegrees(target - 15),
+	}, false)
+	first := runLines(t, reg, session, "tower near "+refPlus10)[1]
+	if strings.Contains(first, "o'clock") {
+		t.Errorf("tower near a named place = %q, want no steering", first)
+	}
+}
+
+// TestTowerNearOmitsSteeringForAMagneticOnlyHeading asserts a heading that has
+// not been corrected to true north is never steered by: the target bearing is a
+// true bearing, and mixing the two frames would aim the operator off by the
+// local variation.
+func TestTowerNearOmitsSteeringForAMagneticOnlyHeading(t *testing.T) {
+	t.Parallel()
+
+	target := sutroTargetBearing(t)
+	reg, session := towerSteeringFixture(t, CompassHeading{
+		Valid: true, HasMagnetic: true, MagneticDeg: normalizeDegrees(target - 15),
+	}, false)
+	first := runLines(t, reg, session, "tower near")[1]
+	if strings.Contains(first, "o'clock") {
+		t.Errorf("tower near with an uncorrected heading = %q, want no steering", first)
 	}
 }

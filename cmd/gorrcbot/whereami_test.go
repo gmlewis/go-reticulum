@@ -6,7 +6,9 @@
 package main
 
 import (
+	"context"
 	"math"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -447,5 +449,193 @@ func TestWhereAmIWithoutAMeasuredAltitude(t *testing.T) {
 	}
 	if strings.Contains(card, "0 m (0 ft)") {
 		t.Errorf("card = %v, want no invented sea-level altitude", card)
+	}
+}
+
+// The compass sentences the card tests build a heading from. The first is the
+// worked example the Phase 0.6 brief prints: 029° magnetic with 13.0° of east
+// variation, which is 042° true, and 042° is in the north-east sector.
+const (
+	cardHDGSentence = "$HCHDG,29.0,,,13.0,E*20"
+	cardHDTSentence = "$HCHDT,42.0,T*1F"
+)
+
+// whereamiCompassFixture builds a registry whose GNSS source holds fix and
+// whose compass holds the heading the sentence produced. It mirrors the way the
+// running bot wires the two devices to one registry.
+func whereamiCompassFixture(t *testing.T, sentence string) (*registry, *hubSession) {
+	t.Helper()
+	reg, session := whereamiFixture(t, sfFix())
+	reader := NewCompassReader(strings.NewReader(sentence))
+	if err := reader.Run(context.Background()); err != nil {
+		t.Fatalf("reading the compass sentence: %v", err)
+	}
+	t.Cleanup(func() { _ = reader.Close() })
+	reg.compass = reader
+	return reg, session
+}
+
+// TestWhereAmIHeadingLineFormats pins the exact heading line the Phase 0.6 brief
+// specifies, and the two frames it degrades to when only one is known.
+func TestWhereAmIHeadingLineFormats(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		heading CompassHeading
+		want    string
+	}{
+		{
+			"the brief's worked example",
+			CompassHeading{
+				Valid: true, MagneticDeg: 29, TrueDeg: 42, DeclinationDeg: 13,
+				HasDeclination: true, HasMagnetic: true, HasTrue: true, Cardinal: "NE",
+			},
+			"042° True (029° Mag, Var: +13.0° E) · NE",
+		},
+		{
+			"a west variation",
+			CompassHeading{
+				Valid: true, MagneticDeg: 29, TrueDeg: 16, DeclinationDeg: -13,
+				HasDeclination: true, HasMagnetic: true, HasTrue: true, Cardinal: "NNE",
+			},
+			"016° True (029° Mag, Var: -13.0° W) · NNE",
+		},
+		{
+			"true only",
+			CompassHeading{Valid: true, HasTrue: true, TrueDeg: 42, Cardinal: "NE"},
+			"042° True · NE",
+		},
+		{
+			"magnetic only",
+			CompassHeading{Valid: true, HasMagnetic: true, MagneticDeg: 29, Cardinal: "NNE"},
+			"029° Mag · NNE",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := whereamiHeadingText(tc.heading); got != tc.want {
+				t.Errorf("whereamiHeadingText(%+v) = %q, want %q", tc.heading, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestWhereAmICardCarriesTheHeading asserts the operational card prints the
+// heading between the elevation and the fix status, exactly where the brief
+// puts it, and that the line is the one the briefing specifies.
+func TestWhereAmICardCarriesTheHeading(t *testing.T) {
+	t.Parallel()
+
+	reg, session := whereamiCompassFixture(t, cardHDGSentence)
+	lines := whereami(t, reg, session, "")
+	index := slices.IndexFunc(lines, func(line string) bool {
+		return strings.HasPrefix(line, "Heading / Course")
+	})
+	if index < 0 {
+		t.Fatalf("the card carries no heading line:\n%v", strings.Join(lines, "\n"))
+	}
+	want := "Heading / Course  : 042° True (029° Mag, Var: +13.0° E) · NE"
+	if lines[index] != want {
+		t.Errorf("the heading line = %q, want %q", lines[index], want)
+	}
+	if !strings.HasPrefix(lines[index-1], "Elevation") || !strings.HasPrefix(lines[index+1], "GNSS Fix Status") {
+		t.Errorf("the heading line sits between %q and %q, want the elevation and the fix status",
+			lines[index-1], lines[index+1])
+	}
+}
+
+// TestWhereAmICardOmitsTheHeadingWithoutACompass asserts a node with no compass
+// prints exactly the card it always printed: no empty label, no invented
+// heading, and the same line count.
+func TestWhereAmICardOmitsTheHeadingWithoutACompass(t *testing.T) {
+	t.Parallel()
+
+	reg, session := whereamiFixture(t, sfFix())
+	lines := whereami(t, reg, session, "")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "Heading") {
+			t.Errorf("a card with no compass printed %q", line)
+		}
+	}
+	if len(lines) != 10 {
+		t.Errorf("the card has %v lines, want the 10 it had before the compass existed:\n%v",
+			len(lines), strings.Join(lines, "\n"))
+	}
+}
+
+// TestWhereAmICardKeepsAMagneticOnlyHeadingHonest asserts a heading that has
+// not been corrected is printed as magnetic rather than passed off as true
+// north: the two differ by up to twenty degrees, which at fourteen kilometers
+// is kilometers of error.
+func TestWhereAmICardKeepsAMagneticOnlyHeadingHonest(t *testing.T) {
+	t.Parallel()
+
+	reg, session := whereamiFixture(t, sfFix())
+	reader := NewCompassReader(strings.NewReader("$HCHDM,29.0,M*12"))
+	if err := reader.Run(context.Background()); err != nil {
+		t.Fatalf("reading the compass sentence: %v", err)
+	}
+	t.Cleanup(func() { _ = reader.Close() })
+	// The reader is deliberately not wired to the fix, which is what a node
+	// with no position source for the compass looks like.
+	reg.compass = reader
+	card := strings.Join(whereami(t, reg, session, ""), "\n")
+	if !strings.Contains(card, "029° Mag · NNE") {
+		t.Errorf("the card = %v, want the uncorrected heading reported as magnetic", card)
+	}
+	if strings.Contains(card, "° True") {
+		t.Errorf("the card = %v, want no invented true heading", card)
+	}
+}
+
+// TestWhereAmICardLeavesTheHeadingOffAManualPosition asserts a card about
+// somewhere the operator is not standing carries no heading, because the
+// heading describes the device and the position does not.
+func TestWhereAmICardLeavesTheHeadingOffAManualPosition(t *testing.T) {
+	t.Parallel()
+
+	reg, session := whereamiCompassFixture(t, cardHDGSentence)
+	card := strings.Join(whereami(t, reg, session, "39.7392,-104.9903"), "\n")
+	if strings.Contains(card, "Heading / Course") {
+		t.Errorf("a manual-position card = %v, want no device heading", card)
+	}
+}
+
+// TestWhereAmICardCorrectsAMagneticHeadingFromTheFix asserts the integration
+// the whole subsystem rests on: a magnetic-only sentence plus the live fix
+// yields a true heading, and the card prints it with the variation the World
+// Magnetic Model supplies for that position.
+func TestWhereAmICardCorrectsAMagneticHeadingFromTheFix(t *testing.T) {
+	t.Parallel()
+
+	reg, session := whereamiFixture(t, sfFix())
+	reader := NewCompassReader(strings.NewReader("$HCHDM,29.0,M*12"))
+	reader.SetLocationSource(reg.currentFix)
+	if err := reader.Run(context.Background()); err != nil {
+		t.Fatalf("reading the compass sentence: %v", err)
+	}
+	t.Cleanup(func() { _ = reader.Close() })
+	reg.compass = reader
+	card := strings.Join(whereami(t, reg, session, ""), "\n")
+	if !strings.Contains(card, "° True") || !strings.Contains(card, "Var: +") {
+		t.Errorf("the card = %v, want a corrected true heading and the variation", card)
+	}
+	if !strings.Contains(card, "029° Mag") {
+		t.Errorf("the card = %v, want the magnetic heading beside the true one", card)
+	}
+}
+
+// TestWhereAmIHeadingIsLocalAndRegisteredWithTheCard asserts the heading text
+// survives the slash form the field brief uses, so "/whereami" prints the same
+// card as "whereami".
+func TestWhereAmIHeadingIsLocalAndRegisteredWithTheCard(t *testing.T) {
+	t.Parallel()
+
+	reg, session := whereamiCompassFixture(t, cardHDTSentence)
+	card := strings.Join(runLines(t, reg, session, "/whereami"), "\n")
+	if !strings.Contains(card, "042° True · NE") {
+		t.Errorf("/whereami = %v, want the true heading alone", card)
 	}
 }

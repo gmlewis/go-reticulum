@@ -479,3 +479,36 @@ func TestApplyConfiguredPathsHonourTheConfigFile(t *testing.T) {
 		})
 	}
 }
+
+// TestConfigSummaryReportsTheCompass asserts --check-config names the compass
+// the way it names the GNSS source, so an operator can see which heading device
+// the direction-finding answers will use before leaving the house.
+func TestConfigSummaryReportsTheCompass(t *testing.T) {
+	t.Parallel()
+
+	paths := BotPaths{
+		Home:         "/tmp/gorrcbot-summary",
+		ConfigPath:   "/tmp/gorrcbot-summary/config.toml",
+		IdentityPath: "/tmp/gorrcbot-summary/bot_identity",
+		StorageDir:   "/tmp/gorrcbot-summary/storage",
+	}
+	cases := []struct {
+		name string
+		cfg  BotConfig
+		want string
+	}{
+		{"streaming compass", BotConfig{CompassPort: "/dev/ttyUSB1"}, "compass:    reading /dev/ttyUSB1"},
+		{"static heading", BotConfig{CompassHeading: "042"}, "compass:    static heading 042"},
+		{"no compass", BotConfig{}, "compass:    (no compass)"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := tc.cfg
+			summary := configSummary(paths, &cfg, mustHex(fakeHubTwo))
+			if !strings.Contains(summary, tc.want) {
+				t.Errorf("the summary does not contain %q:\n%v", tc.want, summary)
+			}
+		})
+	}
+}

@@ -224,6 +224,22 @@ gps_port = ""
 # a Maidenhead grid, or DMS. Leave empty when gps_port supplies the position.
 gps_fix = ""
 
+# Electronic compass: the device that streams NMEA-0183 heading sentences
+# ($HCHDG, $HCHDM, or $HCHDT), for example a QMC5883L or LSM303 magnetometer
+# behind a serial bridge on /dev/ttyUSB1 or /dev/ttyACM1. A compass supplies the
+# heading a GNSS receiver cannot: it knows which way the device points while the
+# operator is standing still, so /whereami prints a heading, "tower near" adds
+# relative steering to aim a directional antenna, and the captive portal draws a
+# live compass rose. Leave empty for no streaming compass.
+compass_port = ""
+
+# A static magnetic heading for a node with no compass sensor: a fixed
+# installation, or an operator rehearsing the direction-finding tools. It
+# accepts degrees ("042") or a compass point ("NE"). The World Magnetic Model
+# converts it to true north from the node's position. Leave empty when
+# compass_port supplies the heading.
+compass_heading = ""
+
 # Optional provider template for the metar command: the aviation weather report
 # for an ICAO station code. {place} becomes the lowercased station code, and the
 # template must keep its own scheme and host. The answer is decoded into wind,

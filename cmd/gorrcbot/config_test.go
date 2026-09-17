@@ -1245,3 +1245,84 @@ func TestPortalAndGNSSSettingsValidate(t *testing.T) {
 		})
 	}
 }
+
+// TestDecodeCompassSettings asserts the Phase 0.6 compass keys decode: the
+// device a magnetometer streams heading sentences from, and a static magnetic
+// heading for a node with no sensor.
+func TestDecodeCompassSettings(t *testing.T) {
+	t.Parallel()
+
+	cfg, warnings, err := DecodeBotConfig("config.toml", `
+[bot]
+compass_port = "/dev/ttyUSB1"
+compass_heading = "042"
+`+misplacedHub)
+	if err != nil {
+		t.Fatalf("DecodeBotConfig: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %v, want none", warnings)
+	}
+	if cfg.CompassPort != "/dev/ttyUSB1" {
+		t.Errorf("CompassPort = %q, want %q", cfg.CompassPort, "/dev/ttyUSB1")
+	}
+	if cfg.CompassHeading != "042" {
+		t.Errorf("CompassHeading = %q, want %q", cfg.CompassHeading, "042")
+	}
+}
+
+// TestCompassSettingsDefaultOff asserts a configuration that says nothing about
+// a compass starts none: a bot that never asked for a heading device must never
+// open one.
+func TestCompassSettingsDefaultOff(t *testing.T) {
+	t.Parallel()
+
+	cfg, warnings, err := DecodeBotConfig("config.toml", misplacedHub)
+	if err != nil {
+		t.Fatalf("DecodeBotConfig: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %v, want none", warnings)
+	}
+	if cfg.CompassPort != "" || cfg.CompassHeading != "" {
+		t.Errorf("compass_port/compass_heading = %q/%q, want both empty",
+			cfg.CompassPort, cfg.CompassHeading)
+	}
+}
+
+// TestCompassHeadingAcceptsEveryNotation asserts the static heading takes what
+// a navigator would write: degrees, a compass point, or degrees with the degree
+// sign on it.
+func TestCompassHeadingAcceptsEveryNotation(t *testing.T) {
+	t.Parallel()
+
+	for _, notation := range []string{"042", "42", "NE", "nne", "359.9", "42°"} {
+		cfg, warnings, err := DecodeBotConfig("config.toml",
+			"[bot]\ncompass_heading = \""+notation+"\"\n"+misplacedHub)
+		if err != nil {
+			t.Fatalf("DecodeBotConfig(%q): %v", notation, err)
+		}
+		if len(warnings) != 0 {
+			t.Errorf("compass_heading %q produced warnings = %v, want none", notation, warnings)
+		}
+		if cfg.CompassHeading != notation {
+			t.Errorf("CompassHeading = %q, want %q", cfg.CompassHeading, notation)
+		}
+	}
+}
+
+// TestCompassSettingsValidate asserts an unusable heading is reported once at
+// startup instead of silently steering every direction-finding answer from a
+// bearing nobody meant.
+func TestCompassSettingsValidate(t *testing.T) {
+	t.Parallel()
+
+	_, warnings, err := DecodeBotConfig("config.toml",
+		"[bot]\ncompass_heading = \"sideways\"\n"+misplacedHub)
+	if err != nil {
+		t.Fatalf("DecodeBotConfig: %v", err)
+	}
+	if !strings.Contains(strings.Join(warnings, "\n"), "compass_heading") {
+		t.Errorf("warnings = %v, want one naming compass_heading", warnings)
+	}
+}

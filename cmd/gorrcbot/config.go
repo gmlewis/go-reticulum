@@ -187,6 +187,16 @@ type BotConfig struct {
 	// It accepts every notation the location commands accept. Empty means the
 	// node has no position unless a receiver supplies one.
 	GPSFix string
+	// CompassPort is the device or file the electronic compass's NMEA heading
+	// sentences are read from, like /dev/ttyUSB1 or /dev/ttyACM1. Empty means
+	// no streaming compass.
+	CompassPort string
+	// CompassHeading is a static magnetic heading for a node with no compass
+	// sensor: a fixed installation, or an operator rehearsing the
+	// direction-finding tools. It accepts degrees ("042") or a compass point
+	// ("NE"). Empty means the node has no heading unless a compass supplies
+	// one.
+	CompassHeading string
 	// Hubs are the RRC hubs to dial, in configuration order.
 	Hubs []HubConfig
 }
@@ -349,6 +359,8 @@ var botKeys = map[string]bool{
 	"portal_addr":                true,
 	"gps_port":                   true,
 	"gps_fix":                    true,
+	"compass_port":               true,
+	"compass_heading":            true,
 }
 
 // warn records a non-fatal configuration problem.
@@ -762,6 +774,26 @@ func (d *configDecoder) decodeBotTable(t *toml.Table) error {
 			if d.cfg.GPSFix != "" {
 				if _, err := ParseLocation(d.cfg.GPSFix); err != nil {
 					d.warn("[bot] gps_fix %q is not a location the bot can place; the static fix is unusable", d.cfg.GPSFix)
+				}
+			}
+		case "compass_port":
+			s, err := d.stringValue("[bot]", key, kv)
+			if err != nil {
+				return err
+			}
+			d.cfg.CompassPort = strings.TrimSpace(s)
+		case "compass_heading":
+			s, err := d.stringValue("[bot]", key, kv)
+			if err != nil {
+				return err
+			}
+			d.cfg.CompassHeading = strings.TrimSpace(s)
+			// A static heading that cannot be read is worse than none: it
+			// would steer every direction-finding answer from a bearing nobody
+			// meant. The value is kept so the warning can name it.
+			if d.cfg.CompassHeading != "" {
+				if _, err := ParseBearing(d.cfg.CompassHeading); err != nil {
+					d.warn("[bot] compass_heading %q is not a bearing the bot can read; the static heading is unusable", d.cfg.CompassHeading)
 				}
 			}
 		}

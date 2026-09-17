@@ -44,6 +44,9 @@ func TestParseLocationAcceptsFieldNotations(t *testing.T) {
 		{"Maidenhead with subsquare", "CM87uk", 37.4375, -122.2916666667},
 		{"Maidenhead lower case", "cm87uk", 37.4375, -122.2916666667},
 		{"Maidenhead Connecticut", "FN31pr", 41.7291666667, -72.7083333333},
+		{"Google Maps coordinate with leading @", "@28.405832,-81.4716354", 28.405832, -81.4716354},
+		{"Google Maps coordinate with leading @ and space", "@ 37.42205, -122.08409", 37.42205, -122.08409},
+		{"Plus Code with leading @", "@849VCWC8+R9", 37.4220625, -122.0840625},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -69,7 +72,7 @@ func TestParseLocationRejectsUnplaceableText(t *testing.T) {
 	t.Parallel()
 
 	for _, in := range []string{
-		"", "   ", "hello world", "91, 0", "0, 181", "-91 0", "0 -181",
+		"", "   ", "@", "@   ", "hello world", "91, 0", "0, 181", "-91 0", "0 -181",
 		"37.4", "1 2 3", "37.5 122.5 1 2", "8F+6X", "ZZ99", "37.5, NOPE",
 		"N37.5 E122.1 S10", "0/0",
 	} {

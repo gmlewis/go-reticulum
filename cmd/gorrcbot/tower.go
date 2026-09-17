@@ -35,6 +35,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"slices"
 	"strconv"
@@ -319,7 +320,7 @@ func (c *commandContext) runTower() []string {
 	}
 	if point, err := ParseLocation(c.Args); err == nil {
 		q := discoveryQuery{Command: command, Catalog: towerCatalogName, Kind: discoveryKindNear}
-		return c.renderTowerNear(q, records, entries, point, c.Args)
+		return c.renderTowerNear(q, records, entries, point, c.Args, false)
 	}
 	return []string{"Usage: " + towerUsage, towerUsageHint}
 }
@@ -377,7 +378,9 @@ func (c *commandContext) runTowerDiscovery(command string, records []TowerRecord
 func (c *commandContext) renderTowerNearArgument(q discoveryQuery, records []TowerRecord, entries []catalogEntry, argument string) []string {
 	if strings.TrimSpace(argument) == "" {
 		if point, label, ok := c.gnssContext(); ok {
-			return c.renderTowerNear(q, records, entries, point, label)
+			// The device is standing here, so a live heading steers the
+			// operator toward the site rather than merely naming it.
+			return c.renderTowerNear(q, records, entries, point, label, true)
 		}
 		return []string{"Usage: " + q.Command + " near <place|coords|pluscode>", discoveryNoFixHint}
 	}
@@ -390,19 +393,27 @@ func (c *commandContext) renderTowerNearArgument(q discoveryQuery, records []Tow
 				q.Command+" list"),
 		}
 	}
-	return c.renderTowerNear(q, records, entries, point, argument)
+	// A named place is somewhere else, so the device's own heading says nothing
+	// about which way to point from it.
+	return c.renderTowerNear(q, records, entries, point, argument, false)
 }
 
 // renderTowerNear renders the three closest sites to a position as the single
 // page a proximity answer is. The rows carry the distance in kilometers and the
 // bearing, because those are what a directional antenna is aimed with, and a
 // site inside China adds the GCJ-02 coordinate the operator's map app expects.
-func (c *commandContext) renderTowerNear(q discoveryQuery, records []TowerRecord, entries []catalogEntry, point LatLng, argument string) []string {
+//
+// When the position is the device's own and a true heading is known, every row
+// also carries the relative steering that aims an antenna without arithmetic: a
+// bearing is a fact, but "turn fifteen degrees right" is an instruction somebody
+// with cold hands in the dark can follow.
+func (c *commandContext) renderTowerNear(q discoveryQuery, records []TowerRecord, entries []catalogEntry, point LatLng, argument string, atDevice bool) []string {
 	q.Text = strings.Join(strings.Fields(argument), " ")
 	near := nearestCatalog(entries, point, discoveryNearLimit)
 	if len(near) == 0 {
 		return []string{fmt.Sprintf("No %v near %v.", towerCatalogName, q.Text)}
 	}
+	heading, steering := c.steeringHeading(atDevice)
 	lines := make([]string, 0, len(near)+3)
 	lines = append(lines, q.header(1, 1))
 	for i := range near {
@@ -410,7 +421,7 @@ func (c *commandContext) renderTowerNear(q discoveryQuery, records []TowerRecord
 		if !ok {
 			continue
 		}
-		lines = append(lines, c.towerNearRow(q, record, &near[i]))
+		lines = append(lines, c.towerNearRow(q, record, &near[i], heading, steering))
 	}
 	if hint := towerGCJHint(records, near); hint != "" {
 		lines = append(lines, hint)
@@ -420,17 +431,116 @@ func (c *commandContext) renderTowerNear(q discoveryQuery, records []TowerRecord
 	return append(lines, c.catalogFooter(q, 1, 1)...)
 }
 
+// steeringHeading returns the heading a proximity answer may steer by, and
+// whether it may steer at all. Steering is offered only when the answer is about
+// the device's own position and a true heading is known: a target bearing is a
+// true bearing, so steering against a magnetic-only heading would send the
+// operator off by the local variation, which at high latitudes is tens of
+// degrees.
+func (c *commandContext) steeringHeading(atDevice bool) (CompassHeading, bool) {
+	if !atDevice || c.reg == nil {
+		return CompassHeading{}, false
+	}
+	heading, ok := c.reg.currentHeading()
+	if !ok || !heading.HasTrue {
+		return CompassHeading{}, false
+	}
+	return heading, true
+}
+
 // towerNearRow renders one proximity row: the identity the detailed view takes,
 // how far away the site is and on what bearing, the service, the frequency with
 // its offset and tone in the compact form a radio operator reads, and the place.
-func (c *commandContext) towerNearRow(q discoveryQuery, record TowerRecord, distance *catalogDistance) string {
+// A row that can be steered by adds the relative turn and clock position.
+func (c *commandContext) towerNearRow(q discoveryQuery, record TowerRecord, distance *catalogDistance, heading CompassHeading, steering bool) string {
 	id := record.ID
 	if c.micronLinks() {
 		id = micronLink(record.ID, "/msg "+c.echoNick()+" "+q.Command+" "+towerInfoKind+" "+record.ID)
 	}
-	return fmt.Sprintf("  %v (%.1f km %.0f° %v) [%v]: %v - %v", id,
-		distance.Meters/1000, normalizeDegrees(distance.Bearing), CompassPoint(distance.Bearing),
-		record.Type, towerFrequencySegment(record), towerPlace(record))
+	// A steered row steers against a true heading, so it says which frame the
+	// bearing is in; an unsteered row keeps the short bearing it always had.
+	bearing := fmt.Sprintf("%.0f° %v", normalizeDegrees(distance.Bearing), CompassPoint(distance.Bearing))
+	if steering {
+		bearing = fmt.Sprintf("%.0f° True %v",
+			normalizeDegrees(distance.Bearing), CompassPoint(distance.Bearing))
+	}
+	row := fmt.Sprintf("  %v (%.1f km %v) [%v]: %v - %v", id,
+		distance.Meters/1000, bearing, record.Type, towerFrequencySegment(record), towerPlace(record))
+	if !steering {
+		return row
+	}
+	return row + " " + FormatSteeringInstruction(distance.Bearing, heading.TrueDeg)
+}
+
+// The angles at which a steering instruction stops being "straight ahead" or
+// starts being "behind", and the width of one clock hour.
+const (
+	// steeringAheadDegrees is how far off a target may be and still count as
+	// straight ahead. It is the width of the twelve o'clock clock hour.
+	steeringAheadDegrees = 5.0
+	// steeringBehindDegrees is how far off a target must be before it counts as
+	// behind, leaving the six o'clock hour on both sides.
+	steeringBehindDegrees = 165.0
+	// steeringClockHourDegrees is the width of one hour on a clock face.
+	steeringClockHourDegrees = 30.0
+	// steeringClockHours is how many hours a clock face divides a full turn
+	// into.
+	steeringClockHours = 12
+	// steeringFullTurnDegrees and steeringHalfTurnDegrees are the two angles
+	// the relative-bearing wrap is expressed in.
+	steeringFullTurnDegrees = 360.0
+	steeringHalfTurnDegrees = 180.0
+)
+
+// RelativeBearingOf returns the angle from a current heading to a target
+// bearing, in the range -180 to +180, positive clockwise to the right and
+// negative counter-clockwise to the left. It is the arithmetic that turns two
+// absolute directions into the one relative instruction an operator acts on.
+func RelativeBearingOf(targetBearing, currentHeading float64) float64 {
+	delta := math.Mod(targetBearing-currentHeading+steeringHalfTurnDegrees, steeringFullTurnDegrees)
+	if delta < 0 {
+		delta += steeringFullTurnDegrees
+	}
+	return delta - steeringHalfTurnDegrees
+}
+
+// ClockPositionOf returns the position on a clock face a signed relative angle
+// names, one through twelve, with twelve straight ahead and six directly
+// behind. It is what makes a steering instruction readable at a glance: "one
+// o'clock" needs no mental arithmetic, and "turn fifteen degrees right" is
+// checked against it.
+func ClockPositionOf(delta float64) int {
+	hour := int(math.Round(delta / steeringClockHourDegrees))
+	hour %= steeringClockHours
+	if hour <= 0 {
+		hour += steeringClockHours
+	}
+	return hour
+}
+
+// FormatSteeringInstruction renders the turn an operator must make to bring a
+// target bearing onto their current heading: straight ahead, a graded left or
+// right turn with its clock position, or behind.
+//
+// The clock is a real clock face: twelve straight ahead, three to the right,
+// six directly behind, and nine to the left. That is the only mapping under
+// which the fixed labels "Ahead · 12 o'clock" and "Behind · 6 o'clock" and a
+// graded turn all agree with each other, and it is what makes the instruction
+// readable in the dark without arithmetic.
+func FormatSteeringInstruction(targetBearing, currentHeading float64) string {
+	delta := RelativeBearingOf(targetBearing, currentHeading)
+	magnitude := math.Abs(delta)
+	switch {
+	case magnitude <= steeringAheadDegrees:
+		return "[Ahead · 12 o'clock]"
+	case magnitude > steeringBehindDegrees:
+		return "[Behind · 6 o'clock]"
+	}
+	side := "RIGHT"
+	if delta < 0 {
+		side = "LEFT"
+	}
+	return fmt.Sprintf("[Turn %.0f° %v · %v o'clock]", magnitude, side, ClockPositionOf(delta))
 }
 
 // towerFrequencySegment renders the frequency, the repeater offset, and the
