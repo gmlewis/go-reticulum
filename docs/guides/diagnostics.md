@@ -1,12 +1,12 @@
-# Radio Diagnostics & Fleet Monitoring
+# Radio Diagnostics & Multi-Node Monitoring
 
 Managing LoRa mesh networks requires ongoing radio telemetry and link quality assessment.
 
 ---
 
-## Fleet Diagnostics with `gornode-diagnostics`
+## Multi-Device Diagnostics with `gornode-diagnostics`
 
-`gornode-diagnostics` profiles multiple connected RNodes and serial devices across a fleet, reporting hardware revisions, firmware integrity, and RF performance:
+`gornode-diagnostics` profiles multiple connected RNodes and serial devices, reporting hardware revisions, firmware integrity, and RF performance:
 
 ```bash
 gornode-diagnostics /dev/ttyUSB*

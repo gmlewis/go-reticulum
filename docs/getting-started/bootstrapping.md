@@ -34,7 +34,7 @@ To connect to a remote Reticulum node or hub over the internet:
   target_port = 4242
 ```
 
-Once connected to `go-nomadnet.duckdns.org:4242`, all public services hosted on the hub (`glenn-kamrui`) are immediately reachable over the mesh:
+Once connected to `go-nomadnet.duckdns.org:4242`, all public services hosted on the hub are immediately reachable over the mesh:
 
 | Service Daemon | Destination Hash | Protocol / URL | Description |
 |----------------|------------------|----------------|-------------|
@@ -49,7 +49,7 @@ Popular public bootstrap and testnet nodes include:
 
 | Hub / Location | Target Host | Port | Notes |
 |---|---|---|---|
-| **Go Reticulum Public Hub** | `go-nomadnet.duckdns.org` | `4242` | Official Go Reticulum hub (`glenn-kamrui`) |
+| **Go Reticulum Public Hub** | `go-nomadnet.duckdns.org` | `4242` | Official Go Reticulum public hub |
 | **Between The Borders (US)** | `reticulum.betweentheborders.com` | `4242` | Community testnet node |
 
 ---

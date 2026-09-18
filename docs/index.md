@@ -10,7 +10,7 @@ Welcome to the documentation for **Go Reticulum**, a 100% pure Go rewrite of the
 
 ## 🌐 Live Public Hub & Demo Destinations
 
-A full suite of pure-Go Reticulum daemons runs 24/7 on the public hub (`glenn-kamrui`). Anyone connected to the mesh or peered via TCP can immediately interact with these live services:
+A full suite of pure-Go Reticulum daemons runs 24/7 on the public hub. Anyone connected to the mesh or peered via TCP can immediately interact with these live services:
 
 > [!TIP]
 > ### TCP Bootstrap Interface (`~/.reticulum/config`)

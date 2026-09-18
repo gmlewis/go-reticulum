@@ -268,7 +268,7 @@ Add it to your Reticulum client config (`~/.reticulum/config`):
   target_port = 4242
 ```
 
-**Live Public Demo Destinations (`glenn-kamrui`):**
+**Live Public Demo Destinations:**
 
 ```text
 gonomadnet Public RRC Hub  (gonomadnet node + gornsd + gorngit + gorrcd + golxmd)
