@@ -1,0 +1,16 @@
+{% set repos = config.extra.repositories or [
+  {"name": config.repo_name, "url": config.repo_url}
+] %}
+<div class="md-source-group">
+  {% for repo in repos %}
+  <a href="{{ repo.url }}" title="{{ repo.name }}" class="md-source md-source--custom" data-repo="{{ repo.name }}">
+    <div class="md-source__icon md-icon">
+      {% set icon = config.theme.icon.repo or "fontawesome/brands/git-alt" %}
+      {% include ".icons/" ~ icon ~ ".svg" %}
+    </div>
+    <div class="md-source__repository">
+      <div class="md-source__name">{{ repo.name }}</div>
+    </div>
+  </a>
+  {% endfor %}
+</div>

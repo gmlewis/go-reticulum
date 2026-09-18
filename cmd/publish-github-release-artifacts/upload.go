@@ -98,8 +98,7 @@ func (e *ghFailure) Unwrap() error { return e.err }
 // It deliberately leaves out the command — ghFailure.Error carries that for the
 // one full report a run makes when it gives up.
 func gist(err error) string {
-	var f *ghFailure
-	if errors.As(err, &f) {
+	if f, ok := errors.AsType[*ghFailure](err); ok {
 		if s := strings.TrimSpace(f.stderr); s != "" {
 			return oneLine(errors.New(s))
 		}
@@ -384,9 +383,7 @@ func (u uploader) run(assets []string, st releaseState) error {
 	jobs := make(chan string)
 	var wg sync.WaitGroup
 	for range concurrency {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for path := range jobs {
 				name := filepath.Base(path)
 				err := u.uploadOne(out, path)
@@ -402,7 +399,7 @@ func (u uploader) run(assets []string, st releaseState) error {
 				}
 				mu.Unlock()
 			}
-		}()
+		})
 	}
 	for _, path := range todo {
 		jobs <- path

@@ -4,6 +4,7 @@
 *.log
 *.md
 !docs/**
+!DISCLAIMER.md
 *.result
 *.txt
 .antigravitycli

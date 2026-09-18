@@ -62,6 +62,7 @@ The Go port provides a modern, high-performance, single-binary implementation of
 - [**Getting Started**](getting-started/index.md) — Installation, initial configuration, and joining the mesh.
 - [**Tools & Daemons**](tools/index.md) — Overview of all included executables:
     - [**gorrcbot**](tools/gorrcbot.md) — The autonomous RRC chat bot and off-grid field assistant, with offline station discovery (`search`, `near`, `list`), an offline cell/repeater/cell-tower finder (`tower`, `repeater`, `cell`), and low-bandwidth pagination (`more`, `next`).
+    - [**grl**](tools/grl.md) — The Go Reticulum Lifesaver (GRL) sovereign survival appliance: local stack, sensors, offline field engine, and smartphone captive portal.
     - [**gobot**](tools/gobot.md) — Ask a live RRC bot one question from the shell and print its reply.
     - [**gorrcd**](tools/gorrcd.md) — Standalone high-performance RRC hub daemon.
     - [**golxmd**](tools/golxmd.md) — Standalone LXMF message routing and store-and-forward propagation node.

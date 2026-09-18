@@ -8,6 +8,7 @@ edit_uri: edit/master/docs/
 
 theme:
   name: material
+  custom_dir: docs/overrides
   language: en
   palette:
     - scheme: slate
@@ -32,6 +33,21 @@ theme:
     - content.code.copy
     - content.code.annotate
 
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  - javascripts/extra.js
+
+extra:
+  repositories:
+    - name: gmlewis/go-reticulum
+      url: https://github.com/gmlewis/go-reticulum
+    - name: gmlewis/go-nomadnet
+      url: https://github.com/gmlewis/go-nomadnet
+    - name: gmlewis/asic-reticulum
+      url: https://github.com/gmlewis/asic-reticulum
+
 markdown_extensions:
   - admonition
   - pymdownx.details
@@ -41,7 +57,10 @@ markdown_extensions:
       line_spans: __span
       pygments_lang_class: true
   - pymdownx.inlinehilite
-  - pymdownx.snippets
+  - pymdownx.snippets:
+      base_path:
+        - .
+        - docs
   - pymdownx.tabbed:
       alternate_style: true
   - tables

@@ -1,0 +1,134 @@
+/* Custom styles for stacked repository cards in documentation header */
+
+.md-header__source {
+  max-width: 14rem;
+  width: auto;
+  align-self: center;
+  margin-left: 1rem;
+}
+
+.md-source-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.2rem 0;
+}
+
+.md-source.md-source--custom {
+  display: flex;
+  align-items: center;
+  font-size: 0.6rem;
+  line-height: 1.15;
+  white-space: nowrap;
+  outline-color: var(--md-accent-fg-color);
+  transition: opacity 0.2s, transform 0.15s ease;
+  text-decoration: none;
+  color: inherit;
+  opacity: 0.85;
+  padding: 0.05rem 0.2rem;
+  border-radius: 0.2rem;
+}
+
+.md-source.md-source--custom:hover {
+  opacity: 1;
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.md-source.md-source--custom .md-source__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.3rem;
+  width: 1.3rem;
+  flex-shrink: 0;
+  margin-right: 0.35rem;
+}
+
+.md-source.md-source--custom .md-source__icon svg {
+  height: 1rem;
+  width: 1rem;
+  fill: currentcolor;
+  margin: 0;
+}
+
+.md-source.md-source--custom .md-source__repository {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  max-width: calc(100% - 1.65rem);
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+}
+
+.md-source.md-source--custom .md-source__name {
+  font-weight: 500;
+  font-size: 0.62rem;
+  letter-spacing: 0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.md-source.md-source--custom .md-source__facts {
+  display: flex;
+  font-size: 0.52rem;
+  gap: 0.35rem;
+  list-style-type: none;
+  margin: 0.05rem 0 0;
+  opacity: 0.8;
+  overflow: hidden;
+  padding: 0;
+  width: 100%;
+}
+
+.md-source.md-source--custom .md-source__fact {
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.md-source.md-source--custom .md-source__fact:before {
+  background-color: currentcolor;
+  content: "";
+  display: inline-block;
+  height: 0.55rem;
+  width: 0.55rem;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  vertical-align: middle;
+  margin-right: 0.15rem;
+  flex-shrink: 0;
+}
+
+.md-source.md-source--custom .md-source__fact:nth-child(1n+2) {
+  flex-shrink: 0;
+}
+
+.md-source.md-source--custom .md-source__fact--version:before {
+  -webkit-mask-image: var(--md-source-version-icon);
+  mask-image: var(--md-source-version-icon);
+}
+
+.md-source.md-source--custom .md-source__fact--stars:before {
+  -webkit-mask-image: var(--md-source-stars-icon);
+  mask-image: var(--md-source-stars-icon);
+}
+
+.md-source.md-source--custom .md-source__fact--forks:before {
+  -webkit-mask-image: var(--md-source-forks-icon);
+  mask-image: var(--md-source-forks-icon);
+}
+
+.md-source.md-source--custom .md-source__repository--active .md-source__facts {
+  animation: facts 0.25s ease-in;
+}
+
+.md-source.md-source--custom .md-source__fact {
+  animation: fact 0.4s ease-out;
+}

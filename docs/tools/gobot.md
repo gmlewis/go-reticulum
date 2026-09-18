@@ -87,7 +87,7 @@ already in `PATH`.
 
 3. **A hub that advertises the private-command capability.** `gorrcd` does by
    default (`enable_private_commands = true`). See
-   [Private messages between RRC users](https://github.com/gmlewis/go-reticulum#private-messages-between-rrc-users)
+   [Private messages between RRC users](../reference/protocol-extensions.md#1-rrc-capability-cap_private_command-3)
    for the protocol. On a hub without it, `gobot` falls back to addressing the
    bot's identity hash directly when it can resolve it.
 

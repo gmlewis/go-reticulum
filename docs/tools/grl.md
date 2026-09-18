@@ -20,6 +20,9 @@ and the RRC chat bot run.
     distress beacons, coordinating with rescue teams, peer messaging, and syncing
     with a hub **only when a gateway happens to be reachable**.
 
+!!! danger "Important Safety, Emergency & Medical Notice"
+    **GRL is NOT a certified life-safety device, distress beacon, or medical device.** Transmissions occur over best-effort unlicensed radio frequencies with **NO guarantee of packet delivery, acknowledgement, or rescue**. This system is **NOT** connected to official 911/112 dispatch, civil defense agencies, or search-and-rescue satellites. Under no circumstances should this system be used as a primary or sole means of summoning emergency rescue or medical assistance. Always carry certified primary safety equipment (EPIRB/PLB, paper maps, magnetic compass). Read the full [Legal, Safety, Emergency, and Medical Disclaimer](#legal-safety-emergency-and-medical-disclaimer) below before building or operating this device.
+
 ---
 
 ## What it runs
@@ -378,10 +381,19 @@ rather than silently downgraded.
 - The appliance holds its own cryptographic identity via Reticulum; there is no
   account, no telemetry, and no vendor service in the path.
 
+---
+
+## Legal, Safety, Emergency, and Medical Disclaimer
+
+--8<-- "DISCLAIMER.md:3"
+
+---
+
 ## See also
 
 - [gorrcbot](gorrcbot.md) — the same engine as an always-on RRC chat bot
 - [gobot](gobot.md) — one-shot CLI for asking a live bot a single question
-- [Hardware guides](../guides/hardware.md) — LoRa RNodes and serial adapters
+- [GRL Hardware Project Plans](../guides/hardware.md#project-4-the-go-reticulum-lifesaver-grl) — full GRL puck architecture, BOM table, and ESP32-C5 pinout
+- [Hardware guides](../guides/hardware.md) — LoRa RNodes, carrier boards, and serial adapters
 - [ASIC Plans §6.9–§6.12](https://github.com/gmlewis/go-reticulum/blob/master/ASIC-Plans.md)
   — the full GRL design, BOM, and pinout

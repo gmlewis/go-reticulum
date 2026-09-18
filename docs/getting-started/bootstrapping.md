@@ -45,13 +45,12 @@ Once connected to `go-nomadnet.duckdns.org:4242`, all public services hosted on 
 | [**golxmd Propagation**](../tools/golxmd.md) | `<7acc095f0e83182feb58c888d090a3cc>` | `lxmf.propagation` | Store-and-forward LXMF message propagation node. |
 
 
-Popular public testnet bootstrap nodes include:
+Popular public bootstrap and testnet nodes include:
 
-| Location | Target Host | Port |
-|----------|-------------|------|
-| **Dublin, Ireland** | `dublin.connect.reticulum.network` | `4965` |
-| **Frankfurt, Germany** | `frankfurt.connect.reticulum.network` | `4965` |
-| **Washington DC, USA** | `between加.connect.reticulum.network` | `4965` |
+| Hub / Location | Target Host | Port | Notes |
+|---|---|---|---|
+| **Go Reticulum Public Hub** | `go-nomadnet.duckdns.org` | `4242` | Official Go Reticulum hub (`glenn-kamrui`) |
+| **Between The Borders (US)** | `reticulum.betweentheborders.com` | `4242` | Community testnet node |
 
 ---
 
