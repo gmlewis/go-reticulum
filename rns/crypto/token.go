@@ -7,7 +7,6 @@ package crypto
 
 import (
 	"crypto/hmac"
-	"crypto/rand"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -45,7 +44,7 @@ func GenerateTokenKey(aes256 bool) ([]byte, error) {
 		size = 64
 	}
 	key := make([]byte, size)
-	if _, err := rand.Read(key); err != nil {
+	if _, err := RandomBytes(key); err != nil {
 		return nil, err
 	}
 	return key, nil
@@ -92,7 +91,7 @@ func (t *Token) VerifyHMAC(token []byte) bool {
 // AES-CBC, and appends an HMAC signature.
 func (t *Token) Encrypt(data []byte) ([]byte, error) {
 	iv := make([]byte, 16)
-	if _, err := rand.Read(iv); err != nil {
+	if _, err := RandomBytes(iv); err != nil {
 		return nil, err
 	}
 

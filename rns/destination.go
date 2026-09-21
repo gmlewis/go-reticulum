@@ -6,7 +6,6 @@
 package rns
 
 import (
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
@@ -244,7 +243,7 @@ func (d *Destination) buildAnnouncePacket(appData []byte, pathResponse bool) (*P
 	// path_timebase) fails ~50% of the time, causing transport nodes to
 	// silently drop subsequent announces instead of rebroadcasting them.
 	randPart := make([]byte, TruncatedHashLength/8)
-	if _, err := rand.Read(randPart); err != nil {
+	if _, err := crypto.RandomBytes(randPart); err != nil {
 		return nil, err
 	}
 	nowUnix := time.Now().Unix()

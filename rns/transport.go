@@ -7,7 +7,6 @@ package rns
 
 import (
 	"bytes"
-	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -22,6 +21,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/gmlewis/go-reticulum/rns/crypto"
 	"github.com/gmlewis/go-reticulum/rns/interfaces"
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
@@ -2360,7 +2360,7 @@ func (ts *TransportSystem) randomDuration(max time.Duration) time.Duration {
 		return 0
 	}
 	var b [1]byte
-	if _, err := rand.Read(b[:]); err != nil {
+	if _, err := crypto.RandomBytes(b[:]); err != nil {
 		return 0
 	}
 	return time.Duration(int64(b[0]) * int64(max) / 255)

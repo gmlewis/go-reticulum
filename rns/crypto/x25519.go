@@ -7,7 +7,6 @@ package crypto
 
 import (
 	"crypto/ecdh"
-	"crypto/rand"
 	"errors"
 )
 
@@ -26,14 +25,15 @@ type X25519PrivateKey struct {
 	priv *ecdh.PrivateKey
 }
 
-// GenerateX25519PrivateKey securely provisions a new Curve25519 private key leveraging the system's cryptographically secure random number generator.
+// GenerateX25519PrivateKey securely provisions a new Curve25519 private key from
+// the process-wide randomness source (see SetEntropySource).
 // It returns a robustly initialized X25519PrivateKey or an error if entropy cannot be safely gathered.
 func GenerateX25519PrivateKey() (*X25519PrivateKey, error) {
-	priv, err := ecdh.X25519().GenerateKey(rand.Reader)
-	if err != nil {
+	seed := make([]byte, 32)
+	if _, err := RandomBytes(seed); err != nil {
 		return nil, err
 	}
-	return &X25519PrivateKey{priv: priv}, nil
+	return NewX25519PrivateKeyFromBytes(seed)
 }
 
 // NewX25519PrivateKeyFromBytes deterministically reconstitutes an X25519PrivateKey from a raw 32-byte scalar seed.

@@ -7,7 +7,6 @@ package lxmf
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
 	"math/bits"
@@ -137,7 +136,7 @@ func GenerateStampWithContext(ctx context.Context, material []byte, targetCost i
 
 	if wbState != nil {
 		candidate := make([]byte, StampSize)
-		if _, err := rand.Read(candidate); err != nil {
+		if _, err := crypto.RandomBytes(candidate); err != nil {
 			return nil, 0, rounds, fmt.Errorf("generate random stamp candidate: %w", err)
 		}
 		for {
@@ -163,7 +162,7 @@ func GenerateStampWithContext(ctx context.Context, material []byte, targetCost i
 	buf := make([]byte, len(workblock)+StampSize)
 	copy(buf, workblock)
 	candidate := buf[len(workblock):]
-	if _, err := rand.Read(candidate); err != nil {
+	if _, err := crypto.RandomBytes(candidate); err != nil {
 		return nil, 0, rounds, fmt.Errorf("generate random stamp candidate: %w", err)
 	}
 	for {
@@ -229,7 +228,7 @@ func GenerateStampParallel(material []byte, targetCost int, expandRounds int, wo
 
 			if wbState != nil {
 				candidate := make([]byte, StampSize)
-				if _, err := rand.Read(candidate); err != nil {
+				if _, err := crypto.RandomBytes(candidate); err != nil {
 					results <- result{nil, localRounds}
 					return
 				}
@@ -260,7 +259,7 @@ func GenerateStampParallel(material []byte, targetCost int, expandRounds int, wo
 			buf := make([]byte, len(workblock)+StampSize)
 			copy(buf, workblock)
 			candidate := buf[len(workblock):]
-			if _, err := rand.Read(candidate); err != nil {
+			if _, err := crypto.RandomBytes(candidate); err != nil {
 				results <- result{nil, localRounds}
 				return
 			}

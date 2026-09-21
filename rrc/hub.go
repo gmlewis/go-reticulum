@@ -7,7 +7,6 @@ package rrc
 
 import (
 	"bytes"
-	"crypto/rand"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -23,6 +22,7 @@ import (
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/rns/crypto"
 	"github.com/gmlewis/go-reticulum/rrc/cbor"
 )
 
@@ -2069,7 +2069,7 @@ func (h *RRCHub) SendPing(room string) {
 	ts := NowMs()
 
 	body := make([]byte, 8)
-	_, err := rand.Read(body)
+	_, err := crypto.RandomBytes(body)
 	if err != nil {
 		log.Printf("[RRC %v] ping body: %v", h.Name, err)
 	}

@@ -8,7 +8,6 @@ package lxmf
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -25,6 +24,7 @@ import (
 
 	"github.com/gmlewis/go-reticulum/qr"
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/rns/crypto"
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
 
@@ -1115,7 +1115,7 @@ func (m *Message) WriteToDirectory(dirPath string) (string, error) {
 	// Unique tmp path matching Python's
 	// file_path+".tmp."+pid+"."+hex(urandom(8)) (LXMessage.py:677).
 	var randBuf [8]byte
-	if _, rerr := rand.Read(randBuf[:]); rerr != nil {
+	if _, rerr := crypto.RandomBytes(randBuf[:]); rerr != nil {
 		return "", fmt.Errorf("generate tmp suffix: %w", rerr)
 	}
 	tmpPath := filePath + ".tmp." + strconv.Itoa(os.Getpid()) + "." + hex.EncodeToString(randBuf[:])
@@ -1163,7 +1163,7 @@ func removeTmpFile(tmpPath string) {
 // file mode to create the temporary file with.
 func atomicWriteFile(path string, data []byte, mode os.FileMode) error {
 	var randBuf [8]byte
-	if _, rerr := rand.Read(randBuf[:]); rerr != nil {
+	if _, rerr := crypto.RandomBytes(randBuf[:]); rerr != nil {
 		return fmt.Errorf("generate tmp suffix: %w", rerr)
 	}
 	tmpPath := path + ".tmp." + strconv.Itoa(os.Getpid()) + "." + hex.EncodeToString(randBuf[:])

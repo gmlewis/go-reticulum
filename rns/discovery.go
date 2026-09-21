@@ -1320,7 +1320,7 @@ func pythonDiscoveryHopIsSingular(v any) bool {
 
 func shuffleDiscoveredInterfaces(candidates []DiscoveredInterface) {
 	for i := len(candidates) - 1; i > 0; i-- {
-		n, err := rand.Int(rand.Reader, big.NewInt(int64(i+1)))
+		n, err := rand.Int(rcrypto.RandomReader(), big.NewInt(int64(i+1)))
 		if err != nil {
 			return
 		}
@@ -3598,7 +3598,7 @@ func generateDiscoveryStamp(material []byte, targetCost int) ([]byte, int, error
 	}
 	for {
 		candidate := make([]byte, discoveryStampSize)
-		if _, err := rand.Read(candidate); err != nil {
+		if _, err := rcrypto.RandomBytes(candidate); err != nil {
 			return nil, 0, err
 		}
 		if discoveryStampValid(candidate, targetCost, workblock) {

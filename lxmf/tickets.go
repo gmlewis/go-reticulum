@@ -6,9 +6,10 @@
 package lxmf
 
 import (
-	"crypto/rand"
 	"sync"
 	"time"
+
+	"github.com/gmlewis/go-reticulum/rns/crypto"
 )
 
 // TicketEntry structures the metadata for an authorized delivery ticket, pairing the raw cryptographic material with its absolute expiration timestamp.
@@ -74,7 +75,7 @@ func (s *TicketStore) GenerateInboundTicket(destinationHash []byte, now time.Tim
 	}
 
 	ticket := make([]byte, TicketLength)
-	if _, err := rand.Read(ticket); err != nil {
+	if _, err := crypto.RandomBytes(ticket); err != nil {
 		return nil
 	}
 

@@ -7,7 +7,6 @@ package main
 
 import (
 	"crypto"
-	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
@@ -19,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	rcrypto "github.com/gmlewis/go-reticulum/rns/crypto"
 )
 
 type bootstrapChecksumSigner interface {
@@ -31,7 +31,7 @@ type rsaBootstrapSigner struct {
 
 func (s rsaBootstrapSigner) Sign(message []byte) ([]byte, error) {
 	checksum := sha256.Sum256(message)
-	return rsa.SignPSS(rand.Reader, s.privateKey, crypto.SHA256, checksum[:], &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash, Hash: crypto.SHA256})
+	return rsa.SignPSS(rcrypto.RandomReader(), s.privateKey, crypto.SHA256, checksum[:], &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash, Hash: crypto.SHA256})
 }
 
 func loadBootstrapSigner(configDir string) (bootstrapChecksumSigner, error) {
@@ -153,7 +153,7 @@ func (rt cliRuntime) handleGenerateKeys(autoinstall bool) error {
 		return err
 	}
 
-	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	privateKey, err := rsa.GenerateKey(rcrypto.RandomReader(), 1024)
 	if err != nil {
 		return err
 	}

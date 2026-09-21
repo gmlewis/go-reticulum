@@ -12,13 +12,13 @@
 package main
 
 import (
-	"crypto/rand"
 	"fmt"
 	"log"
 	"os"
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	rcrypto "github.com/gmlewis/go-reticulum/rns/crypto"
 )
 
 const (
@@ -149,7 +149,9 @@ func (rt *runtimeT) run() int {
 		sleepBetweenProbes(sent, app.wait, time.Sleep)
 
 		payload := make([]byte, app.size)
-		rand.Read(payload)
+		if _, err := rcrypto.RandomBytes(payload); err != nil {
+			fatalf(logger, "Could not generate probe payload: %v", err)
+		}
 
 		p := rns.NewPacket(remoteDest, payload)
 		if err := p.Pack(); err != nil {

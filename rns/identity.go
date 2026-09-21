@@ -6,7 +6,6 @@
 package rns
 
 import (
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
@@ -164,7 +163,7 @@ func TruncatedHash(data []byte) []byte {
 // RandomHash returns a random truncated hash.
 func RandomHash() ([]byte, error) {
 	randBytes := make([]byte, TruncatedHashLength/8)
-	if _, err := rand.Read(randBytes); err != nil {
+	if _, err := crypto.RandomBytes(randBytes); err != nil {
 		return nil, err
 	}
 	return TruncatedHash(randBytes), nil

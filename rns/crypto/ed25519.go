@@ -28,13 +28,15 @@ type Ed25519PrivateKey struct {
 }
 
 // GenerateEd25519PrivateKey securely provisions a fresh, cryptographically strong Ed25519 private key.
-// It delegates to the system's underlying secure random number generator to ensure high entropy and collision resistance.
+// It draws its seed from the process-wide randomness source (see
+// SetEntropySource), and returns an error rather than a weak key when that
+// source cannot supply entropy.
 func GenerateEd25519PrivateKey() (*Ed25519PrivateKey, error) {
-	_, priv, err := ed25519.GenerateKey(nil)
-	if err != nil {
+	seed := make([]byte, ed25519.SeedSize)
+	if _, err := RandomBytes(seed); err != nil {
 		return nil, err
 	}
-	return &Ed25519PrivateKey{priv: priv}, nil
+	return NewEd25519PrivateKeyFromBytes(seed)
 }
 
 // NewEd25519PrivateKeyFromBytes reconstructs a valid Ed25519PrivateKey specifically from its raw 32-byte seed.

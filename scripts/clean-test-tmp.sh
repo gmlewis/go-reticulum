@@ -88,6 +88,7 @@ prefixes=(
   rns-udp-parity- rns-serial-parity- rns-hashlist- rns-cache-clean-
   rns-clean-ratchet- rns-retain-clean- rns-void-queues- rns-persist-reentrant-
   rns-pathtable-midpersist- rns-preset-log- rns-pubtofile- rns-location-cmd-
+  rns-entropy-test-
   lxmf-int- lxmf-peer- lxmf-tcp- py-interop-
   nomadnet-rrc- gonet- gonomadnet-
   nomadnet-app-test nomadnet-config-test nomadnet-node-

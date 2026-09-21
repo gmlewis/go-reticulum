@@ -119,6 +119,88 @@ For complete software and configuration details, see the [`grl` tool documentati
 
 ---
 
+## First-Boot Identity Entropy (read before flashing)
+
+A Reticulum identity is permanent: it is `transport_identity` in the storage
+directory, and every announce, link, and LXMF address a device will ever have is
+derived from it. On a hosted build that identity comes from `crypto/rand`, which
+the operating system seeds from its own entropy pool. A bare-metal ESP32-C5 has
+no such pool. On the first boot, the identity is derived from whatever the SoC
+generator produces at that moment — and on several SoC families that generator
+returns bytes that are only guaranteed unpredictable while a particular entropy
+source is enabled.
+
+The failure to avoid is not a crash. It is a fleet of units — or one unit and an
+attacker — sharing a single identity derived from entropy the silicon never
+provided. Everything looks healthy: announces verify, links establish, and the
+problem only shows when two nodes answer each other's traffic.
+
+### The ESP32-C5 generator
+
+Espressif documents the ESP32 RNG as sampling thermal noise from the SAR ADC and
+metastability in the RC_FAST clock. Those are only live when the SAR ADC and
+RC_FAST are enabled, which is why Espressif provides `bootloader_random_enable()`
+and why the RF subsystem must be up. Outside those windows, the register still
+answers — the bytes are just not guaranteed unpredictable. Espressif's own
+recommendation is `esp_random()` seeded into a DRBG, not the raw register.
+
+TinyGo's `crypto/rand` for ESP32 chips falls back to a static sequence when no
+hardware RNG is wired up, so it compiles and runs without complaint. That is
+exactly the outcome to prevent.
+
+### What the code does
+
+The `entropy` package is the seam, and `crypto.SetEntropySource` installs it.
+Call it once at start-up, before anything creates an identity:
+
+```go
+// soc.RNGSource() reads the on-chip generator with its entropy source
+// demonstrably enabled; deviceID is the eFuse identifier read at boot.
+if err := crypto.SetEntropySource(soc.RNGSource(), entropy.Options{
+    Salt: deviceID,
+}); err != nil {
+    // No identity can be created. Show it and retry. There is no fallback.
+}
+```
+
+The gate it installs runs the NIST SP 800-90B on-line health tests (repetition
+count and adaptive proportion) over the raw samples, folds them into an entropy
+pool, conditions them through HKDF-SHA256 into a DRBG, and refuses to emit a
+byte until enough min-entropy has been credited. It **fails closed**: a stuck,
+absent, or grossly biased generator makes identity creation return an error
+rather than produce a predictable identity.
+
+Health tests catch broken silicon — a register stuck at one value, a peripheral
+whose clock is gated, a source gone grossly biased. They cannot catch a source
+that is well distributed but not secret, because unpredictability is not a
+property statistics can observe. That part has to come from the hardware.
+
+### Two rules
+
+**Never substitute a fallback for a failed source.** A constant, a build
+timestamp, a chip ID mixed into a hash — each of them produces an identity that
+another unit, or an attacker, can reproduce. A device that cannot get entropy
+must not have an identity. The regression test that preserves this guarantee is
+in `rns/entropy_test.go`: with a stuck generator installed, `NewIdentity` and
+`TransportSystem.Start` both return `entropy.ErrHealthTestFailed` and no
+`transport_identity` is written to storage.
+
+**Pass the device's unique identifier as `Options.Salt`, never as the secret.**
+The salt makes two units collide only if they collide in hardware. It buys
+uniqueness, not secrecy — identifiers are public, so the salt must stay a salt.
+If a fleet uses the eFuse MAC without a gate, every unit's identity is
+reproducible by anyone who knows the MAC.
+
+### Checking a first boot
+
+`entropy.Reader.Stats()` reports the source name, credited bits, collection
+rounds, and health, so a device with a display can say it is still gathering
+entropy instead of appearing to hang. A unit whose first boot reports
+`ErrInsufficientEntropy` should be retried after the RF subsystem is up, not
+forced through.
+
+---
+
 ## Recommended Off-The-Shelf RNode Hardware
 
 If purchasing ready-to-use hardware:

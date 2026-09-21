@@ -6,10 +6,10 @@
 package rrc
 
 import (
-	"crypto/rand"
 	"fmt"
 	"time"
 
+	"github.com/gmlewis/go-reticulum/rns/crypto"
 	"github.com/gmlewis/go-reticulum/rrc/cbor"
 )
 
@@ -79,9 +79,10 @@ func NowMS() int64 { return time.Now().UnixMilli() }
 // NewMsgID returns a fresh 8-byte random message id.
 func NewMsgID() []byte {
 	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
-		// crypto/rand failure is effectively unreachable; an all-zero id
-		// is still a valid CBOR byte string.
+	if _, err := crypto.RandomBytes(b); err != nil {
+		// The default source does not fail here. A device with a gated
+		// hardware generator can, and an all-zero id is still a valid CBOR
+		// byte string, so the call is reported and the id returned as-is.
 		return b
 	}
 	return b

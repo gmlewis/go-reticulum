@@ -7,7 +7,6 @@ package rns
 
 import (
 	"bytes"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"math"
@@ -16,6 +15,7 @@ import (
 	"time"
 
 	vendoredbzip2 "github.com/gmlewis/go-reticulum/compress/bzip2"
+	"github.com/gmlewis/go-reticulum/rns/crypto"
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
 
@@ -533,7 +533,7 @@ func NewResource(data []byte, link *Link) (*Resource, error) {
 
 // NewResourceWithOptions initializes a new resource transfer, allowing explicit configuration of parameters like compression policy.
 func NewResourceWithOptions(data []byte, link *Link, opts ResourceOptions) (*Resource, error) {
-	return newResourceWithOptions(data, link, opts, rand.Read)
+	return newResourceWithOptions(data, link, opts, crypto.RandomBytes)
 }
 
 func newResourceWithOptions(data []byte, link *Link, opts ResourceOptions, randRead func([]byte) (int, error)) (*Resource, error) {
@@ -541,7 +541,7 @@ func newResourceWithOptions(data []byte, link *Link, opts ResourceOptions, randR
 		return nil, fmt.Errorf("link is not active")
 	}
 	if randRead == nil {
-		randRead = rand.Read
+		randRead = crypto.RandomBytes
 	}
 
 	r := &Resource{
