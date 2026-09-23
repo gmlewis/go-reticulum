@@ -16,6 +16,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gmlewis/go-reticulum/bot"
+	"github.com/gmlewis/go-reticulum/entropy"
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
@@ -434,5 +436,55 @@ func TestAppRefusesAnUnusablePortalAddress(t *testing.T) {
 	// A failed start must not leave the Reticulum stack running behind it.
 	if err := app.Close(); err != nil {
 		t.Errorf("Close after a failed Start: %v", err)
+	}
+}
+
+// TestAppHardwareInjection asserts that hardware entropy, GPS, and compass
+// instances can be injected into the appliance before Start, as required by
+// bare-metal embedded builds.
+func TestAppHardwareInjection(t *testing.T) {
+	cfg := applianceConfig(t)
+	cfg.GNSS.StaticFix = ""
+	cfg.Compass.StaticHeading = ""
+
+	app, err := NewApp(cfg)
+	if err != nil {
+		t.Fatalf("NewApp: %v", err)
+	}
+
+	var state uint32 = 0xabcdef01
+	lcg := func() (uint32, error) {
+		state = state*1664525 + 1013904223
+		return state, nil
+	}
+	hwEntropy := entropy.NewESP32C5Source(lcg)
+	app.SetEntropySource(hwEntropy, entropy.Options{Salt: []byte("hw-test-01")})
+
+	gps := bot.NewGPSReader(nil)
+	gps.SetFix(bot.GPSFix{Valid: true, Lat: 37.7553, Lng: -122.4527, FixQuality: 1})
+	app.SetGPS(gps)
+
+	compass := bot.NewCompassReader(nil)
+	compass.SetHeading(bot.CompassHeading{Valid: true, HasMagnetic: true, MagneticDeg: 90.0, HasTrue: true, TrueDeg: 105.0})
+	app.SetCompass(compass)
+
+	if err := app.Start(context.Background()); err != nil {
+		t.Fatalf("Start() with hardware injection error = %v", err)
+	}
+	defer func() {
+		_ = app.Close()
+	}()
+
+	if app.GPS() != gps {
+		t.Errorf("app.GPS() did not retain injected GPSReader")
+	}
+	if app.Compass() != compass {
+		t.Errorf("app.Compass() did not retain injected CompassReader")
+	}
+	if fix := app.GPS().LastFix(); !fix.Valid || fix.Lat != 37.7553 {
+		t.Errorf("app.GPS().LastFix() = %v, want valid 37.7553", fix)
+	}
+	if h := app.Compass().LastHeading(); !h.Valid || h.MagneticDeg != 90.0 {
+		t.Errorf("app.Compass().LastHeading() = %v, want 90.0", h)
 	}
 }

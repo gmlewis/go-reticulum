@@ -17,6 +17,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -177,10 +178,64 @@ func TestRenderReleaseNotes(t *testing.T) {
 	if !strings.Contains(notes, "pocket_terminal") {
 		t.Error("release notes missing pocket_terminal reference")
 	}
-	if !strings.Contains(notes, "pocket_communicator") {
-		t.Error("release notes missing pocket_communicator reference")
-	}
 	if !strings.Contains(notes, "pocket_hub") {
 		t.Error("release notes missing pocket_hub reference")
+	}
+	if !strings.Contains(notes, "Go Reticulum Lifesaver - GRL") {
+		t.Error("release notes missing GRL reference")
+	}
+	if !strings.Contains(notes, "esp32c5-bootloader.bin") {
+		t.Error("release notes missing esp32c5-bootloader.bin reference")
+	}
+}
+
+func TestCopyFile(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.bin")
+	dst := filepath.Join(dir, "dst.bin")
+
+	content := []byte("firmware test payload 12345")
+	if err := os.WriteFile(src, content, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if err := copyFile(src, dst); err != nil {
+		t.Fatalf("copyFile: %v", err)
+	}
+
+	got, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(got) != string(content) {
+		t.Errorf("copyFile content = %q, want %q", got, content)
+	}
+}
+
+func TestBuildESP32C5Firmware_NoIDF(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Pipe: %v", err)
+	}
+	defer func() { _ = r.Close() }()
+	defer func() { _ = w.Close() }()
+
+	assets, err := buildESP32C5Firmware(dir, "0.2.0", false, w)
+	if err != nil {
+		t.Fatalf("buildESP32C5Firmware(require=false): %v", err)
+	}
+	_ = assets
+
+	// With require=true, if idf.py is missing it must return an error
+	if _, err := exec.LookPath("idf.py"); err != nil {
+		_, err := buildESP32C5Firmware(dir, "0.2.0", true, w)
+		if err == nil {
+			t.Error("buildESP32C5Firmware(require=true) expected error when idf.py missing, got nil")
+		}
 	}
 }

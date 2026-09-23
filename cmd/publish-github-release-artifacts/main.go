@@ -279,10 +279,11 @@ func dirIsMainPackage(dir string) (bool, error) {
 
 // options gathers the command's knobs so run's signature stays readable.
 type options struct {
-	force        bool // replace an existing release for this version
-	dryRun       bool // make no remote changes: no tag, no publish, no deletes
-	pruneOnly    bool // prune old release assets and do nothing else
-	keepReleases int  // release-asset retention window (see prune.go)
+	force           bool // replace an existing release for this version
+	dryRun          bool // make no remote changes: no tag, no publish, no deletes
+	pruneOnly       bool // prune old release assets and do nothing else
+	keepReleases    int  // release-asset retention window (see prune.go)
+	requireFirmware bool // require idf.py to build firmware; fail if missing
 }
 
 func main() {
@@ -298,17 +299,20 @@ func main() {
 	keepReleases := flag.Int("keep-releases", defaultKeepReleases,
 		"keep the assets of this many of the newest releases; every older release's "+
 			"assets are pruned (releases and tags are never deleted)")
+	requireFirmware := flag.Bool("require-firmware", false,
+		"require idf.py and ESP-IDF tools to build ESP32-C5 firmware binaries; fail if not installed")
 	flag.Usage = func() {
-		log.Printf("Usage: %v [--force] [-n|--dry-run] [--prune-only] [--keep-releases N]\n", os.Args[0])
+		log.Printf("Usage: %v [--force] [-n|--dry-run] [--prune-only] [--keep-releases N] [--require-firmware]\n", os.Args[0])
 		flag.PrintDefaults()
 	}
 	flag.Parse()
 
 	opts := options{
-		force:        *force,
-		dryRun:       *dryRun,
-		pruneOnly:    *pruneOnly,
-		keepReleases: *keepReleases,
+		force:           *force,
+		dryRun:          *dryRun,
+		pruneOnly:       *pruneOnly,
+		keepReleases:    *keepReleases,
+		requireFirmware: *requireFirmware,
 	}
 	if err := run(opts); err != nil {
 		log.Printf("publish-github-release-artifacts: %v\n", err)
@@ -431,6 +435,12 @@ func run(opts options) error {
 	if err != nil {
 		return err
 	}
+
+	fwAssets, err := buildESP32C5Firmware(outDir, version, opts.requireFirmware, progress)
+	if err != nil {
+		return err
+	}
+	assets = append(assets, fwAssets...)
 
 	notes := buildReleaseNotes(version, repo, assets)
 
@@ -792,6 +802,14 @@ func buildReleaseNotes(version, repo string, assets []string) string {
 	mustFprintf(&b, "- **Form Factor C (Pocket Hub)**: Standalone `gorrcd` mesh relay daemon (no display, no keyboard).\n")
 	mustFprintf(&b, "  - `gorrcd-%v-pocket_hub-linux-arm64`, `gorrcd-...-arm`, `gorrcd-...-riscv64`, `gorrcd-...-amd64`\n", version)
 	mustFprintf(&b, "  - Accelerator variants: `gorrcd-...-pocket_hub-asic-...` and `gorrcd-...-pocket_hub-fpga-...`.\n")
+	mustFprintf(&b, "- **Form Factor D (Go Reticulum Lifesaver - GRL)**: Standalone emergency mesh appliance on Espressif ESP32-C5 with GNSS, digital compass, Wi-Fi 6 captive portal, and TRNG entropy.\n")
+	mustFprintf(&b, "  - Bootloader (0x2000): `grl-%v-esp32c5-bootloader.bin`\n", version)
+	mustFprintf(&b, "  - Partition Table (0x8000): `grl-%v-esp32c5-partitions.bin`\n", version)
+	mustFprintf(&b, "  - Application (0x10000): `grl-%v-esp32c5-app.bin`\n", version)
+	mustFprintf(&b, "  - Flash with `esptool.py` or Web Flasher:\n")
+	mustFprintf(&b, "    ```bash\n")
+	mustFprintf(&b, "    esptool.py --chip esp32c5 write_flash 0x2000 grl-%v-esp32c5-bootloader.bin 0x8000 grl-%v-esp32c5-partitions.bin 0x10000 grl-%v-esp32c5-app.bin\n", version, version, version)
+	mustFprintf(&b, "    ```\n")
 	mustFprintf(&b, "\nSee [`Hardware-Projects-Guide.md`](https://github.com/gmlewis/asic-reticulum/blob/master/Hardware-Projects-Guide.md) for the complete bill of materials, assembly, and flashing instructions (including zero-install web flashing via [ESPConnect](https://thelastoutpostworkshop.github.io/ESPConnect/) and [Espressif Web Flasher](https://espressif.github.io/esptool-js/)).\n")
 
 	mustFprintf(&b, "\n## Post-download setup\n\n")
@@ -802,6 +820,79 @@ func buildReleaseNotes(version, repo string, assets []string) string {
 	mustFprintf(&b, "them. Clear it with:\n\n")
 	mustFprintf(&b, "```\nxattr -d com.apple.quarantine <binaryname>-<version>-<os>-<arch>\n```\n")
 	return b.String()
+}
+
+// copyFile copies a file from src to dst.
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = in.Close() }()
+
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = out.Close() }()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	return out.Close()
+}
+
+// buildESP32C5Firmware builds the 3 ESP32-C5 firmware binary files using ESP-IDF
+// (idf.py) if idf.py is present in PATH. If idf.py is not present, it logs a
+// notice and returns nil unless requireFirmware is true, in which case it returns an error.
+// The built binaries are copied to outDir with release asset names:
+//   - grl-<version>-esp32c5-bootloader.bin
+//   - grl-<version>-esp32c5-partitions.bin
+//   - grl-<version>-esp32c5-app.bin
+func buildESP32C5Firmware(outDir, version string, requireFirmware bool, progress io.Writer) ([]string, error) {
+	if _, err := exec.LookPath("idf.py"); err != nil {
+		if requireFirmware {
+			return nil, fmt.Errorf("idf.py not found in PATH (required for ESP32-C5 firmware build): %w", err)
+		}
+		mustFprintf(progress, "Notice: idf.py not found in PATH; skipping ESP32-C5 firmware build (use --require-firmware to enforce)\n")
+		return nil, nil
+	}
+
+	mustFprintf(progress, "Building ESP32-C5 GRL firmware via idf.py...\n")
+	cmd := exec.Command("idf.py", "-C", filepath.Join("firmware", "esp32c5-grl"), "build")
+	cmd.Stdout = progress
+	cmd.Stderr = progress
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("idf.py build failed: %w", err)
+	}
+
+	srcBoot := filepath.Join("firmware", "esp32c5-grl", "build", "bootloader", "bootloader.bin")
+	srcPart := filepath.Join("firmware", "esp32c5-grl", "build", "partition_table", "partition-table.bin")
+	srcApp := filepath.Join("firmware", "esp32c5-grl", "build", "esp32c5-grl.bin")
+
+	dstBoot := filepath.Join(outDir, fmt.Sprintf("grl-%v-esp32c5-bootloader.bin", version))
+	dstPart := filepath.Join(outDir, fmt.Sprintf("grl-%v-esp32c5-partitions.bin", version))
+	dstApp := filepath.Join(outDir, fmt.Sprintf("grl-%v-esp32c5-app.bin", version))
+
+	type filePair struct {
+		src, dst string
+	}
+	pairs := []filePair{
+		{srcBoot, dstBoot},
+		{srcPart, dstPart},
+		{srcApp, dstApp},
+	}
+
+	var assets []string
+	for _, p := range pairs {
+		if err := copyFile(p.src, p.dst); err != nil {
+			return nil, fmt.Errorf("copy firmware artifact %v -> %v: %w", p.src, p.dst, err)
+		}
+		assets = append(assets, p.dst)
+	}
+
+	mustFprintf(progress, "ESP32-C5 GRL firmware built successfully (3 binaries).\n")
+	return assets, nil
 }
 
 // sha256sum returns the SHA-256 hex digest of the file at path.

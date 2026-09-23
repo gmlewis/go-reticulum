@@ -58,6 +58,24 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${SCRIPT_DIR}/.."
 cd "${REPO_ROOT}"
 
+if [[ -d "/opt/homebrew/bin" && ":$PATH:" != *":/opt/homebrew/bin:"* ]]; then
+	export PATH="${PATH}:/opt/homebrew/bin"
+fi
+
+# If idf.py is not in PATH, try sourcing ESP-IDF export.sh if IDF_PATH is set or in standard location:
+if ! command -v idf.py >/dev/null 2>&1; then
+	if [[ -n "${IDF_PATH:-}" && -f "${IDF_PATH}/export.sh" ]]; then
+		# shellcheck disable=SC1091
+		. "${IDF_PATH}/export.sh" >/dev/null 2>&1 || true
+	elif [[ -f "${HOME}/tools/esp/esp-idf/export.sh" ]]; then
+		# shellcheck disable=SC1091
+		. "${HOME}/tools/esp/esp-idf/export.sh" >/dev/null 2>&1 || true
+	elif [[ -f "${HOME}/esp/esp-idf/export.sh" ]]; then
+		# shellcheck disable=SC1091
+		. "${HOME}/esp/esp-idf/export.sh" >/dev/null 2>&1 || true
+	fi
+fi
+
 go run ./cmd/publish-github-release-artifacts "$@"
 
 # Pull the tags into this repo, but only for a run that could have created one.
@@ -69,7 +87,7 @@ for arg in "$@"; do
 	case "${arg}" in
 	# Only the forms that turn these flags ON skip the pull; --dry-run=false or
 	# --prune-only=false is a real publish, which does tag HEAD and wants the pull.
-	--prune-only | --prune-only=true | -n | -n=true | --dry-run | --dry-run=true)
+	--prune-only | --prune-only=true | -n | -n=true | --dry-run | --dry-run=true | -h | --help | -help)
 		exit 0
 		;;
 	esac

@@ -15,7 +15,9 @@ import (
 	"sync"
 
 	"github.com/gmlewis/go-reticulum/bot"
+	"github.com/gmlewis/go-reticulum/entropy"
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/rns/crypto"
 )
 
 // programName is the prefix every operator-facing line this executable logs
@@ -53,6 +55,9 @@ type App struct {
 	// its own.
 	logger *rns.Logger
 
+	entropySource entropy.Source
+	entropyOpts   entropy.Options
+
 	mu      sync.Mutex
 	started bool
 	closed  bool
@@ -76,6 +81,34 @@ func (a *App) SetLogger(logger *rns.Logger) {
 		return
 	}
 	a.logger = logger
+}
+
+// SetEntropySource configures a hardware entropy source to install before
+// Reticulum is initialized, as required by bare-metal embedded builds.
+func (a *App) SetEntropySource(source entropy.Source, opts entropy.Options) {
+	if a == nil {
+		return
+	}
+	a.entropySource = source
+	a.entropyOpts = opts
+}
+
+// SetGPS injects a pre-configured or hardware GNSS reader, bypassing configuration-based
+// opening during Start.
+func (a *App) SetGPS(gps *bot.GPSReader) {
+	if a == nil {
+		return
+	}
+	a.gps = gps
+}
+
+// SetCompass injects a pre-configured or hardware electronic-compass reader, bypassing
+// configuration-based opening during Start.
+func (a *App) SetCompass(compass *bot.CompassReader) {
+	if a == nil {
+		return
+	}
+	a.compass = compass
 }
 
 // Config returns the configuration the appliance is running.
@@ -182,6 +215,11 @@ func (a *App) abort(cause error) error {
 // is a start-up failure rather than a warning: an appliance that quietly ran
 // without a radio would look identical to one nobody can hear.
 func (a *App) startReticulum() error {
+	if a.entropySource != nil {
+		if err := crypto.SetEntropySource(a.entropySource, a.entropyOpts); err != nil {
+			return fmt.Errorf("grl: could not install entropy source: %w", err)
+		}
+	}
 	logger := a.logger
 	if logger == nil {
 		logger = rns.NewLogger()
@@ -201,39 +239,44 @@ func (a *App) startReticulum() error {
 func (a *App) startSensors() error {
 	sensors := sensorConfig(a.cfg)
 
-	gps, err := bot.OpenGPS(sensors)
-	if err != nil {
-		return fmt.Errorf("grl: %w", err)
-	}
-	if gps != nil {
-		a.gps = gps
-		if strings.TrimSpace(a.cfg.GNSS.Port) != "" {
-			logf("reading GNSS sentences from %v (%v baud)", a.cfg.GNSS.Port, a.cfg.GNSS.Baud)
-		} else {
-			logf("static GNSS fix %v", a.cfg.GNSS.StaticFix)
+	if a.gps == nil {
+		gps, err := bot.OpenGPS(sensors)
+		if err != nil {
+			return fmt.Errorf("grl: %w", err)
+		}
+		if gps != nil {
+			a.gps = gps
+			if strings.TrimSpace(a.cfg.GNSS.Port) != "" {
+				logf("reading GNSS sentences from %v (%v baud)", a.cfg.GNSS.Port, a.cfg.GNSS.Baud)
+			} else {
+				logf("static GNSS fix %v", a.cfg.GNSS.StaticFix)
+			}
 		}
 	}
 
-	compass, err := bot.OpenCompass(sensors)
-	if err != nil {
-		return fmt.Errorf("grl: %w", err)
+	if a.compass == nil {
+		compass, err := bot.OpenCompass(sensors)
+		if err != nil {
+			return fmt.Errorf("grl: %w", err)
+		}
+		if compass != nil {
+			a.compass = compass
+			if strings.TrimSpace(a.cfg.Compass.Port) != "" {
+				logf("reading compass sentences from %v (%v baud)", a.cfg.Compass.Port, a.cfg.Compass.Baud)
+			} else {
+				logf("static compass heading %v", a.cfg.Compass.StaticHeading)
+			}
+		}
 	}
-	if compass != nil {
+
+	if a.compass != nil && a.gps != nil {
 		// The compass corrects a magnetic reading to true north with the World
 		// Magnetic Model at the device's own position, so it reads the same one
 		// fix every position-aware command reads.
-		if a.gps != nil {
-			compass.SetLocationSource(func() (bot.GPSFix, bool) {
-				fix := a.gps.LastFix()
-				return fix, fix.Valid
-			})
-		}
-		a.compass = compass
-		if strings.TrimSpace(a.cfg.Compass.Port) != "" {
-			logf("reading compass sentences from %v (%v baud)", a.cfg.Compass.Port, a.cfg.Compass.Baud)
-		} else {
-			logf("static compass heading %v", a.cfg.Compass.StaticHeading)
-		}
+		a.compass.SetLocationSource(func() (bot.GPSFix, bool) {
+			fix := a.gps.LastFix()
+			return fix, fix.Valid
+		})
 	}
 	return nil
 }
@@ -319,6 +362,9 @@ func (a *App) Close() error {
 		if err := ret.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("closing Reticulum: %w", err))
 		}
+	}
+	if a.entropySource != nil {
+		crypto.ResetRandomSource()
 	}
 	return errors.Join(errs...)
 }

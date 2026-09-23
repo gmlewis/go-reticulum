@@ -243,6 +243,12 @@ func (c *CompassReader) isClosed() bool {
 	return c.closed
 }
 
+// ConsumeSentence parses one NMEA sentence line and merges it into the reader's
+// heading state.
+func (c *CompassReader) ConsumeSentence(line string) {
+	c.consume(line)
+}
+
 // consume parses one line and merges it. An unparseable line is dropped without
 // a word: a serial sensor line is noisy by nature, and a corrupted heading is a
 // wrong direction, which is worse than no direction at all.
