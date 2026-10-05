@@ -3,7 +3,7 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-package bot
+package geo
 
 import (
 	"errors"
@@ -78,6 +78,184 @@ func TestParseLocationRejectsUnplaceableText(t *testing.T) {
 	} {
 		if got, err := ParseLocation(in); err == nil {
 			t.Errorf("ParseLocation(%q) = %+v, want an error", in, got)
+		}
+	}
+}
+
+// TestParseLocationWithReferenceCompletesShortCodes asserts a shortened Plus
+// Code — the form a phone shows and a person reads out, which names its region
+// only relative to somewhere already known — resolves to exactly the position
+// of the full code the reference restores. This is the search-and-rescue case:
+// a position read off a screen still lands where the sender was standing.
+func TestParseLocationWithReferenceCompletesShortCodes(t *testing.T) {
+	t.Parallel()
+
+	sf := LatLng{Lat: 37.42205, Lng: -122.08409}
+	tests := []struct {
+		name  string
+		short string
+		ref   LatLng
+		full  string
+	}{
+		{"reference inside the code", "CWC8+R9", sf, "849VCWC8+R9"},
+		{"reference a city away", "CWC8+R9", LatLng{Lat: 37.755321, Lng: -122.452719}, "849VCWC8+R9"},
+		{"lower case", "cwc8+r9", sf, "849VCWC8+R9"},
+		{"Google Maps '@' prefix", "@cwc8+r9", sf, "849VCWC8+R9"},
+		{"eleven-digit code keeping its trailing digit", "CG4J+32P", LatLng{Lat: 28.405, Lng: -81.47}, "76WWCG4J+32P"},
+		{"shortened by six characters", "8F+6X", LatLng{Lat: 37.4, Lng: -122.0}, "849WC28F+6X"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			want, err := ParseLocation(tc.full)
+			if err != nil {
+				t.Fatalf("ParseLocation(%q): %v", tc.full, err)
+			}
+			got, err := ParseLocationWithReference(tc.short, tc.ref)
+			if err != nil {
+				t.Fatalf("ParseLocationWithReference(%q, %v): %v", tc.short, tc.ref, err)
+			}
+			if !closeWithin(got.Lat, want.Lat, 1e-9) || !closeWithin(got.Lng, want.Lng, 1e-9) {
+				t.Errorf("ParseLocationWithReference(%q, %v) = %v, want the position of %q, %v",
+					tc.short, tc.ref, got, tc.full, want)
+			}
+		})
+	}
+}
+
+// TestParseLocationWithReferencePlacesTheNearestCell pins the contract a
+// shortened Plus Code carries. It is completed to the matching cell nearest the
+// reference, which is the cell the sender was in while the two are inside the
+// window the notation guarantees — about half a degree, some tens of kilometres —
+// and the reader's own neighbourhood outside it. A code that has travelled
+// further than that has lost its region for good, which is the limit the
+// documentation states, so it is the limit asserted here.
+func TestParseLocationWithReferencePlacesTheNearestCell(t *testing.T) {
+	t.Parallel()
+
+	want, err := ParseLocation("849VCWC8+R9")
+	if err != nil {
+		t.Fatalf("ParseLocation: %v", err)
+	}
+	point := LatLng{Lat: 37.42205, Lng: -122.08409}
+	inside := []LatLng{
+		point,
+		{Lat: point.Lat + 0.4, Lng: point.Lng},
+		{Lat: point.Lat - 0.4, Lng: point.Lng},
+		{Lat: point.Lat, Lng: point.Lng + 0.4},
+		{Lat: point.Lat, Lng: point.Lng - 0.4},
+	}
+	for _, ref := range inside {
+		got, err := ParseLocationWithReference("CWC8+R9", ref)
+		if err != nil {
+			t.Fatalf("ParseLocationWithReference(%v): %v", ref, err)
+		}
+		if got != want {
+			t.Errorf("ParseLocationWithReference(CWC8+R9, %v) = %v, want the sender's own cell %v", ref, got, want)
+		}
+	}
+
+	// A reference outside the window still gets a readable place — the nearest
+	// cell the code can mean from there — and it is a place near the reader, not
+	// the sender.
+	far := LatLng{Lat: point.Lat + 8, Lng: point.Lng}
+	got, err := ParseLocationWithReference("CWC8+R9", far)
+	if err != nil {
+		t.Fatalf("ParseLocationWithReference(CWC8+R9, %v): %v", far, err)
+	}
+	if got == want {
+		t.Errorf("ParseLocationWithReference(CWC8+R9, %v) = %v, want the nearest cell to the reference", far, got)
+	}
+	if away := HaversineDistance(got, far); away > 80_000 {
+		t.Errorf("ParseLocationWithReference(CWC8+R9, %v) = %v, %v km from the reference, want a place near it",
+			far, got, away/1000)
+	}
+}
+
+// TestParseLocationWithReferenceLeavesSelfContainedLocationsAlone asserts the
+// reference changes nothing for a notation that names its own place: a full
+// Plus Code, a coordinate pair, and a Maidenhead grid resolve identically
+// wherever the reader happens to be standing.
+func TestParseLocationWithReferenceLeavesSelfContainedLocationsAlone(t *testing.T) {
+	t.Parallel()
+
+	references := []LatLng{
+		{Lat: 37.42205, Lng: -122.08409},
+		{Lat: -33.8568, Lng: 151.2153},
+		{Lat: 0, Lng: 0},
+	}
+	inputs := []string{
+		"849VCWC8+R9", "8FVC9G8F+6X", "37.42205, -122.08409",
+		`37°25'19"N 122°05'03"W`, "CM87uk", "@28.405832,-81.4716354",
+	}
+	for _, in := range inputs {
+		want, err := ParseLocation(in)
+		if err != nil {
+			t.Fatalf("ParseLocation(%q): %v", in, err)
+		}
+		for _, ref := range references {
+			got, err := ParseLocationWithReference(in, ref)
+			if err != nil {
+				t.Fatalf("ParseLocationWithReference(%q, %v): %v", in, ref, err)
+			}
+			if got != want {
+				t.Errorf("ParseLocationWithReference(%q, %v) = %v, want %v wherever the reference is",
+					in, ref, got, want)
+			}
+		}
+	}
+}
+
+// TestParseLocationWithReferenceRefusesUnplaceableText asserts a reference makes
+// a short code placeable and nothing else: text that is not a location is still
+// refused with the sentinel every other rejection carries, so a caller can tell
+// a typo from a fix that is missing.
+func TestParseLocationWithReferenceRefusesUnplaceableText(t *testing.T) {
+	t.Parallel()
+
+	reference := LatLng{Lat: 37.42205, Lng: -122.08409}
+	for _, in := range []string{"", "   ", "@", "@  ", "hello world", "not a place", "37.4", "0/0"} {
+		got, err := ParseLocationWithReference(in, reference)
+		if err == nil {
+			t.Errorf("ParseLocationWithReference(%q, %v) = %+v, want an error", in, reference, got)
+			continue
+		}
+		if !errors.Is(err, ErrLocationUnrecognized) {
+			t.Errorf("ParseLocationWithReference(%q, %v) error = %v, want ErrLocationUnrecognized", in, reference, err)
+		}
+	}
+}
+
+// TestNeedsReferenceLocation asserts the one question a caller asks before it
+// knows whether it has a reference to give: is this the notation that cannot be
+// placed alone? The decorations ParseLocation strips are stripped here too, so
+// the answer is about exactly what a person typed.
+func TestNeedsReferenceLocation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		in   string
+		want bool
+	}{
+		{"CG4J+32P", true},
+		{"CWC8+R9", true},
+		{"cwc8+r9", true},
+		{" CWC8+R9 ", true},
+		{"@CWC8+R9", true},
+		{"8F+6X", true},
+		{"gcj:CWC8+R9", true},
+		{"849VCWC8+R9", false},
+		{"@849VCWC8+R9", false},
+		{"37.42205, -122.08409", false},
+		{"CM87uk", false},
+		{"hello world", false},
+		{"", false},
+		{"ZZ99", false},
+	}
+	for _, tc := range tests {
+		if got := NeedsReferenceLocation(tc.in); got != tc.want {
+			t.Errorf("NeedsReferenceLocation(%q) = %v, want %v", tc.in, got, tc.want)
 		}
 	}
 }

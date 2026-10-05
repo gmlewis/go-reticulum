@@ -143,6 +143,13 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
+By default the hub also accepts private command lines addressed to its own
+identity, so two users can exchange private messages with
+`/msg <nick|hash> <text>` without joining a room. Set
+`enable_private_commands = false` in `~/.gorrcd/config.toml` to turn this off and
+emit a `WELCOME` byte-identical to stock Python `rrcd`; see
+[gorrcd — Private Messages Between RRC Users](../tools/gorrcd.md#private-messages-between-rrc-users).
+
 ### 4. `gorrcbot.service` (Chat Field Assistant)
 
 `/etc/systemd/system/gorrcbot.service`:

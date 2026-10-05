@@ -60,10 +60,7 @@ func whereamiFixture(t *testing.T, fix GPSFix) (*registry, *hubSession) {
 	t.Helper()
 	reg, session, _ := commandFixture(t, nil)
 	if fix.Valid {
-		reader := NewGPSReader(nil)
-		reader.SetFix(fix)
-		t.Cleanup(func() { _ = reader.Close() })
-		reg.gps = reader
+		withFix(t, reg, fix)
 	}
 	return reg, session
 }

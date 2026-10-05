@@ -111,7 +111,7 @@ func (c *commandContext) runNet() []string {
 	if c.reg.paths == nil || c.reg.announces == nil {
 		return []string{netUnavailableLine}
 	}
-	maxHops, near, rejected := parseNetArgs(c.Args)
+	maxHops, near, rejected := c.parseNetArgs(c.Args)
 	if rejected != nil {
 		return rejected
 	}
@@ -139,7 +139,7 @@ func (c *commandContext) runNet() []string {
 }
 
 // parseNetArgs parses the optional hop limit and the optional near filter.
-func parseNetArgs(args string) (int, string, []string) {
+func (c *commandContext) parseNetArgs(args string) (int, string, []string) {
 	fields := strings.Fields(strings.TrimSpace(args))
 	maxHops := netDefaultHops
 	if len(fields) > 0 {
@@ -161,8 +161,8 @@ func parseNetArgs(args string) (int, string, []string) {
 	if location == "" {
 		return 0, "", []string{"Usage: " + netUsage}
 	}
-	if _, err := ParseLocation(location); err != nil {
-		return 0, "", []string{"net: no location found — " + locationNotationHelp}
+	if _, err := c.reg.parseLocation(location); err != nil {
+		return 0, "", []string{"net: " + locationFailureText(err)}
 	}
 	return maxHops, location, nil
 }

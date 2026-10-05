@@ -677,7 +677,11 @@ func (r *registry) build() []command {
 			usage:   locUsage,
 			detail: []string{
 				"Accepts a Plus Code, decimal degrees, DMS, DDM, or a Maidenhead grid.",
+				"A shortened Plus Code — the form a phone shows, like CWC8+R9 — is",
+				"completed against the live GNSS fix, so a position read off somebody",
+				"else's screen still lands on the map near here.",
 				"{nick} loc 849VCWC8+R9 — a Plus Code.",
+				"{nick} loc CWC8+R9 — the same place, shortened.",
 				"{nick} loc 37.42205, -122.08409 — decimal degrees.",
 				`{nick} loc 37°25'19"N 122°05'03"W — degrees, minutes, seconds.`,
 				"{nick} loc CM87uk — a Maidenhead grid locator.",

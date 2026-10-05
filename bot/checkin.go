@@ -283,9 +283,9 @@ func (c *commandContext) runCheckinSet(args string) []string {
 	if !ok {
 		return []string{"Usage: " + checkinUsage}
 	}
-	point, err := ParseLocation(location)
+	point, err := c.reg.parseLocation(location)
 	if err != nil {
-		return []string{"checkin: no location found — " + locationNotationHelp}
+		return []string{"checkin: " + locationFailureText(err)}
 	}
 	duration, err := time.ParseDuration(durationText)
 	if err != nil || duration <= 0 {

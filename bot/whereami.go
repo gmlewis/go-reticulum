@@ -375,10 +375,10 @@ func formatDaylightRemaining(d time.Duration) string {
 // operator gave one, and otherwise the live GNSS fix.
 func (c *commandContext) runWhereami() []string {
 	if args := strings.TrimSpace(c.Args); args != "" {
-		point, err := ParseLocation(args)
+		point, err := c.reg.parseLocation(args)
 		if err != nil {
-			return []string{"whereami: no location found in " + safeEcho(args, maxDiscoveryEchoBytes),
-				locationNotationHelp}
+			return []string{"whereami: could not place " + safeEcho(args, maxDiscoveryEchoBytes),
+				locationFailureText(err)}
 		}
 		return c.renderWhereami(point, whereamiSourceManual)
 	}

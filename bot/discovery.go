@@ -270,7 +270,7 @@ func nearestCatalog(entries []catalogEntry, from LatLng, limit int) []catalogDis
 // navigation commands accept, and otherwise any place known to the other offline
 // reference catalogs (the airfield/city gazetteer, coastal tide stations, or
 // weather buoys).
-func resolveCatalogPoint(entries []catalogEntry, argument string) (LatLng, bool) {
+func (c *commandContext) resolveCatalogPoint(entries []catalogEntry, argument string) (LatLng, bool) {
 	text := strings.TrimSpace(argument)
 	if text == "" {
 		return LatLng{}, false
@@ -278,7 +278,7 @@ func resolveCatalogPoint(entries []catalogEntry, argument string) (LatLng, bool)
 	if entry, ok := findCatalogEntry(entries, text); ok {
 		return entry.Point, true
 	}
-	if point, err := ParseLocation(text); err == nil {
+	if point, err := c.reg.parseLocation(text); err == nil {
 		return point, true
 	}
 	for _, fallback := range [][]catalogEntry{metarCatalog, tideCatalog, buoyCatalog} {
@@ -353,12 +353,13 @@ func (c *commandContext) renderNearAnswer(q discoveryQuery, entries []catalogEnt
 		q.Text = label
 		return c.renderNearPage(q, nearestCatalog(entries, point, discoveryNearLimit))
 	}
-	point, ok := resolveCatalogPoint(entries, argument)
+	point, ok := c.resolveCatalogPoint(entries, argument)
 	if !ok {
 		return []string{
 			fmt.Sprintf("%v: %q is not a place, a coordinate, or a plus code I can place",
 				q.Command, safeEcho(argument, maxDiscoveryEchoBytes)),
-			fmt.Sprintf("Try coordinates (37.8,-122.4), a plus code (849VCWC8+R9), or %q.", q.Command+" list"),
+			c.helpOrShortCodeReason(argument,
+				fmt.Sprintf("Try coordinates (37.8,-122.4), a plus code (849VCWC8+R9), or %q.", q.Command+" list")),
 		}
 	}
 	q.Text = strings.Join(strings.Fields(argument), " ")

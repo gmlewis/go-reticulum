@@ -27,7 +27,10 @@ import (
 const (
 	appRefFix      = "37.7553,-122.4527"
 	appRefPlusCode = "849VQG4W+4W"
-	appRefHeading  = "042"
+	// appRefShortCode is that same place the way a phone shows it, with the
+	// leading characters that name the region dropped.
+	appRefShortCode = "QG4W+4W"
+	appRefHeading   = "042"
 )
 
 // writeRNSConfig writes the minimal Reticulum configuration a test appliance
@@ -311,6 +314,47 @@ func TestAppRunsWithoutAnySensor(t *testing.T) {
 		t.Fatalf("Eval: %v", err)
 	} else if !strings.Contains(got, "no GNSS fix") {
 		t.Errorf("the offline engine did not report the missing fix:\n%v", got)
+	}
+}
+
+// TestAppResolvesAShortenedPlusCode asserts the appliance completes a shortened
+// Plus Code against its own fix: the static fix on a desk today, a receiver's
+// live fix once the hardware is attached. The shortened code is the form a phone
+// shows, and this is the search-and-rescue case — a position read off somebody
+// else's screen has to land on the map of the team looking for them.
+func TestAppResolvesAShortenedPlusCode(t *testing.T) {
+	cfg := applianceConfig(t)
+	app := startApp(t, cfg)
+
+	// The shortened form of the appliance's own static fix, whose full code the
+	// reference constant names.
+	got, err := app.Engine().Eval(context.Background(), "loc "+appRefShortCode)
+	if err != nil {
+		t.Fatalf("Eval: %v", err)
+	}
+	if !strings.Contains(got, appRefPlusCode) {
+		t.Errorf("loc %v = %q, want it completed to %v", appRefShortCode, got, appRefPlusCode)
+	}
+}
+
+// TestAppExplainsAShortenedPlusCodeWithNoFix asserts an appliance with no
+// receiver says what is missing rather than calling a valid Plus Code
+// unreadable. What is missing is the position that says which region the code is
+// in, and only the operator can supply either.
+func TestAppExplainsAShortenedPlusCodeWithNoFix(t *testing.T) {
+	cfg := applianceConfig(t)
+	cfg.GNSS.StaticFix = ""
+	app := startApp(t, cfg)
+
+	got, err := app.Engine().Eval(context.Background(), "loc "+appRefShortCode)
+	if err != nil {
+		t.Fatalf("Eval: %v", err)
+	}
+	if strings.Contains(got, "no location found") {
+		t.Errorf("loc %v with no fix = %q, want it not to blame the notation", appRefShortCode, got)
+	}
+	if !strings.Contains(got, "GNSS fix") {
+		t.Errorf("loc %v with no fix = %q, want it to name the missing fix", appRefShortCode, got)
 	}
 }
 

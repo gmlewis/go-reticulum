@@ -288,9 +288,9 @@ func (c *commandContext) runSOSRaise(args string) []string {
 		gnss  string
 	)
 	if ok {
-		parsed, err := ParseLocation(location)
+		parsed, err := c.reg.parseLocation(location)
 		if err != nil {
-			return []string{"sos: no location found — " + locationNotationHelp}
+			return []string{"sos: " + locationFailureText(err)}
 		}
 		point = parsed
 	} else {

@@ -265,9 +265,9 @@ func (c *commandContext) runSitrepAdd(args string) []string {
 		return []string{"Usage: " + sitrepAddUsage,
 			"the category is one of " + strings.Join(SitrepCategories, ", ")}
 	}
-	point, err := ParseLocation(location)
+	point, err := c.reg.parseLocation(location)
 	if err != nil {
-		return []string{"sitrep: no location found — " + locationNotationHelp}
+		return []string{"sitrep: " + locationFailureText(err)}
 	}
 	text = safeEcho(text, maxSitrepTextBytes)
 	if text == "" {
@@ -331,9 +331,9 @@ func (c *commandContext) runSitrepNear(args string) []string {
 	if !ok {
 		return []string{"Usage: " + sitrepNearUsage}
 	}
-	point, err := ParseLocation(location)
+	point, err := c.reg.parseLocation(location)
 	if err != nil {
-		return []string{"sitrep: no location found — " + locationNotationHelp}
+		return []string{"sitrep: " + locationFailureText(err)}
 	}
 	store := c.reg.sitreps()
 	if store == nil {

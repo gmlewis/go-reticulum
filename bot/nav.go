@@ -55,9 +55,9 @@ func (c *commandContext) runLoc() []string {
 	if strings.TrimSpace(c.Args) == "" {
 		return []string{"Usage: " + locUsage, locationNotationHelp}
 	}
-	point, err := ParseLocation(c.Args)
+	point, err := c.reg.parseLocation(c.Args)
 	if err != nil {
-		return []string{"loc: no location found — " + locationNotationHelp}
+		return []string{"loc: " + locationFailureText(err)}
 	}
 	code, err := EncodeOLC(point.Lat, point.Lng, olcCodeLength)
 	if err != nil {
@@ -81,7 +81,7 @@ func (c *commandContext) runLoc() []string {
 func (c *commandContext) runDist() []string {
 	from, to, ok := c.splitLocationPair(c.Args)
 	if !ok {
-		return []string{"Usage: " + distUsage, locationNotationHelp}
+		return []string{"Usage: " + distUsage, c.helpOrShortCodeReason(c.Args, locationNotationHelp)}
 	}
 	meters := HaversineDistance(from, to)
 	bearing := InitialBearing(from, to)
@@ -96,7 +96,7 @@ func (c *commandContext) runDist() []string {
 func (c *commandContext) runProj() []string {
 	origin, bearing, distance, ok := c.splitProjArgs(c.Args)
 	if !ok {
-		return []string{"Usage: " + projUsage, projDistanceHelp}
+		return []string{"Usage: " + projUsage, c.helpOrShortCodeReason(c.Args, projDistanceHelp)}
 	}
 	target := ProjectWaypoint(origin, bearing, distance)
 	code, err := EncodeOLC(target.Lat, target.Lng, olcCodeLength)
@@ -119,7 +119,7 @@ func (c *commandContext) runSun() []string {
 		point, day, ok = c.sunArgsFromFix()
 	}
 	if !ok {
-		return []string{"Usage: " + sunUsage, locationNotationHelp}
+		return []string{"Usage: " + sunUsage, c.helpOrShortCodeReason(c.Args, locationNotationHelp)}
 	}
 	almanac := SolarAlmanac(point.Lat, point.Lng, day)
 	code, err := EncodeOLC(point.Lat, point.Lng, olcCodeLength)
@@ -162,22 +162,22 @@ func (c *commandContext) splitLocationPair(args string) (LatLng, LatLng, bool) {
 		if !found {
 			continue
 		}
-		first, err := ParseLocation(from)
+		first, err := c.reg.parseLocation(from)
 		if err != nil {
 			continue
 		}
-		second, err := ParseLocation(to)
+		second, err := c.reg.parseLocation(to)
 		if err != nil {
 			continue
 		}
 		return first, second, true
 	}
 	for _, index := range splitBoundaries(text) {
-		first, err := ParseLocation(text[:index])
+		first, err := c.reg.parseLocation(text[:index])
 		if err != nil {
 			continue
 		}
-		second, err := ParseLocation(text[index:])
+		second, err := c.reg.parseLocation(text[index:])
 		if err != nil {
 			continue
 		}
@@ -198,7 +198,7 @@ func (c *commandContext) splitProjArgs(args string) (LatLng, float64, float64, b
 	bearingText := fields[len(fields)-2]
 	originText := strings.Join(fields[:len(fields)-2], " ")
 
-	origin, err := ParseLocation(originText)
+	origin, err := c.reg.parseLocation(originText)
 	if err != nil {
 		return LatLng{}, 0, 0, false
 	}
@@ -223,12 +223,12 @@ func (c *commandContext) splitSunArgs(args string) (LatLng, time.Time, bool) {
 	}
 	now := c.now()
 	// The whole line may be a location with no date.
-	if point, err := ParseLocation(text); err == nil {
+	if point, err := c.reg.parseLocation(text); err == nil {
 		return point, utcMidnight(now), true
 	}
 	boundaries := splitBoundaries(text)
 	for _, index := range slices.Backward(boundaries) {
-		point, err := ParseLocation(text[:index])
+		point, err := c.reg.parseLocation(text[:index])
 		if err != nil {
 			continue
 		}

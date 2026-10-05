@@ -68,6 +68,108 @@ func TestLocCommandUsage(t *testing.T) {
 	}
 }
 
+// withFix installs a live GNSS fix on a registry, which is what makes a
+// shortened Plus Code placeable. The reader is closed with the test, so no scan
+// goroutine outlives the case.
+func withFix(t *testing.T, reg *registry, fix GPSFix) {
+	t.Helper()
+	reader := NewGPSReader(nil)
+	reader.SetFix(fix)
+	t.Cleanup(func() { _ = reader.Close() })
+	reg.gps = reader
+}
+
+// TestLocCommandCompletesShortPlusCodes asserts the one notation that names its
+// region only relative to somewhere already known is completed against the live
+// GNSS fix. This is the search-and-rescue case: a position read off the missing
+// party's phone still lands where they were standing.
+func TestLocCommandCompletesShortPlusCodes(t *testing.T) {
+	t.Parallel()
+
+	// The fix is in San Francisco; the code is the local form of the full code
+	// one line up, so both must answer identically.
+	reg, session := whereamiFixture(t, sfFix())
+	long := runLines(t, reg, session, "loc 849VCWC8+R9")
+	lines := runLines(t, reg, session, "loc CWC8+R9")
+	if len(lines) != 1 || len(long) != 1 {
+		t.Fatalf("loc returned %v lines for the short code and %v for the full one, want 1 each", len(lines), len(long))
+	}
+	if lines[0] != long[0] {
+		t.Errorf("loc <short code> =\n  %v\nwant the full code's answer\n  %v", lines[0], long[0])
+	}
+	if !strings.Contains(lines[0], "OLC: 849VCWC8+R9") {
+		t.Errorf("loc <short code> = %q, want it placed in the 849V region", lines[0])
+	}
+
+	// The same code resolves from a fix anywhere in its region, and a code the
+	// sender's phone showed with eleven digits is completed to the same place.
+	orlando := GPSFix{Valid: true, Lat: 28.405, Lng: -81.47}
+	away, awaySession := whereamiFixture(t, orlando)
+	lines = runLines(t, away, awaySession, "loc CG4J+32P")
+	if len(lines) != 1 || !strings.Contains(lines[0], "OLC: 76WWCG4J+32") {
+		t.Errorf("loc CG4J+32P = %v, want it completed in the 76WW region", lines)
+	}
+}
+
+// TestLocCommandExplainsAShortCodeWithNoFix asserts a shortened Plus Code handed
+// to a node with no receiver is answered with the reason it cannot be placed: the
+// code is real, and what is missing is the position that says which region it is
+// in. Calling a real Plus Code unreadable would blame the wrong thing.
+func TestLocCommandExplainsAShortCodeWithNoFix(t *testing.T) {
+	t.Parallel()
+
+	reg, session, _ := commandFixture(t, nil)
+	lines := runLines(t, reg, session, "loc CWC8+R9")
+	if len(lines) != 1 {
+		t.Fatalf("loc <short code> with no fix returned %v lines, want 1: %v", len(lines), lines)
+	}
+	if strings.Contains(lines[0], "no location found") {
+		t.Errorf("loc <short code> with no fix = %q, want it not to blame the notation", lines[0])
+	}
+	if !strings.Contains(lines[0], "GNSS fix") {
+		t.Errorf("loc <short code> with no fix = %q, want it to name the missing fix", lines[0])
+	}
+}
+
+// TestShortPlusCodesResolveInEveryLocationCommand asserts the reference is
+// supplied wherever a command accepts a location, not only in loc: a search team
+// types the same short code whichever question it asks.
+func TestShortPlusCodesResolveInEveryLocationCommand(t *testing.T) {
+	t.Parallel()
+
+	nav, navSession := whereamiFixture(t, sfFix())
+	stored, storedSession, _, _ := storedFixture(t, nil)
+	withFix(t, stored, sfFix())
+	tests := []struct {
+		name    string
+		reg     *registry
+		session *hubSession
+		line    string
+		want    string
+	}{
+		{"loc", nav, navSession, "loc CWC8+R9", "OLC: 849VCWC8+R9"},
+		{"dist", nav, navSession, "dist CWC8+R9 to 8FVC9G8F+6X", "Heading 031° (NNE)"},
+		{"proj", nav, navSession, "proj CWC8+R9 048 3.5km", "Target: 849VCWVW+65"},
+		{"sun", nav, navSession, "sun CWC8+R9 2026-06-21", "(849VCWC8+R9)"},
+		{"whereami", nav, navSession, "whereami CWC8+R9", "849VCWC8+R9"},
+		{"checkin", stored, storedSession, "checkin CWC8+R9 overdue 4h at the trailhead", "849VCWC8+R9"},
+		{"sitrep", stored, storedSession, "sitrep add CWC8+R9 HAZARD bridge out", "849VCWC8+R9"},
+		{"sos", stored, storedSession, "sos CWC8+R9 RED two hikers", "849VCWC8+R9"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			lines := runLines(t, tc.reg, tc.session, tc.line)
+			joined := strings.Join(lines, "\n")
+			if !strings.Contains(joined, tc.want) {
+				t.Errorf("%q = %v, want it to carry %q", tc.line, lines, tc.want)
+			}
+			if strings.Contains(joined, "no location found") || strings.Contains(joined, "Usage:") {
+				t.Errorf("%q = %v, want the short code placed", tc.line, lines)
+			}
+		})
+	}
+}
+
 // TestDistCommandReportsCourseAndReturn asserts the dist answer gives the
 // distance plus both headings, which is what a navigator plots.
 func TestDistCommandReportsCourseAndReturn(t *testing.T) {

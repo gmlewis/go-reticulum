@@ -11,7 +11,7 @@
 // which was captured by running that implementation. They are data: the tests
 // that drive them live in olc_test.go.
 
-package bot
+package geo
 
 // olcEncodingGolden is one encode case: a coordinate in degrees, the same
 // coordinate in the specification's integer form, the number of significant

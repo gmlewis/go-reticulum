@@ -967,6 +967,22 @@ app (Amap/Gaode, Tencent, WeChat), marked with a `gcj:` or `gcj02:` prefix:
 back to the WGS-84 GPS position before anything else is computed. See
 [Cell & Radio Tower Finder](#cell-radio-tower-finder-tower-repeater-cell).
 
+A Plus Code may also arrive **shortened**, the way a phone screen shows it and a
+person reads it out: `CWC8+R9`, or `CG4J+32P` with its last digit. The leading
+characters that name the region have been dropped, so the node completes them
+against its own live GNSS fix — which is the search-and-rescue case the notation
+exists in: a position read off the missing party's screen has to land on the map
+of the team searching for them. On a node with no receiver there is nothing to
+complete the code against, and the reply says exactly that instead of calling a
+valid code unreadable; the full code, or a coordinate pair, works either way.
+
+A shortened code is placed in the matching cell **nearest the reader**, so it
+resolves to the sender's own region while the two are within about half a degree
+of each other — some tens of kilometres. A code that has travelled further than
+that cannot say which region was meant, so a position being passed over a long
+link should be sent in full; the answer always prints the full code it resolved,
+which is how a reader sees the region that was picked.
+
 | Command | Syntax | Description & Example |
 |---------|--------|-----------------------|
 | `loc` | `@gobot loc <location>` | Converts any supported coordinate format and outputs it in all five notations simultaneously. A position inside China also prints the GCJ-02 "Mars coordinate" that Amap and Gaode expect. |

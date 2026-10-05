@@ -318,11 +318,11 @@ func (c *commandContext) runTower() []string {
 	if record, ok := towerRecordByID(records, c.Args); ok {
 		return towerInfoLines(record)
 	}
-	if point, err := ParseLocation(c.Args); err == nil {
+	if point, err := c.reg.parseLocation(c.Args); err == nil {
 		q := discoveryQuery{Command: command, Catalog: towerCatalogName, Kind: discoveryKindNear}
 		return c.renderTowerNear(q, records, entries, point, c.Args, false)
 	}
-	return []string{"Usage: " + towerUsage, towerUsageHint}
+	return []string{"Usage: " + towerUsage, c.helpOrShortCodeReason(c.Args, towerUsageHint)}
 }
 
 // towerCommandWord returns the command word the request was typed with, which is
@@ -384,13 +384,14 @@ func (c *commandContext) renderTowerNearArgument(q discoveryQuery, records []Tow
 		}
 		return []string{"Usage: " + q.Command + " near <place|coords|pluscode>", discoveryNoFixHint}
 	}
-	point, ok := resolveCatalogPoint(entries, argument)
+	point, ok := c.resolveCatalogPoint(entries, argument)
 	if !ok {
 		return []string{
 			fmt.Sprintf("%v: %q is not a place, a coordinate, or a plus code I can place",
 				q.Command, safeEcho(argument, maxDiscoveryEchoBytes)),
-			fmt.Sprintf("Try coordinates (37.8,-122.4), a plus code (849VCWC8+R9), or %q.",
-				q.Command+" list"),
+			c.helpOrShortCodeReason(argument,
+				fmt.Sprintf("Try coordinates (37.8,-122.4), a plus code (849VCWC8+R9), or %q.",
+					q.Command+" list")),
 		}
 	}
 	// A named place is somewhere else, so the device's own heading says nothing

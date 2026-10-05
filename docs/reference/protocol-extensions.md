@@ -13,10 +13,10 @@ All extensions are designed with **strict backward compatibility**:
 
 ### 1.1 Overview & Motivation
 
-In standard RRC (`rrcd`), client slash commands (`/who`, `/list`, `/stats`, `/reload`, `/dnotice <nick> <text>`) could only be issued within an active chat room. While the hub intercepts slash commands before room fanout, this design had significant drawbacks:
+Standard RRC (`rrcd`) defines four operator slash commands — `/who` (alias `/names`), `/list`, `/stats`, and `/reload` — and **has no private-message command at all**. Slash commands could only be issued from within an active chat room, and reaching another participant directly required knowing their raw 16-byte cryptographic destination hash. While the hub intercepts slash commands before room fanout, this design had significant drawbacks:
 1. A client had to join a room before issuing administrative or query commands.
 2. In buggy or third-party client implementations, private slash commands could accidentally leak into public room history.
-3. Sending a direct notice (`K_DST`) to another client required knowing their raw 16-byte cryptographic destination hash ahead of time. A client could not send a direct message simply by knowing a user's nickname unless the hub resolved it.
+3. A client could not send a direct message simply by knowing a user's nickname; the hub had to resolve it, and stock `rrcd` offered no way to ask.
 
 `CAP_PRIVATE_COMMAND = 3` introduces a private out-of-band command channel between a client and an RRC hub using direct notices (`T_NOTICE`, type 21) addressed to the hub's own identity.
 
@@ -42,7 +42,37 @@ When enabled on the hub, the capabilities map sent in `WELCOME` contains:
 
 Clients MUST check `HasCapability(3)` before attempting to send private commands to a hub. If a hub does not advertise capability 3, direct notices addressed to the hub identity will be rejected as "destination not connected".
 
-### 1.3 Wire Protocol & Message Flow
+### 1.3 Command Names & Target Resolution
+
+The capability exposes one family of client commands. The canonical name is
+`/dnotice`; `/dn` and `/msg` are accepted aliases, and `/msg` is the spelling the
+`gonomadnet` client uses:
+
+| Command line | Example | Behaviour |
+|--------------|---------|-----------|
+| `/dnotice <target> <text>` (aliases `/dn`, `/msg`) | `/msg alice Meeting at 18:00 UTC` | Delivers one direct notice to `<target>` alone. |
+| `/dnoticeme <text>` | `/dnoticeme on my way` | Delivers one direct notice to the sender's own link. |
+| `/dnoticecap` | `/dnoticecap` | Reports whether the hub advertises `CAP_PRIVATE_COMMAND`. |
+
+`<target>` is resolved by the hub and accepts, in order:
+
+- a full 32-hex-character identity hash;
+- an unambiguous hex prefix of at least six characters;
+- a participant nickname.
+
+Resolution is **exact**. A token that matches more than one participant is
+reported with nothing sent, and there is no fuzzy matching, so a private
+message cannot reach a participant the sender did not name. A nickname that
+contains spaces must be quoted — `/msg 'gonomadnet on MiniPC' yo dude` — because
+the argument is forwarded exactly as typed.
+
+These are ordinary client commands, so a user may also type them from inside a
+room; the hub's confirmation then lands in that room rather than in a private
+view. In `gonomadnet`, `/msg <nick|hash> <text>` echoes the line you typed
+exactly as typed, and an arriving private notice renders as `private from
+<nick>`.
+
+### 1.4 Wire Protocol & Message Flow
 
 ```
 +--------+                                                 +--------+
@@ -80,7 +110,7 @@ When transmitting a private command, the client constructs a standard RRC `T_NOT
 | `KDst` | `1` | `bytes` | **Hub's 16-byte identity hash** (extracted from `WELCOME` source). |
 | `KRoom` | `2` | `nil` | **Must be omitted or nil**. Direct notices never specify a room. |
 | `KNick` | `3` | `text` | Sender's nickname (optional; normalized by hub). |
-| `KBody` | `4` | `text` | Command string starting with `/` (e.g. `/dnotice <nick> <text>`, `/who`, `/stats`). |
+| `KBody` | `4` | `text` | Command string starting with `/` (e.g. `/msg alice hi`, `/dnotice alice hi`, `/who`, `/stats`). |
 | `KMsgID`| `6` | `bytes` | 8-byte unique random message ID. |
 | `KTs` | `7` | `int` | Millisecond Unix timestamp. |
 
@@ -95,7 +125,7 @@ When transmitting a private command, the client constructs a standard RRC `T_NOT
      - **Neither the command line nor any reply is ever posted to any room**.
    - If `KBody` does not start with `/` or is unrecognized, return an error notice directly to the sender.
 
-### 1.4 Python `rrcd` & `RRC.py` Reference Back-Port
+### 1.5 Python `rrcd` & `RRC.py` Reference Back-Port
 
 #### In `rrcd` / Hub Daemon (`RRC.py`):
 
@@ -215,6 +245,12 @@ strftime-format     = 1*64( VCHAR / WSP )   ; format tokens
 | `%%` | Literal percent sign | `%` |
 | `%-` | Modifier: strips leading padding (e.g. `%-I`, `%-d`, `%-m`) | `8` (instead of `08`) |
 
+A conversion this table does not list is passed through **verbatim, percent
+sign included**, rather than being silently dropped or replaced by the default
+format. A typo such as `` `T1789519585|%Q`T `` therefore renders as `%Q` and is
+visible to the page's author instead of vanishing. The `%-` no-pad modifier is
+the one addition this format language makes to POSIX `strftime`.
+
 ### 2.4 Backward Compatibility & Degradation
 
 - Clients with no `` `T `` support strip the delimiters and display the raw payload (e.g. `1789519585|%F %T`), ensuring no text is lost.
@@ -254,7 +290,7 @@ NomadNet pages frequently display coordinates for radio repeaters, emergency she
 - *How far away is it?*
 - *In what direction should I go?*
 
-The `` `L `` extension renders an Open Location Code, computes the great-circle distance and 16-point compass bearing from the client's current location, and presents rich guidance offline using zero internet connection.
+The `` `L `` extension renders an Open Location Code, computes the great-circle distance and 16-point compass bearing from the client's current location, and presents rich guidance offline using zero internet connection. It is implemented in the `github.com/gmlewis/go-reticulum/geo` package (Open Location Code decoding and the geodesy primitives) and rendered by the `gonomadnet` Micron client, which takes the reader's position from an optional `[location]` config section (§3.6).
 
 ### 3.2 Syntax & Grammar
 
@@ -264,14 +300,14 @@ The `` `L `` extension renders an Open Location Code, computes the great-circle 
 ```
 
 - **Opening & Closing Delimiters**: `` `L `` (backtick followed by capital `L`).
-- **`<code>`**: A canonical 8- to 11-character Open Location Code (Plus Code) with `+` separator (e.g. `849VCWC8+R9` or `8FW4V75V+8R`).
+- **`<code>`**: An Open Location Code (Plus Code) with its `+` separator. A **full** code is 8 to 11 significant characters (e.g. `849VCWC8+R9`, `8FW4V75V+8R`) and is self-contained. A **shortened** code places the `+` earlier and omits the digits naming its region; it is only meaningful next to a reference location, so it is rendered as written rather than guessed at (see §3.6).
 - **`<format>`**: One of five format tokens (`%default`, `%c`, `%d`, `%b`, `%ll`). Defaults to `%default` if omitted.
 
 #### Grammar (ABNF)
 
 ```abnf
 location-directive = "`L" code [ "|" format ] "`L"
-code               = 8*15( olc-char )
+code               = 2*15( olc-char )
 olc-char           = %x30-39 / %x41-5A   ; 0-9, A-Z (excluding I, L, O, U)
 format             = "%default" / "%c" / "%d" / "%b" / "%ll"
 ```
@@ -284,7 +320,7 @@ format             = "%default" / "%c" / "%d" / "%b" / "%ll"
 | `%c` | Bare Plus Code alone. | `849VCWC8+R9` |
 | `%d` | Distance alone when position is known. Empty string if unknown. | `3.2 km` |
 | `%b` | 3-digit bearing and 16-point compass name. Empty string if unknown. | `048° NE` |
-| `%ll` | Decimal degrees latitude/longitude. Always computes (needs no client fix). | `37.422063, -122.084062` |
+| `%ll` | Decimal degrees latitude/longitude, six decimal places. Always computes (needs no client fix), but only for a full code. | `37.422062, -122.084063` |
 
 ### 3.4 Geodetic Formulas & Units
 
@@ -329,11 +365,27 @@ Use these reference values to verify new implementations:
 
 | Reader Position | Plus Code Target | Target Centroid | Distance | Bearing | Rendered Output |
 |-----------------|------------------|-----------------|----------|---------|-----------------|
-| 37.4220°N, 122.0841°W (Mountain View) | `8FW4V75V+8R` (Eiffel Tower) | 48.858312°N, 2.294563°E | 8,967,033 m | 33.39° | `8FW4V75V+8R (8967 km, bearing 033° NE)` |
+| 37.4220°N, 122.0841°W (Mountain View) | `8FW4V75V+8R` (Eiffel Tower) | 48.858312°N, 2.294563°E | 8,967,033 m | 33.39° | `8FW4V75V+8R (8967 km, bearing 033° NNE)` |
 | 51.5000°N, 0.1200°W (London) | `8FW4V75V+8R` (Eiffel Tower) | 48.858312°N, 2.294563°E | 340,318 m | 148.72° | `8FW4V75V+8R (340.3 km, bearing 149° SSE)` |
-| -33.8568°S, 151.2153°E (Sydney) | `849VCWC8+R9` (Googleplex) | 37.422063°N, 122.084063°W | 11,952,709 m | 56.23° | `849VCWC8+R9 (11953 km, bearing 056° NE)` |
+| -33.8568°S, 151.2153°E (Sydney) | `849VCWC8+R9` (Googleplex) | 37.422062°N, 122.084063°W | 11,952,709 m | 56.23° | `849VCWC8+R9 (11953 km, bearing 056° NE)` |
 
-### 3.6 Python `nomadnet` Reference Back-Port
+Note the first row's compass name: 33.39° lies in the `NNE` sector, which spans 11.25° to 33.75°, one third of a degree below the `NNE`/`NE` boundary. Applying the formula in §3.4.4 to 33.39° gives index 1, `NNE`.
+
+### 3.6 Backward Compatibility & Client Position
+
+- **Clients without the extension.** Python `nomadnet` consumes the backtick and the marker character and renders the payload as ordinary text, so a page containing `L8FW4V75V+8R`L reaches an unmodified client as `8FW4V75V+8R` — the bare code, which is exactly what the reader needs. Degradation is therefore graceful and producers need no plain-text duplicate of the code. A malformed code or an unknown format token is not an extension at all, so it takes the same path.
+- **A shortened code** (`+` before the eighth character) is rendered exactly as it was written: the default and `%c` show the code, `%d` and `%b` render nothing rather than a placeholder, and `%ll` is unavailable because it would need the reference point the code omits. A page that wants a resolvable location must write a full code.
+- **Client position.** The distance and bearing require the *reader's* position, which is a client-side setting and never travels in the page. In `gonomadnet` it comes from an optional `[location]` section in the client's config file:
+
+  ```ini
+  [location]
+  fix = 37.4220, -122.0841
+  ```
+
+  `fix` accepts any notation the geodesy engine understands (decimal degrees with or without hemisphere letters, degrees/minutes/seconds, a full Plus Code, or a Maidenhead grid locator). With no usable `fix`, the position-dependent forms degrade to the bare code and `%ll` still computes.
+- **Interaction.** A rendered location is a clickable link. Activating it opens the client's location actions: a card showing the code, the coordinate, and — when a position is known — the distance and bearing, with buttons that copy the code or the coordinate. The link target carries the code (`location:<code>`), never the rendered sentence, so copying the code always yields a code another client can use.
+
+### 3.7 Python `nomadnet` Reference Back-Port
 
 In `nomadnet/ui/textui/MicronParser.py`:
 
@@ -342,7 +394,8 @@ import math
 import re
 from openlocationcode import openlocationcode
 
-LOCATION_PATTERN = re.compile(r'`L([A-Z0-9+]{8,15})(?:\|(%[a-z]+))?`L')
+LOCATION_PATTERN = re.compile(r'`L([A-Z0-9+]{2,15})(?:\|(%[a-z]+))?`L')
+FORMATS = ("%default", "%c", "%d", "%b", "%ll")
 EARTH_RADIUS_M = 6371000.0
 
 COMPASS_POINTS = [
@@ -379,30 +432,41 @@ def expand_locations(text, client_lat=None, client_lon=None):
     def _replace(match):
         code = match.group(1)
         fmt = match.group(2) or "%default"
-        try:
-            area = openlocationcode.decode(code)
-            lat2, lon2 = area.latitudeCenter, area.longitudeCenter
-        except Exception:
-            return code  # Malformed code falls back to raw text
-        
-        if fmt == "%ll":
-            return f"{lat2:.6f}, {lon2:.6f}"
+        payload = code if match.group(2) is None else f"{code}|{match.group(2)}"
+
+        # An unusable construct is text, never an error: the markers are
+        # consumed and the payload reaches the reader exactly the way an
+        # unmodified client shows it.
+        if not openlocationcode.isValid(code) or fmt not in FORMATS:
+            return payload
+
         if fmt == "%c":
             return code
-            
+
+        # A shortened code has no reference point, so it is rendered as
+        # written and the position-dependent forms add nothing.
+        if not openlocationcode.isFull(code):
+            return code if fmt in ("%default", "%ll") else ""
+
+        area = openlocationcode.decode(code)
+
+        if fmt == "%ll":
+            return f"{area.latitudeCenter:.6f}, {area.longitudeCenter:.6f}"
+
         if client_lat is None or client_lon is None:
             return code if fmt == "%default" else ""
-            
-        dist, bearing, compass = calculate_geodesy(client_lat, client_lon, lat2, lon2)
+
+        dist, bearing, compass = calculate_geodesy(
+            client_lat, client_lon, area.latitudeCenter, area.longitudeCenter)
         dist_str = format_distance(dist)
         bearing_str = f"{int(round(bearing)):03d}° {compass}"
-        
+
         if fmt == "%d":
             return dist_str
         if fmt == "%b":
             return bearing_str
         # Default:
         return f"{code} ({dist_str}, bearing {bearing_str})"
-        
+
     return LOCATION_PATTERN.sub(_replace, text)
 ```
