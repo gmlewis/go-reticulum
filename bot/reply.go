@@ -7,8 +7,11 @@
 //
 // The RRC link layer silently drops an envelope larger than the MDU, so every
 // reply is emitted as one NOTICE per line and each line is measured. A line too
-// long for one envelope is split on a rune boundary and every continuation is
-// marked, so a reader can see the bot did not simply stop mid-sentence. The
+// long for one envelope is split between words, never through one, because each
+// chunk reaches the client as its own line and half a word reads as corruption;
+// the cut falls back to a rune boundary only when one unbroken run leaves no
+// choice, and every continuation is marked, so a reader can see the bot did not
+// simply stop mid-sentence. The
 // reply travels as a direct NOTICE (K_DST) only when the request itself arrived
 // that way, because a room request has to be answered where the asker can read
 // it: a standard rrcd hub advertises its own capabilities in WELCOME and never
@@ -422,7 +425,8 @@ func noticeEnvelopeSize(ownHash []byte, room, nick, text string) (int, error) {
 
 // splitNoticeText splits text into chunks that each fit one envelope. Chunks
 // other than the last end with splitMarker, and a chunk cut off by the line
-// budget ends with truncatedMarker. Splits always land on a rune boundary.
+// budget ends with truncatedMarker. Splits land on a word boundary when one is
+// close and always on a rune boundary.
 func splitNoticeText(ownHash []byte, room, nick, text string, maxLines int) ([]string, error) {
 	return splitNoticeTextWith(roomFits(ownHash, room, nick), text, maxLines)
 }
@@ -497,10 +501,20 @@ func trimToFitWith(fits noticeSizer, text, marker string) string {
 	return head + marker
 }
 
+// wordBreakSlack is how far back from the envelope limit a split may look for a
+// word boundary. A boundary farther back than this would waste too much of one
+// envelope on a single unbroken run — a hash or a URL — which is exactly when
+// cutting at the rune boundary is the better choice.
+const wordBreakSlack = 24
+
 // splitPrefixWith finds the longest rune-aligned prefix of text that still fits
 // one envelope once marker is appended, and returns it with the untouched
-// remainder. A small tail shorter than a marker is folded into the head so the
-// remainder never ends up empty.
+// remainder. The break prefers a word boundary, because a chunk that ends in the
+// middle of a word reads as corruption where every chunk arrives as its own
+// line: the cut backs up to the nearest boundary within wordBreakSlack, and the
+// separator runes it consumed are dropped, so neither chunk begins or ends with
+// the whitespace between two words. A small tail shorter than a marker is folded
+// into the head so the remainder never ends up empty.
 func splitPrefixWith(fits noticeSizer, text, marker string) (string, string, error) {
 	runes := []rune(text)
 	// Binary search the largest rune count that fits.
@@ -522,11 +536,32 @@ func splitPrefixWith(fits noticeSizer, text, marker string) (string, string, err
 	if best <= 0 {
 		return "", text, nil
 	}
+	best = wordBreakCut(runes, best)
 	// Do not leave a remainder that is only whitespace: it would produce an
 	// empty-looking continuation line.
-	remainder := string(runes[best:])
+	remainder := strings.TrimLeft(string(runes[best:]), wordSeparators)
 	if strings.TrimSpace(remainder) == "" {
 		return string(runes[:best]) + strings.TrimSpace(remainder), "", nil
 	}
 	return string(runes[:best]), remainder, nil
+}
+
+// wordSeparators are the runes a reply line may break on: the whitespace a chat
+// client already treats as a word break.
+const wordSeparators = " \t\n"
+
+// wordBreakCut returns the rune length of the chunk that ends runes' longest
+// whole-word prefix at or before best. A boundary no farther back than
+// wordBreakSlack is taken, and the cut sits before the separator that ended the
+// word, so the chunk keeps the word and the continuation starts with the next
+// one. best is returned unchanged when no boundary is that close, so a single
+// unbroken run still fills the envelope rather than being cut short.
+func wordBreakCut(runes []rune, best int) int {
+	slack := min(wordBreakSlack, best/4)
+	for cut := best; cut > 0 && best-cut < slack; cut-- {
+		if cut < len(runes) && strings.ContainsRune(wordSeparators, runes[cut]) {
+			return cut
+		}
+	}
+	return best
 }

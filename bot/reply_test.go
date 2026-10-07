@@ -6,6 +6,7 @@
 package bot
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -170,6 +171,69 @@ func TestSplitNoticeTextMarksContinuations(t *testing.T) {
 		if !strings.HasSuffix(chunk, splitMarker) {
 			t.Errorf("chunk %v = %q, want it to end with the continuation marker %q", i, chunk, splitMarker)
 		}
+	}
+}
+
+// TestSplitNoticeTextBreaksBetweenWords asserts a long reply is cut between
+// words, not through one. Every chunk arrives at a chat client as its own line,
+// so a chunk that ends in the middle of a word reads as corruption: the live
+// "help" listing was split as "... triage, unwatc …" followed by "h, uptime,
+// ...". The synthetic listing has the shape of that reply, and the real one is
+// the exact text that failed in the field.
+func TestSplitNoticeTextBreaksBetweenWords(t *testing.T) {
+	t.Parallel()
+
+	t.Run("listing shaped like the help reply", func(t *testing.T) {
+		t.Parallel()
+		var names []string
+		for i := range 60 {
+			names = append(names, fmt.Sprintf("command%02d", i))
+		}
+		assertChunksBreakBetweenWords(t, "Commands: "+strings.Join(names, ", "))
+	})
+
+	t.Run("the real help listing", func(t *testing.T) {
+		t.Parallel()
+		cfg := defaultTestConfig()
+		cfg.MaxReplyLines = 12
+		reg, _, _ := commandFixture(t, cfg)
+		listing := reg.helpListing()
+		if len(listing) != 1 {
+			t.Fatalf("helpListing = %v lines, want the single command line", len(listing))
+		}
+		assertChunksBreakBetweenWords(t, listing[0])
+	})
+}
+
+// assertChunksBreakBetweenWords splits text into the notices a room reply would
+// travel as and asserts every chunk boundary falls on whitespace in the original
+// text: a chunk that starts or ends on a non-space rune is a word cut in half.
+// The texts it is used with are ASCII, so a byte offset is also a rune offset.
+func assertChunksBreakBetweenWords(t *testing.T, text string) {
+	t.Helper()
+
+	chunks, err := splitNoticeText(mustHex(replyOwnHash), "general", "gorrcbot", text, 20)
+	if err != nil {
+		t.Fatalf("splitNoticeText: %v", err)
+	}
+	if len(chunks) < 2 {
+		t.Fatalf("chunks = %q, want the text split across envelopes", chunks)
+	}
+	from := 0
+	for i, chunk := range chunks {
+		body := strings.TrimSuffix(strings.TrimSuffix(chunk, splitMarker), truncatedMarker)
+		at := strings.Index(text[from:], body)
+		if at < 0 {
+			t.Fatalf("chunk %v = %q is not part of the reply from offset %v", i, body, from)
+		}
+		start, end := from+at, from+at+len(body)
+		if start > 0 && text[start-1] != ' ' {
+			t.Errorf("chunk %v starts mid-word: %q", i, body)
+		}
+		if end < len(text) && text[end] != ' ' {
+			t.Errorf("chunk %v ends mid-word: %q", i, body)
+		}
+		from = end
 	}
 }
 
