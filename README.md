@@ -26,26 +26,6 @@ It is based upon the following Python original works:
   Date:   Mon Jan 12 09:17:07 2026 -0500
   ```
 
-> [!WARNING]
-> ### ⚠️ Emergency, Medical, and Safety Disclaimer
-> **NOT A CERTIFIED LIFE-SAFETY OR MEDICAL DEVICE.**
-> Communications over unlicensed LoRa/ISM frequencies are best-effort and **never guaranteed**. This software and associated hardware (including the Go Reticulum Lifesaver) are **NOT** connected to official 911/112 emergency dispatch, government rescue agencies, or COSPAS-SARSAT search-and-rescue satellites, and are **NOT** a substitute for certified EPIRBs, PLBs, or commercial satellite messengers. First-aid protocols (`med`), navigation fixes (`/whereami`), and direction-finding vectors (`tower near`) are informational references only. Users assume all risks of wilderness travel and off-grid communications. Read [**DISCLAIMER.md**](DISCLAIMER.md) for the full legal terms and release of liability.
-
-> [!NOTE]
-> ### 📖 Official Documentation Site
-> For complete guides, searchable command references, API provider templates, and hardware provisioning tutorials, visit the **[Go Reticulum Documentation Site](https://gmlewis.github.io/go-reticulum/)**.
-> - [**Protocol & Markup Extensions Guide**](https://gmlewis.github.io/go-reticulum/reference/protocol-extensions/): Full specifications and Python back-port guides for `CAP_PRIVATE_COMMAND = 3`, `` `T `` (Timestamp Localization), and `` `L `` (Plus Code Offline Geo-Rendering).
-
-> [!TIP]
-> ### Standalone Off-Grid Hardware Projects
-> Looking to build, buy parts for, or flash standalone handheld Reticulum hardware devices?
-> Jump straight to the [**Reticulum Hardware Projects Guide**](https://github.com/gmlewis/asic-reticulum/tree/master/Hardware-Projects-Guide.md).
->
-> It contains complete bills of materials (BOM), PCB manufacturing instructions, direct links to pre-compiled GitHub Release binaries, and zero-install in-browser web flashing for:
-> - **Project 1: The Pocket Linux Terminal** (Raspberry Pi Zero 2W, 2.8" SPI LCD, CardKB keyboard, LoRa)
-> - **Project 2: The Standalone Pocket Communicator** (ESP32-C5 RISC-V SoC, display, keyboard, LoRa)
-> - **Project 3: The Autonomous Pocket Hub & Repeater** (ESP32-C5, LoRa, Wi-Fi 6 SoftAP mesh relay daemon)
-
 ## Go Port Security & Dependency Policy
 - **Vendored Compression Snapshot**: A local in-repo snapshot (with source commit
   `39efe44ab707ffd2c1ef32cc7dbebfe584718686`) of `github.com/dsnet/compress/bzip2`
@@ -840,6 +820,26 @@ joined room when no room is active), so they survive each room-view rebuild
 instead of vanishing the moment the reply arrives. Stock Python `nomadnet` records an inbound private
 notice in `RRC.notices` and never draws it — `nomadnet/ui/textui.py` has no
 notice widget — so a Python user can send but not yet read one.
+
+> [!WARNING]
+> ### ⚠️ Emergency, Medical, and Safety Disclaimer
+> **NOT A CERTIFIED LIFE-SAFETY OR MEDICAL DEVICE.**
+> Communications over unlicensed LoRa/ISM frequencies are best-effort and **never guaranteed**. This software and associated hardware (including the Go Reticulum Lifesaver) are **NOT** connected to official 911/112 emergency dispatch, government rescue agencies, or COSPAS-SARSAT search-and-rescue satellites, and are **NOT** a substitute for certified EPIRBs, PLBs, or commercial satellite messengers. First-aid protocols (`med`), navigation fixes (`/whereami`), and direction-finding vectors (`tower near`) are informational references only. Users assume all risks of wilderness travel and off-grid communications. Read [**DISCLAIMER.md**](DISCLAIMER.md) for the full legal terms and release of liability.
+
+> [!NOTE]
+> ### 📖 Official Documentation Site
+> For complete guides, searchable command references, API provider templates, and hardware provisioning tutorials, visit the **[Go Reticulum Documentation Site](https://gmlewis.github.io/go-reticulum/)**.
+> - [**Protocol & Markup Extensions Guide**](https://gmlewis.github.io/go-reticulum/reference/protocol-extensions/): Full specifications and Python back-port guides for `CAP_PRIVATE_COMMAND = 3`, `` `T `` (Timestamp Localization), and `` `L `` (Plus Code Offline Geo-Rendering).
+
+> [!TIP]
+> ### Standalone Off-Grid Hardware Projects
+> Looking to build, buy parts for, or flash standalone handheld Reticulum hardware devices?
+> Jump straight to the [**Reticulum Hardware Projects Guide**](https://github.com/gmlewis/asic-reticulum/tree/master/Hardware-Projects-Guide.md).
+>
+> It contains complete bills of materials (BOM), PCB manufacturing instructions, direct links to pre-compiled GitHub Release binaries, and zero-install in-browser web flashing for:
+> - **Project 1: The Pocket Linux Terminal** (Raspberry Pi Zero 2W, 2.8" SPI LCD, CardKB keyboard, LoRa)
+> - **Project 2: The Standalone Pocket Communicator** (ESP32-C5 RISC-V SoC, display, keyboard, LoRa)
+> - **Project 3: The Autonomous Pocket Hub & Repeater** (ESP32-C5, LoRa, Wi-Fi 6 SoftAP mesh relay daemon)
 
 ---
 
