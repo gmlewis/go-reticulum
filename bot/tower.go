@@ -45,8 +45,10 @@ import (
 
 // Tower command wordings and bounds.
 const (
-	// towerUsage is the usage line for the command and its aliases.
-	towerUsage = "tower <near|search|list|info> [args]"
+	// towerUsageTail is the argument shape the tower catalog and its two service
+	// views share: one command under three names, each of which answers with the
+	// word the asker typed.
+	towerUsageTail = " <near|search|list|info> [args]"
 	// towerCatalogName names the catalog rows in a discovery answer.
 	towerCatalogName = "Tower sites"
 	// towerUsageHint is the second line of a bare tower request: the four ways
@@ -316,7 +318,7 @@ func (c *commandContext) runTower() []string {
 		return c.runTowerInfo(command, records, entries, rest)
 	}
 	if strings.TrimSpace(c.Args) == "" {
-		return []string{"Usage: " + towerUsage, towerUsageHint}
+		return []string{"Usage: " + command + towerUsageTail, towerUsageHint}
 	}
 	// A bare identifier is the detailed view, which is what "tower W6PW-2M"
 	// obviously means, and a bare position is the proximity answer, which is
@@ -330,7 +332,7 @@ func (c *commandContext) runTower() []string {
 		q := discoveryQuery{Command: command, Catalog: towerCatalogName, Kind: discoveryKindNear}
 		return c.renderTowerNear(q, records, entries, point, c.Args, false)
 	}
-	return []string{"Usage: " + towerUsage, c.helpOrShortCodeReason(c.Args, towerUsageHint)}
+	return []string{"Usage: " + command + towerUsageTail, c.helpOrShortCodeReason(c.Args, towerUsageHint)}
 }
 
 // towerCommandWord returns the command word the request was typed with, which is
@@ -414,7 +416,7 @@ func (c *commandContext) runTowerDiscovery(command string, records []TowerRecord
 		q.Text = strings.ToUpper(strings.Join(strings.Fields(filter), " "))
 		return c.renderCatalogPage(q, catalogFrom(filtered, TowerRecord.catalogEntry), page)
 	default:
-		return []string{"Usage: " + towerUsage, towerUsageHint}
+		return []string{"Usage: " + command + towerUsageTail, towerUsageHint}
 	}
 }
 

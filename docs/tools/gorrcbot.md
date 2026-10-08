@@ -83,7 +83,9 @@ cooldown_s = 8.0
 # Introduce itself when joining rooms
 announce_on_join = false
 
-# Maximum reply lines before truncation occurs
+# Maximum reply lines before truncation occurs. A command whose whole answer is
+# one indivisible picture (qr) declares its own budget and is not bound by this:
+# a half-sent picture is not a shorter answer, it is an unreadable one.
 max_reply_lines = 12
 
 # Render the discovery rows (search/near/list) as clickable Micron links,
@@ -242,6 +244,89 @@ While `@gobot` can be triggered publicly inside any room it has joined, **privat
   Both work identically.
 - **Strict Private Reply Guarantee**: When a request arrives via direct notice (`K_DST`), `gorrcbot`'s reply routing policy **always** transmits the response as a direct notice back to the sender's cryptographic identity hash (`msg.Src`). The response **never** leaks or appears in any public room.
 - **Direct Notice Capabilities (`CAP_DIRECT_NOTICE`)**: Direct messaging requires that the connected hub supports RRC direct notice routing (`CAP_DIRECT_NOTICE = 2`), which all modern `rrcd` and `gorrcd` hubs provide. If a hub cannot deliver direct notices, `gorrcbot` safely drops the direct reply rather than leaking it into a public channel.
+
+---
+
+## Addresses & Scannable QR Codes (`addr`, `qr`)
+
+Every RNS service a node runs is published from **one identity**, so one node has
+one *identity hash* and a different *destination hash* for each service. That is
+the single most confusing thing about Reticulum addresses, and it is the reason
+these two commands exist:
+
+- The **identity hash** is what a hub knows a client by. It is **not** an address
+  you can send anything to; it is the name a destination is derived from. In a
+  room you reach a peer by typing `@<hash prefix>`.
+- Each **destination hash** is the address of one service that identity
+  publishes. `lxmf.delivery` is where messages go; `nomadnetwork.node` is the node
+  to browse; `rrc.hub` belongs to a hub itself.
+
+A destination hash covers the destination's name and the publishing identity's
+hash, and nothing else — so the bot can derive any peer's addresses from the
+identity hash alone, with no announce and no path required.
+
+### `addr` — every address a peer publishes
+
+```
+@gobot addr me
+addr gonomadnet on MacM2Max: identity @0a8b370a62de4c5464b7ef7f56ff33c8 (the RNS identity, not a destination)
+lxmf@2a6105f57145860441a62fe3b2a1352c (lxmf.delivery, where LXMF messages go)
+bc37348ec27fafad10f3fd2e92ecf5f5 (nomadnetwork.node, the node to browse)
+```
+
+Every address is printed in the form a client acts on, because the RRC chat
+grammar already defines those forms and a client that knows them underlines them:
+
+| Printed | What it is | Clicking it |
+|---------|------------|-------------|
+| `@<hash>` | an identity, the way a hub mention addresses a client | nothing — plain text, which is why `addr` prints it this way |
+| `lxmf@<hash>` | an LXMF address | opens (or starts) the conversation |
+| `<hash>` | a NomadNet node | opens the node browser |
+| `#room` | a room **on the hub you are already on** | joins and selects that room |
+| `rrc://<hub>[:<dest name>]/<room>` | a hub, and optionally a room on it | shows the Channels view and selects the hub or room; a hub you do not have yet is offered for confirmation before it is added |
+
+The last two rows are links a person can type; `rrc://` is the form a Micron page
+uses, and a client that renders page links makes it clickable in chat too. A bare
+hash is a link to a **node**, so printing a message address that way would invite
+a reader to click it and be told the node does not exist — hence the sigils.
+
+`path <who>` reports the route to the same destinations, with hops, next hop,
+interface and path age.
+
+### `qr` — the same address as a picture a phone can scan
+
+```
+@gobot qr me
+lxmf.delivery address for gonomadnet on MacM2Max (scan the picture below, or copy the address):
+███████████████████████████
+███▀▀▀▀▀▀▀████▀▀██▀▀█▀▀▀▀▀▀▀███
+   … 14 lines, one text line per two module rows …
+████████████████████████████
+< lxmf@2a6105f57145860441a62fe3b2a1352c >
+full destination specifier: lxmf.delivery.0a8b370a62de4c5464b7ef7f56ff33c8:2a6105f57145860441a62fe3b2a1352c
+```
+
+`qr [<nick|hash|me>] [identity|lxmf]` draws the asker's own address by default,
+or a named peer's, and encodes the **bare** address: what a camera reads is the
+32-character hex string itself, which imports into any Reticulum client. The line
+beneath the picture carries the sigil so a click does the right thing, and the
+full specifier is printed for tools and configuration files.
+
+What a reader has to know:
+
+- **The picture is text.** Each cell is one QR module wide and half a module tall,
+  so the usual 1:2 terminal cell draws a square module and a 25×25 code fits in 14
+  lines. It renders dark modules on a light field, which is what a camera expects
+  on the light-on-dark terminal palette.
+- **It needs a message pane about 42 columns wide** — 27 cells plus the timestamp
+  and icon gutter. A narrower pane wraps the rows, which destroys the code rather
+  than degrading it; hide the channel list, or widen the window, and the picture
+  re-renders correctly because the client re-wraps the stored message text.
+- **It arrives whole.** A picture is one indivisible answer, so it is sent under
+  its own line budget instead of `max_reply_lines`; a truncated picture would not
+  be a shorter answer but a wrong one.
+- **The address line is copyable** as well as scannable, and `addr` prints the
+  same addresses as text.
 
 ---
 
@@ -921,6 +1006,8 @@ and says that no room could be alerted.
 | `whoami` | `@gobot whoami` | Displays your nickname and full 32-character identity hash as seen by the current hub. |
 | `botinfo` | `@gobot botinfo` | Details the bot's identity hash, `@hash-prefix` alias, version, connected hubs, and active rooms (alias `id`). |
 | `rooms` | `@gobot rooms [room]` | Lists the rooms the bot is participating in; with a room named, lists the members the hub reports in it (alias `members`). |
+| `addr` (alias `address`, `addresses`) | `@gobot addr [<nick\|hash\|me>]` | Lists every address the peer's identity publishes — the identity hash a hub knows them by, then `lxmf.delivery` and `nomadnetwork.node` — each in the form a client turns into a working link (see [Addresses & Scannable QR Codes](#addresses--scannable-qr-codes-addr-qr)). |
+| `qr` | `@gobot qr [<nick\|hash\|me>] [identity\|lxmf]` | Draws that address as a scannable black-and-white picture with the address and its full specifier beneath it; `lxmf` (the default) draws the message address and `identity` the RNS identity hash (see [Addresses & Scannable QR Codes](#addresses--scannable-qr-codes-addr-qr)). |
 | `seen` | `@gobot seen <nick\|hash>` | Shows the timestamp when a given nick or identity hash was last seen speaking in joined rooms. |
 | `more` | `@gobot more` | Shows the next page of the last `search`, `near`, or `list` answer (alias `next`; see [Low-Bandwidth Pagination](#low-bandwidth-pagination-more-next)). The pending page is remembered per identity for 5 minutes; with nothing pending the answer is `no more pages or search expired`. |
 
@@ -941,12 +1028,12 @@ and says that no room could be alerted.
 
 | Command | Syntax | Description & Example |
 |---------|--------|-----------------------|
-| `path` | `@gobot path <nick\|hash>` | Queries the Reticulum routing table to report hops, next-hop interface, and path age to a peer. |
+| `path` | `@gobot path <nick\|hash\|name>` | Queries the Reticulum routing table to report hops, next-hop interface, and path age to every destination a peer's identity publishes. A `name` is one the bot has heard announce. |
 | `watch` | `@gobot watch <name\|hash> [ttl]` | Requests a direct notice when a peer, node, or hub announces on the network. |
 | `unwatch` | `@gobot unwatch <n\|all>` | Cancels an active watch. |
 | `watches` | `@gobot watches` | Lists your active announce watches and remaining TTLs. |
-| `net` | `@gobot net [max_hops]` | Mesh directory: lists recently heard hubs, LXMF nodes, and NomadNet pages with hop counts. |
-| `catchup` | `@gobot catchup [window]` | Delivers messages from joined rooms that were missed while you were offline. |
+| `net` | `@gobot net [hops] [near <loc>]` | Mesh directory: every announced hub, LXMF node, and NomadNet node with its hop count and the interface its path leaves by. The hop limit defaults to 3. `near <loc>` is accepted, but an announce carries no position, so it explains why the list cannot be filtered by distance instead of pretending to filter it. |
+| `catchup` | `@gobot catchup [room] [window]` | Delivers messages from joined rooms that were missed while you were offline. `<window>` is a duration like `30m`, `2h`, or `1d` and defaults to 24 h; `<room>` limits the digest to one room. Either may be given on its own and in either order: a duration-shaped word is the window, and any other word names a joined room. |
 | `search` | `@gobot search <term> [#room]` | Searches recent room history for messages containing the given keyword. |
 
 ---
@@ -984,10 +1071,10 @@ which is how a reader sees the region that was picked.
 
 | Command | Syntax | Description & Example |
 |---------|--------|-----------------------|
-| `loc` | `@gobot loc <location>` | Converts any supported coordinate format and outputs it in all five notations simultaneously. A position inside China also prints the GCJ-02 "Mars coordinate" that Amap and Gaode expect. |
+| `loc` | `@gobot loc <pluscode\|coords\|grid>` | Converts any supported coordinate format and outputs it in all five notations simultaneously. A position inside China also prints the GCJ-02 "Mars coordinate" that Amap and Gaode expect. |
 | `dist` | `@gobot dist <from> <to>` | Calculates great-circle distance (km, statute miles, nautical miles) and forward/reverse bearings between two points. |
 | `proj` | `@gobot proj <origin> <bearing°> <distance>` | Dead reckoning: calculates the destination coordinate from a starting location, course, and distance (e.g. `@gobot proj CM87uk 045 15km`). |
-| `whereami` | `@gobot whereami [location]` | The operational location card: Plus Code, coordinates, Maidenhead grid, elevation, the **heading**, fix status, local solar time, and the sunset countdown. With no argument it uses the live GNSS fix. Also accepted as `/whereami`. See [The Go Reticulum Buddy](#the-go-reticulum-buddy-grb). |
+| `whereami` | `@gobot whereami [pluscode\|coords\|grid]` | The operational location card: Plus Code, coordinates, Maidenhead grid, elevation, the **heading**, fix status, local solar time, and the sunset countdown. With no argument it uses the live GNSS fix, and every notation `loc` accepts works as an argument. Also accepted as `/whereami`. See [The Go Reticulum Buddy](#the-go-reticulum-buddy-grb). |
 
 ---
 
@@ -995,8 +1082,8 @@ which is how a reader sees the region that was picked.
 
 | Command | Syntax | Description & Example |
 |---------|--------|-----------------------|
-| `sun` (alias `solar`) | `@gobot sun [location] [date]` | Computes UTC sunrise, sunset, civil twilight dawn/dusk, and total daylight hours for any location on Earth. With no location it uses the live GNSS fix, and a bare date (`sun 2026-06-21`) keeps the date while taking the position from the fix. The `solar` alias names this command, where the word reads as a reader expects; space weather is `spacewx`. |
-| `moon` | `@gobot moon [location] [date]` | Reports moon phase, illumination percentage, lunar age, moonrise/moonset, nighttime illumination rating, and upcoming spring/neap tides. |
+| `sun` (alias `solar`) | `@gobot sun <pluscode\|coords\|grid> [date]` | Computes UTC sunrise, sunset, civil twilight dawn/dusk, and total daylight hours for any location on Earth. With no location it uses the live GNSS fix, and a bare date (`sun 2026-06-21`) keeps the date while taking the position from the fix. The `solar` alias names this command, where the word reads as a reader expects; space weather is `spacewx`. |
+| `moon` | `@gobot moon [place\|pluscode\|coords] [date]` | Reports moon phase, illumination percentage, lunar age, moonrise/moonset, nighttime illumination rating, and upcoming spring/neap tides. With no place it reports the phase alone. |
 
 ---
 
@@ -1019,9 +1106,9 @@ which is how a reader sees the region that was picked.
 | Command | Syntax | Description & Example |
 |---------|--------|-----------------------|
 | `firstaid` (aliases `rx`, `med`, `triage`) | `@gobot firstaid <topic>` | Offline clinical decision-support cards for wilderness medicine: `bleed`, `cpr`, `triage`, `shock`, `hypo` (hypothermia), `heat`, `burns`, `water`, `snake`. `med` is the short name the field guides and the portal chat box use. |
-| `coldwater` (alias `immersion`) | `@gobot coldwater [temp]` | 1-10-1 cold water survival rule and swim failure timelines for water temperatures (e.g. `@gobot coldwater 48F`). |
+| `coldwater` (alias `immersion`) | `@gobot coldwater [temp_f\|temp_c]` | 1-10-1 cold water survival rule and swim failure timelines for water temperatures (e.g. `@gobot coldwater 48F`). |
 | `signal` | `@gobot signal [air\|sound\|light]` | Distress signaling standards: ground-to-air visual markers (V, X, N, Y), whistle cadences, mirror/torch patterns. |
-| `morse` | `@gobot morse <text>` / `morse -d <code...>` | Bidirectional Morse code encoder and decoder. |
+| `morse` | `@gobot morse <text>` / `@gobot morse -d <code...>` | Bidirectional Morse code encoder and decoder. |
 | `conv` | `@gobot conv <val><unit> <target>` | Tactical unit conversions: barometric pressure (`29.92inHg` → `hPa`), distance, speed, fuel/water weight, and battery watt-hours (`5000mAh@3.7V` → `Wh`). |
 
 ---
@@ -1044,10 +1131,10 @@ which is how a reader sees the region that was picked.
 | `metar search` | `@gobot metar search <city\|name\|code> [page]` | Finds an airfield offline by city, airport name, ICAO code, or IATA code (`denver`, `heathrow`, `KDEN`, `LHR`). |
 | `metar near` | `@gobot metar near <place\|coords\|pluscode>` | The three closest airfields, with distance in nautical miles and bearing. |
 | `metar list` | `@gobot metar list [state\|country] [page]` | Every airfield, or one state's or country's (`CO`, `CA`, `TX`, `GB`, `JP`, …). |
-| `alerts` (alias `wxalert`) | `@gobot alerts <place\|zone>` | Queries active National Weather Service severe weather warnings and advisories. |
-| `spacewx` | `@gobot spacewx` | Reports Solar Flux Index (SFI), Sunspot Number (SSN), K-index, geomagnetic storm levels, and recommended HF propagation bands. |
-| `launches` | `@gobot launches [upcoming\|past]` | Schedules and status of upcoming orbital space launches. |
-| `flight` | `@gobot flight <flight_num>` | Real-time ADS-B flight telemetry: route, altitude, groundspeed, climb rate, and squawk code. |
+| `alerts` (alias `wxalert`) | `@gobot alerts <place\|area>` | Queries active National Weather Service severe weather warnings and advisories. |
+| `spacewx` | `@gobot spacewx [set sfi=N ssn=N kp=N]` | Reports Solar Flux Index (SFI), Sunspot Number (SSN), K-index, geomagnetic storm levels, and recommended HF propagation bands. The reading is cached for an hour, and with no provider reachable it reports the last reading it has; `set` overrides the observed indices by hand, which is what an operator does when the feed is unreachable and the numbers came in over a voice net. |
+| `launches` | `@gobot launches [upcoming\|past] [1-5]` | Schedules and status of upcoming orbital space launches, or the most recent ones. |
+| `flight` | `@gobot flight <number>` | Real-time ADS-B flight telemetry: route, altitude, groundspeed, climb rate, and squawk code. |
 
 ---
 
@@ -1061,6 +1148,14 @@ which is how a reader sees the region that was picked.
 | `tower search` | `@gobot tower search <query> [page]` | Finds a site offline by callsign, identifier, name, city, pinyin place name, state or province, frequency, or operator (`sutro`, `beijing`, `sichuan`, `145.150`, `china mobile`). |
 | `tower list` | `@gobot tower list [country\|region] [page]` | Every site, or one country's (`US`, `CN`, `GB`), one country's by name (`china`, `germany`), one US state's (`CA`, `CO`) or its name, or one Chinese province's (`BJ`, `GD`, `SC`, `XJ`). |
 | `tower info` | `@gobot tower info <id>` | One site in full: the exact WGS-84 position, the GCJ-02 position when the site is in China, the Maidenhead grid, the elevation, the frequency, the offset, the tone, and the operator. |
+
+---
+
+### Reference & Texts
+
+| Command | Syntax | Description & Example |
+|---------|--------|-----------------------|
+| `kjv` | `@gobot kjv <reference\|words\|regex>` | Looks up a Bible verse or searches the King James text. A reference (`jn3:16`, `Psalm 23:1-6`, `ps23`, `1 jn 2 1`) prints the whole verse with its label; words (`shepherd`, `love of god`, `"the love of God"` for a phrase) search for verses containing them; `love\|charity`, `lov*`, `l?ve` and `l[ai]ve` search with alternation and wildcards, `love -hate` excludes verses, and `love.*life` is a regexp. Needs `kjv_txt_file` in `config.toml` pointing at a King James text file, one verse per line. |
 
 ---
 

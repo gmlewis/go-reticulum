@@ -120,6 +120,8 @@ gobot /whereami             # the same command, slash form
 gobot tower near            # the three closest masts to the bot
 gobot tide near             # the three closest tide stations to the bot
 gobot sun                   # today's light at the bot's position
+gobot addr me               # every address this identity publishes
+gobot qr me                 # the message address as a picture to scan off the screen
 ```
 
 When the bot also has an **electronic compass** (`compass_port`, or a static

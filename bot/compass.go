@@ -28,7 +28,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -389,11 +388,13 @@ func parseNMEAVariation(value, direction string) (float64, bool) {
 // openCompass builds the electronic compass source the operator configured, or
 // nil when none is.
 //
-// A configured device is opened read-only and scanned in the background, the
-// same way the GNSS receiver is. A configured static heading is held as the
-// whole answer, which is what a headless node and a rehearsing operator use: it
-// is a magnetic bearing, so the World Magnetic Model converts it to true north
-// as soon as the device knows where it is.
+// A configured source is opened read-only and scanned in the background, the
+// same way the GNSS receiver is, and it may be a tcp:// or unix:// endpoint as
+// well as a device path; see sensor.go. A configured static heading is held as
+// the whole answer, which is what a headless node and a rehearsing operator use:
+// it is a magnetic bearing, so the World Magnetic Model converts it to true north
+// as soon as the device knows where it is, and it is used only when no live source
+// is configured at all.
 //
 // The caller owns the returned reader and must Close it.
 func openCompass(cfg *BotConfig) (*CompassReader, error) {
@@ -401,11 +402,15 @@ func openCompass(cfg *BotConfig) (*CompassReader, error) {
 		return nil, nil
 	}
 	if port := strings.TrimSpace(cfg.CompassPort); port != "" {
-		file, err := os.OpenFile(port, os.O_RDONLY, 0)
+		endpoint, err := parseSensorEndpoint(port)
+		if err != nil {
+			return nil, fmt.Errorf("compass: %w", err)
+		}
+		source, err := endpoint.open()
 		if err != nil {
 			return nil, fmt.Errorf("compass: could not open %v: %w", port, err)
 		}
-		reader := NewCompassReader(file)
+		reader := NewCompassReader(source)
 		reader.Start(context.Background())
 		return reader, nil
 	}

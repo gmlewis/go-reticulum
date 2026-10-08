@@ -30,7 +30,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -108,6 +107,14 @@ type GPSFix struct {
 	// GPS fix, 2 is differential, and 4 and 5 are the RTK fixed and float
 	// solutions.
 	FixQuality int
+	// AccuracyM is the receiver's own estimate of how far its position may be
+	// from the truth, in meters: the radius of the circle the fix is expected to
+	// lie within. It is an estimate, not a guarantee, and it is the only thing in
+	// the format that answers "how much should I trust this distance".
+	AccuracyM float64
+	// HasAccuracy reports that AccuracyM was measured. A position nobody measured
+	// the error of must never be reported as accurate to zero meters.
+	HasAccuracy bool
 	// TimeUTC is the timestamp the receiver reported, in UTC. It is the zero
 	// time until a sentence carrying a time has been seen.
 	TimeUTC time.Time
@@ -260,6 +267,8 @@ func (g *GPSReader) consume(line string) {
 		g.applyRMC(parsed.fields)
 	case "GGA":
 		g.applyGGA(parsed.fields)
+	case "GST":
+		g.applyGST(parsed.fields)
 	}
 }
 
@@ -366,6 +375,36 @@ func (g *GPSReader) applyGGA(fields []string) {
 		}
 	}
 	g.fix.Valid = quality > 0 && g.havePositionLocked()
+}
+
+// applyGST merges one position-error sentence: the receiver's own estimate of how
+// far each axis of the fix may be from the truth, in meters. The horizontal error
+// a reader acts on is the circle that contains both axis errors, so the two
+// standard deviations are combined rather than stored apart.
+//
+// A negative or unparseable error is refused outright. An error sentence that
+// cannot be read leaves the accuracy unknown, which is the honest state, and never
+// a flattering zero.
+func (g *GPSReader) applyGST(fields []string) {
+	if len(fields) < 8 {
+		return
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if at, ok := parseNMEATime(fields[1], g.fallbackDateLocked()); ok {
+		g.fix.TimeUTC = at
+	}
+	latError, latOK := parseNMEAFloat(fields[6])
+	lngError, lngOK := parseNMEAFloat(fields[7])
+	if !latOK || !lngOK || latError < 0 || lngError < 0 {
+		return
+	}
+	accuracy := math.Hypot(latError, lngError)
+	if math.IsNaN(accuracy) || math.IsInf(accuracy, 0) {
+		return
+	}
+	g.fix.AccuracyM = accuracy
+	g.fix.HasAccuracy = true
 }
 
 // fallbackDateLocked is the UTC day a sentence with no date of its own belongs
@@ -499,12 +538,15 @@ func parseNMEADate(text string) (time.Time, bool) {
 
 // openGPS builds the GNSS source the operator configured, or nil when none is.
 //
-// A configured device is opened read-only and scanned in the background: a GNSS
-// receiver is a character device that emits sentences forever, so it is read
-// the same way a file is, and Phase 0 relies on the operating system's own
-// configuration of the port's line speed. A configured static fix is held as
-// the whole answer, which is what a headless node and a rehearsing operator
-// use.
+// A configured source is opened read-only and scanned in the background: a GNSS
+// receiver is a character device that emits sentences forever, so it is read the
+// same way a file is, and Phase 0 relies on the operating system's own
+// configuration of the port's line speed. The source may also be a tcp:// or
+// unix:// endpoint, which is how a sensor held by another application — an
+// Android appliance with its own receiver — feeds this one; see sensor.go. A
+// configured static fix is held as the whole answer, which is what a headless node
+// and a rehearsing operator use, and it is used only when no live source is
+// configured at all: a live source is the only source.
 //
 // The caller owns the returned reader and must Close it: Close stops the scan
 // goroutine and releases the device, so no read is left running past a
@@ -514,11 +556,15 @@ func openGPS(cfg *BotConfig) (*GPSReader, error) {
 		return nil, nil
 	}
 	if port := strings.TrimSpace(cfg.GPSPort); port != "" {
-		file, err := os.OpenFile(port, os.O_RDONLY, 0)
+		endpoint, err := parseSensorEndpoint(port)
+		if err != nil {
+			return nil, fmt.Errorf("gps: %w", err)
+		}
+		source, err := endpoint.open()
 		if err != nil {
 			return nil, fmt.Errorf("gps: could not open %v: %w", port, err)
 		}
-		reader := NewGPSReader(file)
+		reader := NewGPSReader(source)
 		reader.Start(context.Background())
 		return reader, nil
 	}

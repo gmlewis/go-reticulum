@@ -140,6 +140,8 @@ var taxonomy = map[string]commandTaxonomy{
 	"whoami":  {categoryCore, nil},
 	"botinfo": {categoryCore, []string{"id"}},
 	"rooms":   {categoryCore, []string{"members"}},
+	"qr":      {categoryCore, nil},
+	"addr":    {categoryCore, []string{"address", "addresses"}},
 	"more":    {categoryCore, []string{"next"}},
 
 	// Room history.
@@ -223,6 +225,11 @@ type command struct {
 	configured func(*BotConfig) bool
 	// run produces the reply lines for one invocation.
 	run func(*commandContext) []string
+	// replyBudget is how many NOTICE lines this command's answer needs when that
+	// is more than max_reply_lines allows. A command whose whole answer is one
+	// indivisible picture sets it, because a truncated picture is not a shorter
+	// answer but a wrong one; zero leaves the configured bound in charge.
+	replyBudget int
 	// local reports that the command computes its whole answer in-process and
 	// needs no hub session, so the captive portal can run it with no RRC link
 	// at all. A command that touches a session, the pager, the announce cache,
@@ -390,6 +397,18 @@ func (r *registry) names() []string {
 		out = append(out, cmd.name)
 	}
 	return out
+}
+
+// lineBudget reports how many NOTICE lines the named command's answer needs when
+// that is more than the configured bound allows. An unknown name, and a command
+// that has not declared a budget of its own, both answer zero, which leaves the
+// configured bound in charge of every ordinary reply.
+func (r *registry) lineBudget(name string) int {
+	cmd, ok := r.byName[name]
+	if !ok {
+		return 0
+	}
+	return cmd.replyBudget
 }
 
 // Run executes one addressed command line. It is the commandRunner the reply
@@ -584,9 +603,10 @@ func (r *registry) build() []command {
 		{
 			name:    "help",
 			summary: "list the commands, or explain one",
-			usage:   "help [command]",
+			usage:   "help [category|command]",
 			detail: []string{
-				"{nick} help lists every command.",
+				"{nick} help lists every command, grouped by category.",
+				"{nick} help <category> lists one group, like messaging or navigation.",
 				"{nick} help <command> explains one, with examples.",
 			},
 			run: (*commandContext).runHelp,
@@ -624,6 +644,43 @@ func (r *registry) build() []command {
 				"The hub's own version is named only when it differs from the bot's.",
 			},
 			run: (*commandContext).runBotinfo,
+		},
+		{
+			name:    "qr",
+			summary: "draw a peer's address as a picture a phone can scan",
+			usage:   qrUsage,
+			detail: []string{
+				"<nick|hash|me> is the peer whose address to draw; me means you,",
+				"and the default is you.",
+				"lxmf, the default, draws the address to send LXMF messages to.",
+				"identity draws the RNS identity hash, which is the address this",
+				"hub knows a client by and needs no announce.",
+				"The picture is 14 lines of half-block cells with the hex address",
+				"under it, and it needs a message pane about 42 columns wide. On a",
+				"narrower pane the client wraps the rows and the code cannot be",
+				"read, so widen the window or hide the channel list if it looks",
+				"like gibberish.",
+			},
+			replyBudget: qrReplyBudget,
+			run:         (*commandContext).runQR,
+		},
+		{
+			name:    "addr",
+			summary: "list every address a peer's identity publishes",
+			usage:   addrUsage,
+			detail: []string{
+				"<nick|hash|me> is the peer to look up; me means you, and the",
+				"default is you.",
+				"The identity line is the hash a hub addresses a client by: type",
+				"@<hex prefix> to mention them here.",
+				"An lxmf@ line is the address to send messages to, and a bare hash",
+				"is a NomadNet node to browse. A client that knows these forms",
+				"underlines them, and clicking one opens the conversation or the",
+				"node.",
+				"path <who> reports the route to the same destinations, and",
+				"qr <who> draws one of them as a picture.",
+			},
+			run: (*commandContext).runAddr,
 		},
 		{
 			name:    "dnotice",
@@ -1020,7 +1077,7 @@ func (r *registry) build() []command {
 		{
 			name:    "alerts",
 			summary: "report severe weather warnings in force for a place",
-			usage:   wxalertUsage,
+			usage:   alertsUsage,
 			detail: []string{
 				"Accepts a place or a two-letter area code, like OK or TX.",
 				"Answers are cached for 15 minutes.",
@@ -1128,7 +1185,7 @@ func (r *registry) build() []command {
 		{
 			name:    "tower",
 			summary: "find the nearest cell tower, repeater, or emergency relay",
-			usage:   towerUsage,
+			usage:   "tower" + towerUsageTail,
 			detail: []string{
 				"{nick} tower near <place|coords|pluscode> — the 3 closest sites, with distance and bearing.",
 				"{nick} tower search <query> [page] — a site by callsign, city, frequency, or operator.",
@@ -1148,7 +1205,7 @@ func (r *registry) build() []command {
 		{
 			name:    "repeater",
 			summary: "find the nearest amateur radio repeaters",
-			usage:   towerUsage,
+			usage:   "repeater" + towerUsageTail,
 			detail: []string{
 				"Answers exactly as tower does, over amateur repeaters (RPT sites) only.",
 				"{nick} repeater near <place|coords|pluscode> names the 3 closest repeaters.",
@@ -1160,7 +1217,7 @@ func (r *registry) build() []command {
 		{
 			name:    "cell",
 			summary: "find the nearest cellular masts",
-			usage:   towerUsage,
+			usage:   "cell" + towerUsageTail,
 			detail: []string{
 				"Answers exactly as tower does, over cellular base stations (CELL sites) only.",
 				"{nick} cell near <place|coords|pluscode> names the 3 closest masts.",

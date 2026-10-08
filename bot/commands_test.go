@@ -56,8 +56,10 @@ func TestRegistryNamesAreStable(t *testing.T) {
 		"botinfo", "dnotice", "dnoticecap", "dnoticeme", "help", "ping",
 		"uptime", "weather", "whoami",
 		// This bot's own additions.
-		"catchup", "flight", "kjv", "launches", "msg", "path", "rooms",
+		"catchup", "flight", "kjv", "launches", "msg", "path", "qr", "rooms",
 		"search", "seen", "unwatch", "watch", "watches",
+		// The address lookups: addr lists a peer's addresses, qr draws one.
+		"addr",
 		// The field assistant's navigation and celestial commands.
 		"dist", "loc", "moon", "proj", "sun", "whereami",
 		// The field assistant's emergency and situation commands.
@@ -869,8 +871,16 @@ func TestCommandsNeverExceedOneEnvelopePerLine(t *testing.T) {
 	for _, cmd := range reg.commands {
 		for _, line := range []string{cmd.name, cmd.name + " x"} {
 			lines := runLines(t, reg, session, line)
-			if len(lines) > 4 {
+			// Four lines is what an ordinary answer costs. A command whose whole
+			// answer is one indivisible picture declares a budget of its own
+			// instead, and its rows are still measured against the wire below,
+			// because one row over the MDU would silently lose part of the code.
+			if cmd.replyBudget == 0 && len(lines) > 4 {
 				t.Errorf("%v replied with %v lines, want at most 4", line, len(lines))
+			}
+			if cmd.replyBudget > 0 && len(lines) > cmd.replyBudget {
+				t.Errorf("%v replied with %v lines, over its declared budget of %v",
+					line, len(lines), cmd.replyBudget)
 			}
 			for i, reply := range lines {
 				chunks, err := splitNoticeText(mustHex(fakeHubTwo), "general", "gorrcbot", reply, 12)

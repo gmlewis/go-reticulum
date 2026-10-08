@@ -123,7 +123,7 @@ func (c *commandContext) runPath() []string {
 		return []string{fmt.Sprintf(pathNoAnnounceLine, label)}
 	}
 
-	destinations := c.pathDestinations(identity)
+	destinations := c.pathDestinations(identity.Hash)
 	lines := make([]string, 0, len(destinations)+1)
 	lines = append(lines, fmt.Sprintf("path %v (%v): %v", label, shortHash(hexString(subject.hash)),
 		pluralCount(len(destinations), "destination", "destinations")))
@@ -173,13 +173,16 @@ func (c *commandContext) pathSubject(token string) (pathSubject, []string) {
 }
 
 // pathDestinations returns the destinations to report for one identity, dropping
-// the hub-only one unless this identity really is the hub.
-func (c *commandContext) pathDestinations(identity *rns.Identity) []peerDestination {
+// the hub-only one unless this identity really is the hub. It takes the identity
+// hash rather than the identity itself: a destination hash covers the identity's
+// hash and the destination's name, so naming a peer's destinations never needs the
+// peer's keys, and the addr command answers from a hash it was handed.
+func (c *commandContext) pathDestinations(identityHash []byte) []peerDestination {
 	// An identity always has a hash, but the hub's own hash is empty until its
 	// WELCOME arrives: comparing two empty strings would hand every peer the
 	// hub's rrc.hub destination.
 	hubHash := c.conn().HubIdentityHash()
-	isHub := len(hubHash) > 0 && hexString(identity.Hash) == hexString(hubHash)
+	isHub := len(hubHash) > 0 && hexString(identityHash) == hexString(hubHash)
 	out := make([]peerDestination, 0, len(peerDestinations))
 	for _, dest := range peerDestinations {
 		if dest.hubOnly && !isHub {

@@ -129,6 +129,13 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// Publish the destination a bot has to dial. A supervisor in another process —
+	// and another language — cannot derive it, and a hub whose address it cannot
+	// name is a hub to which no local bot can attach.
+	if err := publishHubDestination(effectiveIdentityPath(cfg, identityPath), svc.DestinationHash()); err != nil {
+		log.Printf("%v", err)
+	}
+
 	signals := make(chan os.Signal, 2)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
@@ -159,6 +166,27 @@ func buildConfig(opts *gorrcdOptions, configPath, identityPath, roomRegistryPath
 			return cfg, err
 		}
 		cfg = rrc.ApplyConfigData(cfg, data)
+	}
+
+	// A value the file leaves EMPTY cannot erase a directory the operator named on
+	// the command line. The TOML still wins when it actually says something — that is
+	// the documented precedence, and TestBuildConfigPrecedence pins it — but an empty
+	// value means "I have nothing to say", not "forget what you were told".
+	//
+	// This one is not cosmetic. The bootstrapped config file contains
+	// `configdir = ""`, and without this the hub silently fell back to Reticulum's
+	// default directory: a DIFFERENT instance from the one its clients were attached
+	// to, so its clients could never hear it announce, and a bot reported
+	//
+	//	gorrcbot: hub "gonomadnet local hub": cannot connect: Hub identity unknown
+	//
+	// for as long as it ran, while the hub was up, announcing, and publishing its
+	// destination. The sockets were the proof:
+	//
+	//	gorrcd   TCP 127.0.0.1:54932->127.0.0.1:37428   (the wrong instance)
+	//	gorrcbot TCP 127.0.0.1:54939->127.0.0.1:47428   (the right one)
+	if opts.configdir != nil && cfg.Configdir == nil {
+		cfg.Configdir = opts.configdir
 	}
 
 	if opts.noAnnounce {

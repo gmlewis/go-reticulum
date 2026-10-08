@@ -30,8 +30,10 @@ import (
 
 // Weather-alert wordings and bounds.
 const (
-	// wxalertUsage is the usage line for the command.
-	wxalertUsage = "wxalert <place|area>"
+	// alertsUsage is the usage line for the command, under its canonical name
+	// rather than its wxalert alias: a usage line is what a reader types, and the
+	// command they asked about is the one they should be told about.
+	alertsUsage = "alerts <place|area>"
 	// wxalertNotConfiguredLine is the answer when the operator has set no
 	// provider.
 	wxalertNotConfiguredLine = "wxalert is not configured: set weather_alert_url in config.toml to enable it"
@@ -73,7 +75,7 @@ func (c *commandContext) runWxalert() []string {
 		return []string{wxalertNotConfiguredLine}
 	}
 	if strings.TrimSpace(c.Args) == "" {
-		return []string{"Usage: " + wxalertUsage}
+		return []string{"Usage: " + alertsUsage}
 	}
 	place, err := sanitizePlace(c.Args)
 	if err != nil {

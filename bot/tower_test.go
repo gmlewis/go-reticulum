@@ -555,12 +555,12 @@ func TestTowerBareForms(t *testing.T) {
 
 	unknown := runLines(t, reg, session, "tower x")
 	joined := strings.Join(unknown, "\n")
-	if !strings.Contains(joined, "Usage: "+towerUsage) {
+	if !strings.Contains(joined, "Usage: tower"+towerUsageTail) {
 		t.Errorf("tower x = %v, want the usage", unknown)
 	}
 
 	bare := runLines(t, reg, session, "tower")
-	if len(bare) != 2 || bare[0] != "Usage: "+towerUsage {
+	if len(bare) != 2 || bare[0] != "Usage: tower"+towerUsageTail {
 		t.Errorf("tower = %v, want the usage and its hint", bare)
 	}
 }
@@ -569,6 +569,8 @@ func TestTowerBareForms(t *testing.T) {
 // service-specific views: tower answers over the whole catalog, repeater and
 // cell each narrow it to one service, and mast is an alias for cell. The
 // narrowing is what makes each name's summary a promise the handler keeps.
+// Each name also carries its own usage line: a reader who asks about cell is told
+// to type cell, not tower.
 func TestTowerIsRegisteredWithItsServiceViews(t *testing.T) {
 	t.Parallel()
 
@@ -576,13 +578,20 @@ func TestTowerIsRegisteredWithItsServiceViews(t *testing.T) {
 	if got := reg.aliases["mast"]; got != "cell" {
 		t.Errorf("aliases[mast] = %q, want cell", got)
 	}
+	wantUsage := map[string]string{
+		"tower":    "tower" + towerUsageTail,
+		"repeater": "repeater" + towerUsageTail,
+		"cell":     "cell" + towerUsageTail,
+		// mast is an alias: it resolves to the cell command, usage and all.
+		"mast": "cell" + towerUsageTail,
+	}
 	for _, name := range []string{"tower", "repeater", "cell", "mast"} {
 		cmd, ok := reg.byName[name]
 		if !ok {
 			t.Fatalf("command %q is not registered", name)
 		}
-		if cmd.usage != towerUsage {
-			t.Errorf("%v usage = %q, want %q", name, cmd.usage, towerUsage)
+		if cmd.usage != wantUsage[name] {
+			t.Errorf("%v usage = %q, want %q", name, cmd.usage, wantUsage[name])
 		}
 		if len(cmd.detail) == 0 {
 			t.Errorf("%v has no detail for help to print", name)
@@ -592,8 +601,8 @@ func TestTowerIsRegisteredWithItsServiceViews(t *testing.T) {
 	reg2, session, _ := commandFixture(t, towerConfig())
 	for _, name := range []string{"tower", "repeater", "cell", "mast"} {
 		lines := runLines(t, reg2, session, "help "+name)
-		if !strings.Contains(strings.Join(lines, "\n"), towerUsage) {
-			t.Errorf("help %v = %v, want the usage", name, lines)
+		if !strings.Contains(strings.Join(lines, "\n"), wantUsage[name]) {
+			t.Errorf("help %v = %v, want the usage %q", name, lines, wantUsage[name])
 		}
 	}
 

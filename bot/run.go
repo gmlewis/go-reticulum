@@ -149,7 +149,12 @@ func Run(ctx context.Context, opts Options) error {
 	reg.paths = livePathLookup{ts: transport}
 	b.pathsTable = reg.paths
 	b.announceFeed = liveAnnounceFeed{ts: transport}
-	b.hooks.Inbound = newResponder(cfg, ownHash, reg.Run).handle
+	// The reply policy learns each command's own line budget from the registry, so
+	// a command whose answer is one indivisible picture is not cut short by
+	// max_reply_lines, which bounds ordinary answers.
+	reply := newResponder(cfg, ownHash, reg.Run)
+	reply.lineBudget = reg.lineBudget
+	b.hooks.Inbound = reply.handle
 
 	// The GNSS receiver is optional, and it is one source shared by every
 	// position-aware command and by the captive portal, so the radio answer and

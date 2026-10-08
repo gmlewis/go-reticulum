@@ -84,6 +84,10 @@ type responder struct {
 	cfg     *BotConfig
 	ownHash []byte
 	run     commandRunner
+	// lineBudget reports how many NOTICE lines a command's answer needs when that
+	// is more than max_reply_lines allows. Nil means the configured bound governs
+	// every reply, which is what a responder built without a command registry gets.
+	lineBudget func(command string) int
 	// now is the clock, injectable so the cooldown and staleness rules are
 	// tested without waiting on real time.
 	now func() time.Time
@@ -156,7 +160,7 @@ func (r *responder) handle(s *hubSession, msg *rrc.RRCMessage) {
 			logf("suppressed the request from %v: the %vs cooldown is still running", requester, r.cfg.CooldownSecs)
 			return
 		}
-		r.send(s, room, msg, r.directRoute(s, msg, trig.Direct), []string{staleReply})
+		r.send(s, room, msg, r.directRoute(s, msg, trig.Direct), r.replyLinesFor(trig.Command), []string{staleReply})
 		return
 	}
 
@@ -176,7 +180,7 @@ func (r *responder) handle(s *hubSession, msg *rrc.RRCMessage) {
 		Nick:    trig.Nick,
 		Now:     now,
 	})
-	r.send(s, room, msg, r.directRoute(s, msg, trig.Direct), lines)
+	r.send(s, room, msg, r.directRoute(s, msg, trig.Direct), r.replyLinesFor(trig.Command), lines)
 }
 
 // runCommand executes one command through the runner, recovering from a panic so
@@ -269,10 +273,28 @@ func (r *responder) gcCooldownLocked(now time.Time, cooldown time.Duration) {
 	}
 }
 
+// replyLinesFor returns how many NOTICE lines one reply from this command may
+// produce: the configured bound, raised to the command's own budget when it has
+// declared one. Only a command whose answer cannot be shortened without becoming
+// wrong declares a budget, which is what a picture's rows are. The argument is the
+// whole command line the trigger carried, so its name is split off first, exactly
+// as the pager check does.
+func (r *responder) replyLinesFor(command string) int {
+	budget := max(r.cfg.MaxReplyLines, 1)
+	if r.lineBudget == nil {
+		return budget
+	}
+	name, _ := splitCommandLine(command)
+	if declared := r.lineBudget(name); declared > budget {
+		return declared
+	}
+	return budget
+}
+
 // send emits the reply lines as one NOTICE each, along the route the policy
 // chose. A reply is dropped when the room it belongs to is no longer joined,
 // because the hub would reject it anyway.
-func (r *responder) send(s *hubSession, room string, msg *rrc.RRCMessage, direct bool, lines []string) {
+func (r *responder) send(s *hubSession, room string, msg *rrc.RRCMessage, direct bool, budget int, lines []string) {
 	if len(lines) == 0 {
 		return
 	}
@@ -292,7 +314,7 @@ func (r *responder) send(s *hubSession, room string, msg *rrc.RRCMessage, direct
 			logf("no reply route for the direct request from %v", hexString(msg.Src))
 			return
 		}
-		chunks := r.chunksFor(roomFits(r.ownHash, room, nick), lines)
+		chunks := r.chunksFor(roomFits(r.ownHash, room, nick), lines, budget)
 		if len(chunks) == 0 {
 			return
 		}
@@ -313,7 +335,7 @@ func (r *responder) send(s *hubSession, room string, msg *rrc.RRCMessage, direct
 	// K_NICK are on it -- which SendDirectNotice refuses before anything
 	// reaches the wire. Measuring the direct shape is what keeps a long reply
 	// line from being dropped whole.
-	chunks := r.chunksFor(directFits(r.ownHash, nick), lines)
+	chunks := r.chunksFor(directFits(r.ownHash, nick), lines, budget)
 	if len(chunks) == 0 {
 		return
 	}
@@ -366,12 +388,14 @@ func (r *responder) directRoute(s *hubSession, msg *rrc.RRCMessage, requesterDir
 }
 
 // chunksFor turns the reply lines into the envelopes they will be sent as: one
-// chunk per line, long lines split, and the whole reply bounded by
-// max_reply_lines. fits is the size model for the envelope shape the reply will
-// travel in, so a room notice and a direct notice are both measured as what the
-// hub will really put on the wire.
-func (r *responder) chunksFor(fits noticeSizer, lines []string) []string {
-	budget := max(r.cfg.MaxReplyLines, 1)
+// chunk per line, long lines split, and the whole reply bounded by budget.
+// budget is max_reply_lines, raised to the answering command's own bound when it
+// declared one, so a picture whose rows are only meaningful together is not cut
+// in half. fits is the size model for the envelope shape the reply will travel
+// in, so a room notice and a direct notice are both measured as what the hub will
+// really put on the wire.
+func (r *responder) chunksFor(fits noticeSizer, lines []string, budget int) []string {
+	budget = max(budget, 1)
 	chunks := make([]string, 0, len(lines))
 	for _, line := range lines {
 		if line == "" {

@@ -140,7 +140,7 @@ func TestWxalertCommandReportsItsConfiguration(t *testing.T) {
 
 	reg, session, _ = commandFixture(t, wxalertConfig())
 	if lines := runLinesAt(t, reg, session, "wxalert", spacewxClock); len(lines) != 1 ||
-		!strings.Contains(lines[0], "Usage: "+wxalertUsage) {
+		!strings.Contains(lines[0], "Usage: "+alertsUsage) {
 		t.Errorf("wxalert with no place = %v, want the usage line", lines)
 	}
 	if lines := runLinesAt(t, reg, session, "wxalert <script>", spacewxClock); len(lines) != 1 ||
