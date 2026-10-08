@@ -859,13 +859,13 @@ func buildReleaseNotes(version, repo string, assets []string) string {
 	mustFprintf(&b, "- **Form Factor C (Pocket Hub)**: Standalone `gorrcd` mesh relay daemon (no display, no keyboard).\n")
 	mustFprintf(&b, "  - `gorrcd-%v-pocket_hub-linux-arm64`, `gorrcd-...-arm`, `gorrcd-...-riscv64`, `gorrcd-...-amd64`\n", version)
 	mustFprintf(&b, "  - Accelerator variants: `gorrcd-...-pocket_hub-asic-...` and `gorrcd-...-pocket_hub-fpga-...`.\n")
-	mustFprintf(&b, "- **Form Factor D (Go Reticulum Lifesaver - GRL)**: Standalone emergency mesh appliance on Espressif ESP32-C5 with GNSS, digital compass, Wi-Fi 6 captive portal, and TRNG entropy.\n")
-	mustFprintf(&b, "  - Bootloader (0x2000): `grl-%v-esp32c5-bootloader.bin`\n", version)
-	mustFprintf(&b, "  - Partition Table (0x8000): `grl-%v-esp32c5-partitions.bin`\n", version)
-	mustFprintf(&b, "  - Application (0x10000): `grl-%v-esp32c5-app.bin`\n", version)
+	mustFprintf(&b, "- **Form Factor D (Go Reticulum Buddy - GRB)**: Standalone emergency mesh appliance on Espressif ESP32-C5 with GNSS, digital compass, Wi-Fi 6 captive portal, and TRNG entropy.\n")
+	mustFprintf(&b, "  - Bootloader (0x2000): `grb-%v-esp32c5-bootloader.bin`\n", version)
+	mustFprintf(&b, "  - Partition Table (0x8000): `grb-%v-esp32c5-partitions.bin`\n", version)
+	mustFprintf(&b, "  - Application (0x10000): `grb-%v-esp32c5-app.bin`\n", version)
 	mustFprintf(&b, "  - Flash with `esptool.py` or Web Flasher:\n")
 	mustFprintf(&b, "    ```bash\n")
-	mustFprintf(&b, "    esptool.py --chip esp32c5 write_flash 0x2000 grl-%v-esp32c5-bootloader.bin 0x8000 grl-%v-esp32c5-partitions.bin 0x10000 grl-%v-esp32c5-app.bin\n", version, version, version)
+	mustFprintf(&b, "    esptool.py --chip esp32c5 write_flash 0x2000 grb-%v-esp32c5-bootloader.bin 0x8000 grb-%v-esp32c5-partitions.bin 0x10000 grb-%v-esp32c5-app.bin\n", version, version, version)
 	mustFprintf(&b, "    ```\n")
 	mustFprintf(&b, "\nSee [`Hardware-Projects-Guide.md`](https://github.com/gmlewis/asic-reticulum/blob/master/Hardware-Projects-Guide.md) for the complete bill of materials, assembly, and flashing instructions (including zero-install web flashing via [ESPConnect](https://thelastoutpostworkshop.github.io/ESPConnect/) and [Espressif Web Flasher](https://espressif.github.io/esptool-js/)).\n")
 
@@ -903,9 +903,9 @@ func copyFile(src, dst string) error {
 // (idf.py) if idf.py is present in PATH. If idf.py is not present, it logs a
 // notice and returns nil unless requireFirmware is true, in which case it returns an error.
 // The built binaries are copied to outDir with release asset names:
-//   - grl-<version>-esp32c5-bootloader.bin
-//   - grl-<version>-esp32c5-partitions.bin
-//   - grl-<version>-esp32c5-app.bin
+//   - grb-<version>-esp32c5-bootloader.bin
+//   - grb-<version>-esp32c5-partitions.bin
+//   - grb-<version>-esp32c5-app.bin
 func buildESP32C5Firmware(outDir, version string, requireFirmware bool, progress io.Writer) ([]string, error) {
 	if _, err := exec.LookPath("idf.py"); err != nil {
 		if requireFirmware {
@@ -915,21 +915,21 @@ func buildESP32C5Firmware(outDir, version string, requireFirmware bool, progress
 		return nil, nil
 	}
 
-	mustFprintf(progress, "Building ESP32-C5 GRL firmware via idf.py...\n")
-	cmd := exec.Command("idf.py", "-C", filepath.Join("firmware", "esp32c5-grl"), "build")
+	mustFprintf(progress, "Building ESP32-C5 GRB firmware via idf.py...\n")
+	cmd := exec.Command("idf.py", "-C", filepath.Join("firmware", "esp32c5-grb"), "build")
 	cmd.Stdout = progress
 	cmd.Stderr = progress
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("idf.py build failed: %w", err)
 	}
 
-	srcBoot := filepath.Join("firmware", "esp32c5-grl", "build", "bootloader", "bootloader.bin")
-	srcPart := filepath.Join("firmware", "esp32c5-grl", "build", "partition_table", "partition-table.bin")
-	srcApp := filepath.Join("firmware", "esp32c5-grl", "build", "esp32c5-grl.bin")
+	srcBoot := filepath.Join("firmware", "esp32c5-grb", "build", "bootloader", "bootloader.bin")
+	srcPart := filepath.Join("firmware", "esp32c5-grb", "build", "partition_table", "partition-table.bin")
+	srcApp := filepath.Join("firmware", "esp32c5-grb", "build", "esp32c5-grb.bin")
 
-	dstBoot := filepath.Join(outDir, fmt.Sprintf("grl-%v-esp32c5-bootloader.bin", version))
-	dstPart := filepath.Join(outDir, fmt.Sprintf("grl-%v-esp32c5-partitions.bin", version))
-	dstApp := filepath.Join(outDir, fmt.Sprintf("grl-%v-esp32c5-app.bin", version))
+	dstBoot := filepath.Join(outDir, fmt.Sprintf("grb-%v-esp32c5-bootloader.bin", version))
+	dstPart := filepath.Join(outDir, fmt.Sprintf("grb-%v-esp32c5-partitions.bin", version))
+	dstApp := filepath.Join(outDir, fmt.Sprintf("grb-%v-esp32c5-app.bin", version))
 
 	type filePair struct {
 		src, dst string
@@ -948,7 +948,7 @@ func buildESP32C5Firmware(outDir, version string, requireFirmware bool, progress
 		assets = append(assets, p.dst)
 	}
 
-	mustFprintf(progress, "ESP32-C5 GRL firmware built successfully (3 binaries).\n")
+	mustFprintf(progress, "ESP32-C5 GRB firmware built successfully (3 binaries).\n")
 	return assets, nil
 }
 

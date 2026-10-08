@@ -10,7 +10,7 @@
   field tools, the command registry, and the captive portal all live in the
   library package
   [`github.com/gmlewis/go-reticulum/bot`](https://pkg.go.dev/github.com/gmlewis/go-reticulum/bot),
-  where [`grl`](grl.md) — the Go Reticulum Lifesaver appliance — runs the very
+  where [`grb`](grb.md) — the Go Reticulum Buddy appliance — runs the very
   same code in-process. `cmd/gorrcbot` is only the command line and the
   Reticulum wiring, so a radio reply and a dashboard answer can never drift
   apart, and `bot.Engine.Eval` evaluates a command with zero hops and zero
@@ -154,7 +154,7 @@ lxmf_announce_minutes = 360
 emergency_lxmf_destination = ""
 
 # ---------------------------------------------------------------------
-# Go Reticulum Lifesaver (GRL): GNSS & the captive survival portal
+# Go Reticulum Buddy (GRB): GNSS & the captive survival portal
 # ---------------------------------------------------------------------
 
 # GNSS receiver streaming NMEA-0183 sentences, for example /dev/ttyUSB0 or
@@ -597,18 +597,18 @@ command that is fully useful before its operator has configured anything at all.
 
 ---
 
-## The Go Reticulum Lifesaver (GRL)
+## The Go Reticulum Buddy (GRB)
 
-The **Go Reticulum Lifesaver (GRL)** is the role `gorrcbot` plays on a
+The **Go Reticulum Buddy (GRB)** is the role `gorrcbot` plays on a
 pocket-sized, off-grid survival communicator: a device that replaces a
 $300–$600 commercial satellite messenger and its monthly subscription with an
 inexpensive, open-source node that works when every link has already failed.
 
-!!! tip "The appliance itself is `grl`"
+!!! tip "The appliance itself is `grb`"
     This section describes the survival intelligence `gorrcbot` shares with the
     appliance. To run the whole appliance — Reticulum, the GNSS receiver and
     compass, the zero-hop field assistant, and the captive dashboard the phone
-    reads — use [`grl`](grl.md), which mounts the very same
+    reads — use [`grb`](grb.md), which mounts the very same
     [`bot`](https://pkg.go.dev/github.com/gmlewis/go-reticulum/bot) engine
     in-process.
 
@@ -987,7 +987,7 @@ which is how a reader sees the region that was picked.
 | `loc` | `@gobot loc <location>` | Converts any supported coordinate format and outputs it in all five notations simultaneously. A position inside China also prints the GCJ-02 "Mars coordinate" that Amap and Gaode expect. |
 | `dist` | `@gobot dist <from> <to>` | Calculates great-circle distance (km, statute miles, nautical miles) and forward/reverse bearings between two points. |
 | `proj` | `@gobot proj <origin> <bearing°> <distance>` | Dead reckoning: calculates the destination coordinate from a starting location, course, and distance (e.g. `@gobot proj CM87uk 045 15km`). |
-| `whereami` | `@gobot whereami [location]` | The operational location card: Plus Code, coordinates, Maidenhead grid, elevation, the **heading**, fix status, local solar time, and the sunset countdown. With no argument it uses the live GNSS fix. Also accepted as `/whereami`. See [The Go Reticulum Lifesaver](#the-go-reticulum-lifesaver-grl). |
+| `whereami` | `@gobot whereami [location]` | The operational location card: Plus Code, coordinates, Maidenhead grid, elevation, the **heading**, fix status, local solar time, and the sunset countdown. With no argument it uses the live GNSS fix. Also accepted as `/whereami`. See [The Go Reticulum Buddy](#the-go-reticulum-buddy-grb). |
 
 ---
 

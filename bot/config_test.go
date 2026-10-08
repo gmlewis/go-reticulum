@@ -1169,7 +1169,7 @@ func TestDecodeBotConfigToleratesAnAbsentTowersCSV(t *testing.T) {
 	}
 }
 
-// TestDecodePortalAndGNSSSettings asserts the Go Reticulum Lifesaver's Phase 0
+// TestDecodePortalAndGNSSSettings asserts the Go Reticulum Buddy's Phase 0
 // keys decode: the captive portal's listen address, the GNSS receiver's device,
 // and a static fix for a headless node with no receiver at all.
 func TestDecodePortalAndGNSSSettings(t *testing.T) {

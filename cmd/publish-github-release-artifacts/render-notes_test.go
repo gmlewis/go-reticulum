@@ -181,8 +181,8 @@ func TestRenderReleaseNotes(t *testing.T) {
 	if !strings.Contains(notes, "pocket_hub") {
 		t.Error("release notes missing pocket_hub reference")
 	}
-	if !strings.Contains(notes, "Go Reticulum Lifesaver - GRL") {
-		t.Error("release notes missing GRL reference")
+	if !strings.Contains(notes, "Go Reticulum Buddy - GRB") {
+		t.Error("release notes missing GRB reference")
 	}
 	if !strings.Contains(notes, "esp32c5-bootloader.bin") {
 		t.Error("release notes missing esp32c5-bootloader.bin reference")

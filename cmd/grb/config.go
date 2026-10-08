@@ -25,7 +25,7 @@ const (
 	// DefaultCallsign is the name a fresh appliance answers to on the mesh.
 	// It is deliberately obviously fictional: an operator must replace it
 	// before transmitting, and a stranger who hears it knows it is a default.
-	DefaultCallsign = "GRL-NOMAD"
+	DefaultCallsign = "GRB-NOMAD"
 	// DefaultPortalAddr binds the survival dashboard to the loopback
 	// interface, so a fresh install serves the dashboard to a browser on the
 	// same workstation without exposing it to the local network. Set it to
@@ -40,9 +40,9 @@ const (
 	configFileName = "config.toml"
 	// homeEnvVar overrides the appliance's home directory, which is how a
 	// test and a second appliance on one workstation stay isolated.
-	homeEnvVar = "GRL_HOME"
+	homeEnvVar = "GRB_HOME"
 	// homeDirName is the appliance's home directory under the user's home.
-	homeDirName = ".grl"
+	homeDirName = ".grb"
 	// storageDirName holds the appliance's own state under its home.
 	storageDirName = "storage"
 )
@@ -96,9 +96,9 @@ func DefaultRooms() []string {
 	return []string{"general", "emergency"}
 }
 
-// DefaultHome returns the appliance's state directory: the value of GRL_HOME
+// DefaultHome returns the appliance's state directory: the value of GRB_HOME
 // when it is set and not blank (used literally, with no expansion), and
-// ~/.grl otherwise.
+// ~/.grb otherwise.
 func DefaultHome() string {
 	if home := strings.TrimSpace(os.Getenv(homeEnvVar)); home != "" {
 		return home
@@ -423,7 +423,7 @@ func expandHome(path string) string {
 // generated file and the in-memory defaults can never disagree; the surrounding
 // comments are what make the file self-explanatory to an operator at 3 a.m.
 func defaultConfigContent(cfg Config) string {
-	return fmt.Sprintf(`# Go Reticulum Lifesaver (GRL) configuration.
+	return fmt.Sprintf(`# Go Reticulum Buddy (GRB) configuration.
 #
 # Every value below is the built-in default, so this file can be edited,
 # trimmed, or deleted: an appliance with no configuration file at all still

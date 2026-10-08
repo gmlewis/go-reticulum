@@ -23,12 +23,12 @@ import (
 // programName is the prefix every operator-facing line this executable logs
 // carries. The shared engine is told the same name at start-up, so one appliance
 // reports one identity in the journal rather than two.
-const programName = "grl"
+const programName = "grb"
 
 // storageDirMode is the mode of the appliance's own state directory.
 const storageDirMode = 0o755
 
-// App is one running Go Reticulum Lifesaver: the Reticulum stack, the two
+// App is one running Go Reticulum Buddy: the Reticulum stack, the two
 // sensors, the in-process field assistant, and the captive dashboard, brought up
 // in that order and torn down in the reverse of it.
 //
@@ -171,16 +171,16 @@ func (a *App) PortalAddr() string {
 // after a half-started appliance, and Start may be called at most once.
 func (a *App) Start(ctx context.Context) error {
 	if a == nil {
-		return errors.New("grl: no appliance")
+		return errors.New("grb: no appliance")
 	}
 	a.mu.Lock()
 	switch {
 	case a.closed:
 		a.mu.Unlock()
-		return errors.New("grl: the appliance is already closed")
+		return errors.New("grb: the appliance is already closed")
 	case a.started:
 		a.mu.Unlock()
-		return errors.New("grl: the appliance is already running")
+		return errors.New("grb: the appliance is already running")
 	}
 	a.started = true
 	a.mu.Unlock()
@@ -217,7 +217,7 @@ func (a *App) abort(cause error) error {
 func (a *App) startReticulum() error {
 	if a.entropySource != nil {
 		if err := crypto.SetEntropySource(a.entropySource, a.entropyOpts); err != nil {
-			return fmt.Errorf("grl: could not install entropy source: %w", err)
+			return fmt.Errorf("grb: could not install entropy source: %w", err)
 		}
 	}
 	logger := a.logger
@@ -227,7 +227,7 @@ func (a *App) startReticulum() error {
 	transport := rns.NewTransportSystem(logger)
 	ret, err := rns.NewReticulumWithLogger(transport, a.cfg.RNS.ConfigPath, logger)
 	if err != nil {
-		return fmt.Errorf("grl: could not start Reticulum: %w", err)
+		return fmt.Errorf("grb: could not start Reticulum: %w", err)
 	}
 	a.rns = ret
 	return nil
@@ -242,7 +242,7 @@ func (a *App) startSensors() error {
 	if a.gps == nil {
 		gps, err := bot.OpenGPS(sensors)
 		if err != nil {
-			return fmt.Errorf("grl: %w", err)
+			return fmt.Errorf("grb: %w", err)
 		}
 		if gps != nil {
 			a.gps = gps
@@ -257,7 +257,7 @@ func (a *App) startSensors() error {
 	if a.compass == nil {
 		compass, err := bot.OpenCompass(sensors)
 		if err != nil {
-			return fmt.Errorf("grl: %w", err)
+			return fmt.Errorf("grb: %w", err)
 		}
 		if compass != nil {
 			a.compass = compass
@@ -317,7 +317,7 @@ func (a *App) startPortal() error {
 	}
 	portal := bot.NewPortalServer(addr, a.gps, a.engine)
 	if err := portal.Start(); err != nil {
-		return fmt.Errorf("grl: %w", err)
+		return fmt.Errorf("grb: %w", err)
 	}
 	a.portal = portal
 	logf("captive portal on http://%v/", portal.Addr())

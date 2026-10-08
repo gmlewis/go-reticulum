@@ -118,7 +118,7 @@ func (b *BackboneInterface) Type() string { return "BackboneInterface" }
 // TCPServerInterface.HashString ("TCPServerInterface[...]") so the hash
 // matches Python for a Python-written destination_table lookup.
 func (b *BackboneInterface) HashString() string {
-	return "BackboneInterface[" + b.Name() + "/" + tcpHostPort(b.bindIP, b.bindPort) + "]"
+	return "BackboneInterface[" + b.Name() + "/" + hostPortAddr(b.bindIP, b.bindPort) + "]"
 }
 
 // ConfigureFastFlapping sets the fast-flap blocking parameters and lazily
@@ -497,5 +497,5 @@ func (b *BackboneClientInterface) HashString() string {
 		host = b.remoteIP
 		port = b.remotePort
 	}
-	return "BackboneInterface[" + b.Name() + "/" + tcpHostPort(host, port) + "]"
+	return "BackboneInterface[" + b.Name() + "/" + hostPortAddr(host, port) + "]"
 }

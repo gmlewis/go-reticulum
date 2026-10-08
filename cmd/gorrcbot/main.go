@@ -12,8 +12,8 @@
 //
 // This executable is a thin wrapper. The engine, the field tools, the sensors,
 // and the captive portal all live in the shared library package
-// github.com/gmlewis/go-reticulum/bot, which the single-appliance Lifesaver
-// executable (cmd/grl) runs in-process; this file only parses the command line
+// github.com/gmlewis/go-reticulum/bot, which the single-appliance Buddy
+// executable (cmd/grb) runs in-process; this file only parses the command line
 // and hands the result to bot.Run.
 //
 // It brings up the bot in four steps:

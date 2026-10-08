@@ -99,4 +99,4 @@ the same `sha256` are reading the same catalog, whatever the verdict says.
 ## See also
 
 - [gorrcbot](gorrcbot.md) — the commands that read these catalogs
-- [grl](grl.md) — the same engine as a standalone appliance
+- [grb](grb.md) — the same engine as a standalone appliance

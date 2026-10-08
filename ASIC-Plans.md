@@ -382,7 +382,7 @@ per-product firmware.
 | **Leaf** (sensors & actuators) | CH32V003-class RISC-V (10-cent tier) up to ESP32-C3/C6 | LoRa (sleepy, duty-cycled), optionally built-in 802.15.4/WiFi/BLE | Temperature, humidity, light level, weather, door/window contacts, motion, relays, lighting control. Weeks of battery on slow LoRa announce cadence; in-home Leafs can lean on the radio already on the chip (see 6.3) |
 | **Eye** (cameras) | ESP32-P4 (H.264 encoder, dual-core RISC-V) or a Pi/OrangePi-class RISC-V SBC (e.g. Milk-V/StarFive) | Built-in WiFi for in-home streaming, LoRa for wake/alert | Doorbell, motion-triggered captures. See the bandwidth reality in 6.3 |
 | **View** (displays & UX) | ESP32 with e-ink; or any Linux SBC running this repo's Go NomadNet | LoRa for alerts, WiFi/LAN for rich UI | Wall panels, room controllers, doorbell screens — NomadNet pages as the UI layer, already designed for exactly this |
-| **Communicator / Pocket Hub / Traveler's Lifesaver** (handheld off-grid companion) | **ESP32-C5** (single-core RISC-V @ 240 MHz, 400 KB SRAM + 8–16 MB OPI PSRAM) | Dual-band Wi-Fi 6 (2.4 GHz + 5 GHz) + BLE 5 + 802.15.4 + LoRa (SX1262 SPI) + GNSS/GPS (UART) | Pocket-sized, battery-powered survival node and RRC chat hub. Runs local `gobot` field intelligence (wilderness first aid, repeater catalog, ephemeris), GNSS receiver with Open Location Code (`/whereami`), and Wi-Fi 6 captive web/Micron portal for zero-hardware-screen smartphone access. ASIC coprocessor offloads burst crypto to maximize survival battery life |
+| **Communicator / Pocket Hub / Traveler's Companion** (handheld off-grid companion) | **ESP32-C5** (single-core RISC-V @ 240 MHz, 400 KB SRAM + 8–16 MB OPI PSRAM) | Dual-band Wi-Fi 6 (2.4 GHz + 5 GHz) + BLE 5 + 802.15.4 + LoRa (SX1262 SPI) + GNSS/GPS (UART) | Pocket-sized, battery-powered survival node and RRC chat hub. Runs local `gobot` field intelligence (wilderness first aid, repeater catalog, ephemeris), GNSS receiver with Open Location Code (`/whereami`), and Wi-Fi 6 captive web/Micron portal for zero-hardware-screen smartphone access. ASIC coprocessor offloads burst crypto to maximize survival battery life |
 
 Two deliberate software decisions make the family coherent instead of a
 pile of boards:
@@ -568,11 +568,11 @@ application is a BOM and a `micron` page away.
 4. The ASIC stamper (section 5 Phase B) rides along as optional
    acceleration once Node blocks exist to host it.
 
-### 6.9 The Go Reticulum Lifesaver (GRL): Sovereign Off-Grid Survival Device
+### 6.9 The Go Reticulum Buddy (GRB): Sovereign Off-Grid Survival Device
 
 The intersection of `go-reticulum`, `go-nomadnet`, and `asic-reticulum` enables a
-product category of profound global utility: the **Go Reticulum Lifesaver (GRL)** —
-an inexpensive ($20–$25 BOM), pocket-sized, sovereign off-grid lifesaver and field
+product category of profound global utility: the **Go Reticulum Buddy (GRB)** —
+an inexpensive ($20–$25 BOM), pocket-sized, sovereign off-grid companion and field
 assistant that anyone can carry in remote travel, wilderness exploration, maritime
 passages, or disaster zones.
 
@@ -619,7 +619,7 @@ simply run gonomadnet and query a remote RRC Hub over LoRa to reach @gobot."*
 > happens to be reachable.**
 
 > [!WARNING]
-> **Safety, Medical, and Emergency Disclaimer**: The Go Reticulum Lifesaver is an experimental, open-source communication appliance. It is NOT a certified life-safety device, NOT a certified medical instrument, and NOT connected to official 911/112 dispatch or government search-and-rescue satellites. Transmission over unlicensed LoRa mesh frequencies is best-effort and never guaranteed. Always carry certified primary safety equipment (EPIRB/PLB, paper maps, magnetic compass). See [**DISCLAIMER.md**](DISCLAIMER.md) for full terms and total release of liability.
+> **Safety, Medical, and Emergency Disclaimer**: The Go Reticulum Buddy is an experimental, open-source communication appliance. It is NOT a certified life-safety device, NOT a certified medical instrument, and NOT connected to official 911/112 dispatch or government search-and-rescue satellites. Transmission over unlicensed LoRa mesh frequencies is best-effort and never guaranteed. Always carry certified primary safety equipment (EPIRB/PLB, paper maps, magnetic compass). See [**DISCLAIMER.md**](DISCLAIMER.md) for full terms and total release of liability.
 
 ---
 
@@ -695,7 +695,7 @@ trapped in a blizzard, lost in dense fog, or orienting a high-gain directional a
 Yagi, Moxon, or bi-quad) toward a distant mountain repeater or search party, **GPS heading is completely
 undefined or fluctuates wildly as noise**.
 
-The Go Reticulum Lifesaver pairs the GNSS receiver with an inexpensive **3-axis electronic magnetometer /
+The Go Reticulum Buddy pairs the GNSS receiver with an inexpensive **3-axis electronic magnetometer /
 digital compass (QMC5883L or tilt-compensated LSM303DLHC)** connected over I2C (`GPIO 21 SDA`, `GPIO 22 SCL`):
 1. **Instant Stationary Heading**: Provides instantaneous, jitter-free 360° heading relative to Magnetic North
    regardless of whether the operator is moving or stationary.
@@ -735,11 +735,11 @@ Wi-Fi and browser remain 100% operational.
                                       | 5 GHz Wi-Fi 6 (Captive Portal / HTTP)
                                       v
 +-----------------------------------------------------------------------------+
-|             The Go Reticulum Lifesaver (GRL) (Sealed, Waterproof, ~$21 BOM)  |
+|             The Go Reticulum Buddy (GRB) (Sealed, Waterproof, ~$21 BOM)  |
 |                                                                             |
 |  +-----------------------------------------------------------------------+  |
 |  | ESP32-C5 Host MCU (RV32IMAC @ 240 MHz, 400KB SRAM + 8MB PSRAM)        |  |
-|  |  - Wi-Fi 6 SoftAP ("Reticulum-Lifesaver-[ID]") + HTTP/Micron Portal   |  |
+|  |  - Wi-Fi 6 SoftAP ("Reticulum-Buddy-[ID]") + HTTP/Micron Portal   |  |
 |  |  - Pure-Go RNS Transport + Local gorrcd Chat Hub                      |  |
 |  |  - Embedded gobot Field Tools (first aid, towers, ephemeris, OLC)     |  |
 |  +-------------------+--------------------+--------------------+---------+---------+  |
@@ -761,10 +761,10 @@ Wi-Fi and browser remain 100% operational.
 ```
 
 #### How the User Experience Works in the Field
-1. The GRL device rests in the traveler's pocket or carabiner-clipped to a backpack.
-2. The traveler opens Wi-Fi settings on their phone and taps `Reticulum-Lifesaver`.
+1. The GRB device rests in the traveler's pocket or carabiner-clipped to a backpack.
+2. The traveler opens Wi-Fi settings on their phone and taps `Reticulum-Buddy`.
 3. The phone's operating system detects the captive portal probe and **instantly pops up
-   the GRL interface**—no app installation, no App Store, no account creation!
+   the GRB interface**—no app installation, no App Store, no account creation!
 4. The traveler sees a clean, touch-optimized survival dashboard:
    - **Where Am I**: Big bold Plus Code, coordinates, elevation, live compass rose, and sunset clock.
    - **Antenna & Direction Finding**: Real-time steering arrows pointing straight at nearest repeaters.
@@ -773,14 +773,14 @@ Wi-Fi and browser remain 100% operational.
    - **Field Assistant**: Ask `@gobot` any question (`med snakebite`, `tower near`, `sun`).
    - **Offline Survival Library**: Access Micron survival pages (first aid manuals, edible
      plants, emergency radio guides) served directly from the device's MicroSD card.
-5. When the traveler puts their phone away, the GRL puck continues listening to the LoRa mesh
+5. When the traveler puts their phone away, the GRB puck continues listening to the LoRa mesh
    in low-power sleep mode, caching incoming messages in RAM/SD.
 
 ---
 
 ### 6.12 Recommended Hardware Bill of Materials (BOM) & Pinout on ESP32-C5
 
-The complete hardware bill of materials for the sealed Go Reticulum Lifesaver (GRL):
+The complete hardware bill of materials for the sealed Go Reticulum Buddy (GRB):
 
 | Component | Part / Spec | Approx. Cost | Source / Notes |
 |---|---|---|---|
@@ -1507,8 +1507,8 @@ cannot be used directly. The two viable firmware paths are:
 | 15 | ESP32-C5 board support & dual-band AP bridge: TinyGo target `esp32c5`, dual-band Wi-Fi 6 AP `Interface` + BLE GATT + SX1262 LoRa SPI driver + QSPI GDMA host driver for crypto ASIC (§7.5.2) | new / both | medium | enables the standalone Pocket Hub (§7.5.2) |
 | 16 | SpinalHDL Crypto ASIC cores: SHA-256 stamper, X25519/Ed25519 Montgomery ladder, AES+HMAC Token engine, QSPI slave with `Stream` interface (§2, §3) | new | large | hardware accelerator targeting TinyTapeout and full shuttles |
 | 17 | GNSS NMEA-0183 driver & geodetic coordinate engine (`/whereami`): pure-Go parser for `$GNRMC`/`$GNGGA`, wraps in-tree `bot/olc.go` (Plus Codes) & `bot/geo.go` (Maidenhead); automatic context injection (§6.10) | go-reticulum | small | **Go half landed.** `bot/gps.go` is a streaming `$GNRMC`/`$GNGGA` reader (or a static provider), `bot/declination.go` carries WMM2025, and `bot/olc.go`/`bot/geo.go`/`bot/whereami.go` hold the geodetic maths and the operational card; `bot.OpenGPS` is the entry point. Remaining: ESP32-C5 UART bring-up |
-| 18 | Embedded Captive Portal & Web Micron UI: lightweight HTTP/WebSocket daemon serving smartphone browsers over Wi-Fi 6 SoftAP; `/whereami` dashboard, local chat, `@gobot` interface, emergency SOS (§6.11) | go-nomadnet / go-reticulum | medium | **Go half landed on desktop.** `bot/portal.go` + `bot/portal-page.go` are the daemon and the survival dashboard, mounted by `cmd/grl` (`portal_addr = "127.0.0.1:9111"` for a desk, `"0.0.0.0:9111"` for a phone on the LAN) and by `gorrcbot`; every captive-probe route (`/generate_204`, `/hotspot-detect.html`, `/ncsi.txt`, `/connecttest.txt`, `/gen_204`) answers `302 → /`. Remaining: the Wi-Fi 6 SoftAP and its firmware |
-| 19 | Autonomous `gobot` field engine decoupling: in-process command evaluator (`med` first aid, `tower` repeaters, `sun`/`moon`, `checkin`) for zero-hop execution without network links (§6.9.2) | go-reticulum | medium | **Landed.** The whole engine was promoted out of `cmd/gorrcbot` into the library package `bot`, so more than one executable runs it in-process: `bot.Engine.Eval` answers a command with zero hops and zero airtime, and `bot.Run` is the complete RRC client. `cmd/gorrcbot` is now a thin CLI wrapper, and `cmd/grl` (the GRL appliance) mounts the same engine behind its local sensors and dashboard — microseconds in RAM, 0 airtime, 0 RF emissions |
+| 18 | Embedded Captive Portal & Web Micron UI: lightweight HTTP/WebSocket daemon serving smartphone browsers over Wi-Fi 6 SoftAP; `/whereami` dashboard, local chat, `@gobot` interface, emergency SOS (§6.11) | go-nomadnet / go-reticulum | medium | **Go half landed on desktop.** `bot/portal.go` + `bot/portal-page.go` are the daemon and the survival dashboard, mounted by `cmd/grb` (`portal_addr = "127.0.0.1:9111"` for a desk, `"0.0.0.0:9111"` for a phone on the LAN) and by `gorrcbot`; every captive-probe route (`/generate_204`, `/hotspot-detect.html`, `/ncsi.txt`, `/connecttest.txt`, `/gen_204`) answers `302 → /`. Remaining: the Wi-Fi 6 SoftAP and its firmware |
+| 19 | Autonomous `gobot` field engine decoupling: in-process command evaluator (`med` first aid, `tower` repeaters, `sun`/`moon`, `checkin`) for zero-hop execution without network links (§6.9.2) | go-reticulum | medium | **Landed.** The whole engine was promoted out of `cmd/gorrcbot` into the library package `bot`, so more than one executable runs it in-process: `bot.Engine.Eval` answers a command with zero hops and zero airtime, and `bot.Run` is the complete RRC client. `cmd/gorrcbot` is now a thin CLI wrapper, and `cmd/grb` (the GRB appliance) mounts the same engine behind its local sensors and dashboard — microseconds in RAM, 0 airtime, 0 RF emissions |
 | 20 | Electronic Compass driver & direction-finding (RDF): I2C magnetometer driver / NMEA-0183 ($HCHDG/$HCHDM) parser, magnetic declination calculation, relative antenna pointing for `tower near`, live compass rose on portal (§6.10.6) | go-reticulum | small | stdlib-only; zero external dependencies |
 
 ### 7.7 A phased path that reuses this repo's parity discipline
@@ -1627,12 +1627,12 @@ Connecting the ESP32-C5 host to the FPGA requires only 7 DuPont jumper wires plu
   where the device's RNS identity replaces the vendor account, the
   owner's hub replaces the vendor cloud, and a five-block family
   (Node / Leaf / Eye / View / **Communicator**) covers doorbells, security,
-  sensors, lighting, weather, and **handheld pocket chat hubs & sovereign survival companions: the Go Reticulum Lifesaver (GRL: ESP32-C5 + SX1262 LoRa + GNSS + Wi-Fi 6 Captive Portal)** — all speaking stock Reticulum, all owner-owned by
+  sensors, lighting, weather, and **handheld pocket chat hubs & sovereign survival companions: the Go Reticulum Buddy (GRB: ESP32-C5 + SX1262 LoRa + GNSS + Wi-Fi 6 Captive Portal)** — all speaking stock Reticulum, all owner-owned by
   construction. Built-in dual-band Wi-Fi 6 (2.4 & 5 GHz) and BLE on the
   ESP32-C5 provide clean, congestion-free local AP connectivity and
   low-energy telemetry, while BLE reaches the Go port CGo-free as an
   external SPI/UART interface device (the RNode trick, applied to a second radio).
-- **The Go Reticulum Lifesaver (GRL) & `/whereami` (§6.9, §6.10, §6.11)**: By compiling the 30+
+- **The Go Reticulum Buddy (GRB) & `/whereami` (§6.9, §6.10, §6.11)**: By compiling the 30+
   `gobot` field tools (wilderness first aid `med`, repeater finder `tower near`, solar
   ephemeris `sun`, Plus Codes `olc`) into local in-process firmware, an inexpensive
   (~$21 BOM) sealed puck transforms any traveler's smartphone into a life-saving off-grid

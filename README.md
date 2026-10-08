@@ -58,6 +58,12 @@ Additional notes:
 - The Go codebase includes checked-in support for I2P, Weave, KISS, RNode, TCP,
   UDP, pipe, and serial-facing interface paths, but the actively verified Go
   platform matrix today is Linux and macOS.
+- **Android** runs the stack unmodified inside [Termux](https://termux.dev);
+  build with `GOOS=linux` for the device ABI. Two platform restrictions apply:
+  `AutoInterface` is unavailable (SELinux denies netlink interface enumeration,
+  and multicast is filtered without a `WifiManager.MulticastLock`), and hostname
+  resolution fails for pure-Go binaries because Android ships no
+  `/etc/resolv.conf`. See [Android (Termux)](docs/guides/android.md).
 - `gornodeconf` live serial and firmware workflows are supported on Linux,
   macOS, and FreeBSD. Windows intentionally returns explicit `not supported on
   platform %v` errors for those flows, so no `gornodeconf` Windows executable is
@@ -263,7 +269,7 @@ gonomadnet Public RRC Hub  (gonomadnet node + gornsd + gorngit + gorrcd + golxmd
 - **RRC Chat & `@gobot`**: Join `rrc://a012129c10205c0b9441fcd2b755b2a7/#general` to chat and interact with [`@gobot`](#gorrcbot--the-rrc-bot-client). From a shell, the [`gobot`](#gobot--the-one-shot-cli-for-gobot) CLI reaches the same official bot with one command and no setup.
 - **Git over Reticulum**: Clone repositories directly over the mesh using `gorngit` / `git`: `git clone rns://58a0406047ec2e7ce23e9e9a83b744df/go-reticulum`.
 - **LXMF Propagation Node**: Use `7acc095f0e83182feb58c888d090a3cc` as your LXMF propagation node for offline store-and-forward message delivery.
-- **Go Reticulum Lifesaver (GRL)**: Run [`grl`](#grl--the-go-reticulum-lifesaver-appliance) — the whole off-grid appliance in one executable — on a field node or a desktop, and any phone that joins its network gets the survival dashboard: `/whereami` Plus Codes, one-word `tower near` / `sun` queries, and a `/sos` that raises a beacon at the verified position, all with zero radio hops.
+- **Go Reticulum Buddy (GRB)**: Run [`grb`](#grb--the-go-reticulum-buddy-appliance) — the whole off-grid appliance in one executable — on a field node or a desktop, and any phone that joins its network gets the survival dashboard: `/whereami` Plus Codes, one-word `tower near` / `sun` queries, and a `/sos` that raises a beacon at the verified position, all with zero radio hops.
 
 ### gorrcbot — the RRC bot client
 
@@ -330,7 +336,7 @@ lxmf_announce_minutes = 360 # how often the bot announces its own lxmf.delivery 
 kjv_txt_file = ""          # optional King James text file (one verse per line); enables the kjv command. Empty disables it
 towers_path = "~/.gorrcbot/towers.csv" # optional local cell/repeater dataset merged over the embedded catalog; absent is normal
 emergency_lxmf_destination = "" # optional 32-hex lxmf.delivery hash: every new sos beacon is also queued there
-portal_addr = ""            # Go Reticulum Lifesaver: captive survival dashboard for any phone that joins this node's Wi-Fi; empty binds nothing
+portal_addr = ""            # Go Reticulum Buddy: captive survival dashboard for any phone that joins this node's Wi-Fi; empty binds nothing
 gps_port = ""               # GNSS receiver streaming NMEA-0183 (for example /dev/ttyACM0); enables the live fix
 gps_fix = ""                # static position for a headless node (for example "37.7553,-122.4527"); used when gps_port is empty
 compass_port = ""           # electronic compass streaming NMEA-0183 headings ($HCHDG/$HCHDM/$HCHDT); gives a heading while standing still
@@ -349,8 +355,8 @@ Unknown keys warn and never fail, so a configuration written for a newer bot
 still starts. `--check-config` shows the parsed hubs, rooms, trigger, and
 identity hash without connecting.
 
-**Go Reticulum Lifesaver (GRL).** On a field node, `gorrcbot` is also the
-[Go Reticulum Lifesaver](https://gmlewis.github.io/go-reticulum/tools/gorrcbot/#the-go-reticulum-lifesaver-grl),
+**Go Reticulum Buddy (GRB).** On a field node, `gorrcbot` is also the
+[Go Reticulum Buddy](https://gmlewis.github.io/go-reticulum/tools/gorrcbot/#the-go-reticulum-buddy-grb),
 a pocket-sized off-grid survival communicator. It reads an **NMEA-0183 GNSS
 receiver** with no Cgo and no third-party library (`gps_port`, or a static
 `gps_fix`), and it answers the survival questions **locally, in-process, with
@@ -699,9 +705,9 @@ Run `gorrcbot` once by hand before installing the unit, so the configuration and
 the identity exist (and so the identity is backed up: losing `bot_identity`
 changes the bot's identity hash, which is what other clients key on).
 
-### grl — the Go Reticulum Lifesaver appliance
+### grb — the Go Reticulum Buddy appliance
 
-`grl` is the [Go Reticulum Lifesaver](https://gmlewis.github.io/go-reticulum/tools/grl/)
+`grb` is the [Go Reticulum Buddy](https://gmlewis.github.io/go-reticulum/tools/grb/)
 as a single executable: the sovereign, pocket-sized off-grid survival
 communicator and field assistant, running natively on macOS, Linux Mint, or any
 workstation. It is the reference the ESP32-C5 firmware is measured against, and
@@ -716,15 +722,15 @@ it runs the **whole appliance in one process**:
   installed.
 
 ```console
-$ go build -o bin/grl ./cmd/grl
-$ ./bin/grl                     # creates ~/.grl/config.toml, then serves
+$ go build -o bin/grb ./cmd/grb
+$ ./bin/grb                     # creates ~/.grb/config.toml, then serves
 $ open http://localhost:9111/   # the survival dashboard
 ```
 
 ```console
-$ ./bin/grl --verbose                                   # show the resolved configuration
-$ ./bin/grl --portal-addr 0.0.0.0:9111                  # let a phone on the LAN reach it
-$ ./bin/grl --gps-port /dev/ttyUSB0 --compass-port /dev/ttyUSB1
+$ ./bin/grb --verbose                                   # show the resolved configuration
+$ ./bin/grb --portal-addr 0.0.0.0:9111                  # let a phone on the LAN reach it
+$ ./bin/grb --gps-port /dev/ttyUSB0 --compass-port /dev/ttyUSB1
 ```
 
 `portal_addr = "127.0.0.1:9111"` (the default) serves the dashboard to this
@@ -735,7 +741,7 @@ hardware. Every captive-probe route the common operating systems already request
 answered with `302 Found → /`, so the phone pops the dashboard up by itself on a
 field SoftAP and simply reaches it at `http://localhost:9111/` on a desk.
 
-`GRL_HOME` overrides the state directory (default `~/.grl`), exactly as
+`GRB_HOME` overrides the state directory (default `~/.grb`), exactly as
 `GORRCBOT_HOME` does for the bot.
 
 **Embedded data.** The `tide`, `buoy`, and `metar` reference tables are the
@@ -751,10 +757,10 @@ documentation, see
 [**update-offline-data**](https://gmlewis.github.io/go-reticulum/tools/update-offline-data/).
 
 **Shared engine.** Both tools run
-[`github.com/gmlewis/go-reticulum/bot`](https://gmlewis.github.io/go-reticulum/tools/grl/#architecture-the-shared-bot-package),
+[`github.com/gmlewis/go-reticulum/bot`](https://gmlewis.github.io/go-reticulum/tools/grb/#architecture-the-shared-bot-package),
 so a radio reply and a dashboard answer can never drift apart; `cmd/gorrcbot`
-and `cmd/grl` are thin wrappers over it. For comprehensive documentation, see
-the [**grl Documentation Guide**](https://gmlewis.github.io/go-reticulum/tools/grl/).
+and `cmd/grb` are thin wrappers over it. For comprehensive documentation, see
+the [**grb Documentation Guide**](https://gmlewis.github.io/go-reticulum/tools/grb/).
 
 ### gobot — the one-shot CLI for `@gobot`
 
@@ -824,7 +830,7 @@ notice widget — so a Python user can send but not yet read one.
 > [!WARNING]
 > ### ⚠️ Emergency, Medical, and Safety Disclaimer
 > **NOT A CERTIFIED LIFE-SAFETY OR MEDICAL DEVICE.**
-> Communications over unlicensed LoRa/ISM frequencies are best-effort and **never guaranteed**. This software and associated hardware (including the Go Reticulum Lifesaver) are **NOT** connected to official 911/112 emergency dispatch, government rescue agencies, or COSPAS-SARSAT search-and-rescue satellites, and are **NOT** a substitute for certified EPIRBs, PLBs, or commercial satellite messengers. First-aid protocols (`med`), navigation fixes (`/whereami`), and direction-finding vectors (`tower near`) are informational references only. Users assume all risks of wilderness travel and off-grid communications. Read [**DISCLAIMER.md**](DISCLAIMER.md) for the full legal terms and release of liability.
+> Communications over unlicensed LoRa/ISM frequencies are best-effort and **never guaranteed**. This software and associated hardware (including the Go Reticulum Buddy) are **NOT** connected to official 911/112 emergency dispatch, government rescue agencies, or COSPAS-SARSAT search-and-rescue satellites, and are **NOT** a substitute for certified EPIRBs, PLBs, or commercial satellite messengers. First-aid protocols (`med`), navigation fixes (`/whereami`), and direction-finding vectors (`tower near`) are informational references only. Users assume all risks of wilderness travel and off-grid communications. Read [**DISCLAIMER.md**](DISCLAIMER.md) for the full legal terms and release of liability.
 
 > [!NOTE]
 > ### 📖 Official Documentation Site

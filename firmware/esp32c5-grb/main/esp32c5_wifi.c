@@ -15,7 +15,7 @@
 #include "lwip/netdb.h"
 #include <string.h>
 
-static const char *TAG = "grl_wifi";
+static const char *TAG = "grb_wifi";
 
 #define DNS_PORT 53
 
@@ -86,7 +86,7 @@ static void dns_server_task(void *pvParameters) {
     }
 }
 
-esp_err_t grl_wifi_init_softap(const char *ssid) {
+esp_err_t grb_wifi_init_softap(const char *ssid) {
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
@@ -116,8 +116,8 @@ esp_err_t grl_wifi_init_softap(const char *ssid) {
         strlcpy((char *)wifi_config.ap.ssid, ssid, sizeof(wifi_config.ap.ssid));
         wifi_config.ap.ssid_len = strlen(ssid);
     } else {
-        strlcpy((char *)wifi_config.ap.ssid, "Reticulum-Lifesaver", sizeof(wifi_config.ap.ssid));
-        wifi_config.ap.ssid_len = strlen("Reticulum-Lifesaver");
+        strlcpy((char *)wifi_config.ap.ssid, "Reticulum-Buddy", sizeof(wifi_config.ap.ssid));
+        wifi_config.ap.ssid_len = strlen("Reticulum-Buddy");
     }
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));

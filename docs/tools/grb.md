@@ -1,10 +1,10 @@
-# grl — the Go Reticulum Lifesaver
+# grb — the Go Reticulum Buddy
 
-`grl` is the **Go Reticulum Lifesaver**: a sovereign, pocket-sized off-grid
+`grb` is the **Go Reticulum Buddy**: a sovereign, pocket-sized off-grid
 survival communicator and field assistant in **one executable**.
 
 The same application is designed to run on an ultra-low-power ESP32-C5 as
-bare-metal firmware and, unchanged in behaviour, on a workstation. `grl` is the
+bare-metal firmware and, unchanged in behaviour, on a workstation. `grb` is the
 workstation half of that promise, and it is the reference the firmware is
 measured against. There is no second implementation to drift out of sync: the
 field tools, the sensors, and the dashboard are one library
@@ -21,13 +21,13 @@ and the RRC chat bot run.
     with a hub **only when a gateway happens to be reachable**.
 
 !!! danger "Important Safety, Emergency & Medical Notice"
-    **GRL is NOT a certified life-safety device, distress beacon, or medical device.** Transmissions occur over best-effort unlicensed radio frequencies with **NO guarantee of packet delivery, acknowledgement, or rescue**. This system is **NOT** connected to official 911/112 dispatch, civil defense agencies, or search-and-rescue satellites. Under no circumstances should this system be used as a primary or sole means of summoning emergency rescue or medical assistance. Always carry certified primary safety equipment (EPIRB/PLB, paper maps, magnetic compass). Read the full [Legal, Safety, Emergency, and Medical Disclaimer](#legal-safety-emergency-and-medical-disclaimer) below before building or operating this device.
+    **GRB is NOT a certified life-safety device, distress beacon, or medical device.** Transmissions occur over best-effort unlicensed radio frequencies with **NO guarantee of packet delivery, acknowledgement, or rescue**. This system is **NOT** connected to official 911/112 dispatch, civil defense agencies, or search-and-rescue satellites. Under no circumstances should this system be used as a primary or sole means of summoning emergency rescue or medical assistance. Always carry certified primary safety equipment (EPIRB/PLB, paper maps, magnetic compass). Read the full [Legal, Safety, Emergency, and Medical Disclaimer](#legal-safety-emergency-and-medical-disclaimer) below before building or operating this device.
 
 ---
 
 ## What it runs
 
-One `grl` process brings up four things, in this order:
+One `grb` process brings up four things, in this order:
 
 | Subsystem | What it is | When it runs |
 |---|---|---|
@@ -37,7 +37,7 @@ One `grl` process brings up four things, in this order:
 | **Captive dashboard** | An HTTP dashboard and JSON API for a smartphone browser | When `portal_addr` is set |
 
 Shutdown is the reverse, so nothing is left reading a device or holding a
-socket. `grl` exits **0** on a clean exit, **1** on an operational failure, and
+socket. `grb` exits **0** on a clean exit, **1** on an operational failure, and
 **2** on a usage error.
 
 ---
@@ -49,7 +49,7 @@ the subscription lapses, the emergency hardware is **remotely deactivated**.
 They also cannot tell you what to do about hypothermia, cannot find the nearest
 amateur repeater, and cannot function without a satellite link.
 
-`grl` inverts all three properties:
+`grb` inverts all three properties:
 
 - **No subscription, no account, no app store.** The knowledge is compiled in.
 - **No vendor silo.** It speaks Reticulum, so it talks to any Reticulum peer,
@@ -70,12 +70,12 @@ tiny keys. Almost every traveller already carries a better terminal: a phone
 with a high-resolution touchscreen and a modern browser, whose Wi-Fi and browser
 keep working in airplane mode with zero cellular coverage.
 
-So `grl` serves the dashboard over HTTP and lets the phone be the screen:
+So `grb` serves the dashboard over HTTP and lets the phone be the screen:
 
 - On the **ESP32-C5** target, the appliance brings up a Wi-Fi 6 SoftAP
-  (`Reticulum-Lifesaver-[ID]`); the phone joins it and its operating system pops
+  (`Reticulum-Buddy-[ID]`); the phone joins it and its operating system pops
   the dashboard up by itself.
-- On a **desktop workstation**, `grl` hosts the same dashboard on
+- On a **desktop workstation**, `grb` hosts the same dashboard on
   `portal_addr` with no root privileges and without touching the host's Wi-Fi
   adapters. Open <http://localhost:9111/> in any browser — including the one on
   the phone next to you, when you bind `0.0.0.0:9111`.
@@ -120,11 +120,11 @@ $ curl -s -X POST http://localhost:9111/api/query \
 ## Quick start on a desktop
 
 ```console
-$ go build -o bin/grl ./cmd/grl
-$ ./bin/grl                        # creates ~/.grl/config.toml and starts
+$ go build -o bin/grb ./cmd/grb
+$ ./bin/grb                        # creates ~/.grb/config.toml and starts
 ```
 
-`grl` writes a fully commented `~/.grl/config.toml` on the first run and keeps
+`grb` writes a fully commented `~/.grb/config.toml` on the first run and keeps
 running — it needs no editing to be useful. Open
 <http://localhost:9111/> and the dashboard is live.
 
@@ -134,17 +134,17 @@ them. That is how the same configuration serves a desk and a trail.
 
 ```console
 # A rehearsed appliance on a desk, with a static position and heading:
-$ ./bin/grl --gps-port '' --portal-addr 0.0.0.0:9111
+$ ./bin/grb --gps-port '' --portal-addr 0.0.0.0:9111
 ```
 
 To see exactly which file and which devices an appliance resolved:
 
 ```console
-$ ./bin/grl --verbose
-2026/01/01 12:00:00 grl: configuration /Users/you/.grl/config.toml: callsign GRL-NOMAD, ...
-2026/01/01 12:00:00 grl: static GNSS fix 37.7553,-122.4527
-2026/01/01 12:00:00 grl: static compass heading 042
-2026/01/01 12:00:00 grl: captive portal on http://127.0.0.1:9111/
+$ ./bin/grb --verbose
+2026/01/01 12:00:00 grb: configuration /Users/you/.grb/config.toml: callsign GRB-NOMAD, ...
+2026/01/01 12:00:00 grb: static GNSS fix 37.7553,-122.4527
+2026/01/01 12:00:00 grb: static compass heading 042
+2026/01/01 12:00:00 grb: captive portal on http://127.0.0.1:9111/
 ```
 
 ---
@@ -153,7 +153,7 @@ $ ./bin/grl --verbose
 
 | Flag | Meaning |
 |---|---|
-| `-config PATH` | Configuration file to use. Default: `$GRL_HOME/config.toml`, or `~/.grl/config.toml` |
+| `-config PATH` | Configuration file to use. Default: `$GRB_HOME/config.toml`, or `~/.grb/config.toml` |
 | `-portal-addr ADDR` | Dashboard listen address, like `127.0.0.1:9111` or `0.0.0.0:9111`. An empty value disables the dashboard |
 | `-gps-port PORT` | GNSS receiver serial port, like `/dev/tty.usbserial-0001` or `/dev/ttyUSB0` |
 | `-compass-port PORT` | Electronic compass serial port, like `/dev/tty.usbserial-0002` or `/dev/ttyUSB1` |
@@ -167,7 +167,7 @@ configuration file's value alone, and an override is validated with exactly the
 same wording as a bad file, so a typo on the command line is reported before
 anything binds.
 
-`GRL_HOME` overrides the appliance's home directory (used literally, with no
+`GRB_HOME` overrides the appliance's home directory (used literally, with no
 expansion). It is how a second appliance — or a test — stays isolated on one
 workstation.
 
@@ -175,8 +175,8 @@ workstation.
 
 ## Configuration reference
 
-`~/.grl/config.toml` is a TOML document. Every value below is the built-in
-default, and the file `grl` generates *is* those defaults, with comments. A
+`~/.grb/config.toml` is a TOML document. Every value below is the built-in
+default, and the file `grb` generates *is* those defaults, with comments. A
 configuration with no file at all still runs.
 
 A leading `~` expands to your home directory in `storage_dir`,
@@ -186,9 +186,9 @@ A leading `~` expands to your home directory in `storage_dir`,
 
 | Key | Default | Meaning |
 |---|---|---|
-| `callsign` | `"GRL-NOMAD"` | The name the appliance answers to on the mesh. The default is deliberately fictional — replace it before transmitting |
+| `callsign` | `"GRB-NOMAD"` | The name the appliance answers to on the mesh. The default is deliberately fictional — replace it before transmitting |
 | `nickname` | `""` | An optional shorter name used on the air. Empty means "use the callsign" |
-| `storage_dir` | `~/.grl/storage` | Where the appliance keeps distress beacons, situation reports, check-in timers, and saved history |
+| `storage_dir` | `~/.grb/storage` | Where the appliance keeps distress beacons, situation reports, check-in timers, and saved history |
 
 ### `[portal]`
 
@@ -250,7 +250,7 @@ disagree about which way you are facing.
 ## Hardware wiring on a desktop
 
 Both peripherals are ordinary **USB-UART serial adapters**. No driver, no
-library, no Cgo: `grl` reads NMEA-0183 ASCII sentences directly.
+library, no Cgo: `grb` reads NMEA-0183 ASCII sentences directly.
 
 | Platform | Typical device names |
 |---|---|
@@ -289,7 +289,7 @@ Notes for the bench:
   device (`/dev/tty.usbserial-*`) reports `EBUSY` with nothing holding it — the
   callin device waits on the modem-control lock.
 - Permissions: on Linux, add yourself to the `dialout` group (then log back in)
-  rather than running `grl` as root.
+  rather than running `grb` as root.
 - Both peripherals are optional and independent. A receiver with no compass
   gives the position card; a compass with no receiver gives the heading, since a
   compass works standing still and a receiver that has not locked does not.
@@ -301,7 +301,7 @@ Notes for the bench:
 ## The appliance in the field
 
 1. The appliance sits in a pocket or carabiner-clipped to a pack, listening.
-2. The traveller opens Wi-Fi settings and taps `Reticulum-Lifesaver-[ID]`.
+2. The traveller opens Wi-Fi settings and taps `Reticulum-Buddy-[ID]`.
 3. The phone's captive-portal probe is answered with a redirect, so the
    dashboard **pops up by itself** — no app, no store, no account.
 4. The traveller reads the Plus Code aloud to a rescue team, steers an antenna
@@ -316,7 +316,7 @@ and open `http://<laptop-ip>:9111/` from the phone.
 
 ## Architecture: the shared `bot` package
 
-`grl` contains almost no survival logic of its own. Everything it answers with
+`grb` contains almost no survival logic of its own. Everything it answers with
 lives in [`github.com/gmlewis/go-reticulum/bot`](https://pkg.go.dev/github.com/gmlewis/go-reticulum/bot), which is also
 what `gorrcbot` runs — so the radio reply and the dashboard answer can never
 drift apart:
@@ -336,16 +336,16 @@ go-reticulum/
 │   └── portal-page.go      #   the mobile dashboard
 ├── cmd/
 │   ├── gorrcbot/            # a thin CLI wrapper: flags + bot.Run
-│   └── grl/                 # the appliance: flags, config, and App
+│   └── grb/                 # the appliance: flags, config, and App
 ```
 
-`grl`'s own code is only the parts that are specific to being an appliance:
+`grb`'s own code is only the parts that are specific to being an appliance:
 
 | File | What it does |
 |---|---|
 | `main.go` | Flags, configuration loading and overrides, signal handling, exit codes |
 | `flags.go` | The CLI contract: `usageText` and a package-local parser |
-| `config.go` | `~/.grl/config.toml`: parsing, defaults, validation, `~` expansion |
+| `config.go` | `~/.grb/config.toml`: parsing, defaults, validation, `~` expansion |
 | `app.go` | The lifecycle: Reticulum → sensors → engine → dashboard, and back down |
 
 Because `bot.Engine` opens no socket and starts no goroutine, an appliance whose
@@ -361,7 +361,7 @@ rather than silently downgraded.
 |---|---|
 | `could not start Reticulum` | `rns.config_path` names a directory Reticulum cannot use. An empty value means `~/.reticulum` |
 | Dashboard unreachable from a phone | `portal_addr` is still `127.0.0.1:9111` (this workstation only). Set `0.0.0.0:9111` |
-| `listen ... address already in use` | Another process holds the port (often a previous `grl`). Change `portal_addr`, or find the holder with `lsof -i :9111` |
+| `listen ... address already in use` | Another process holds the port (often a previous `grb`). Change `portal_addr`, or find the holder with `lsof -i :9111` |
 | `whereami` says no fix | No receiver is attached and no `static_fix` is set. Set one, or check the port and permissions |
 | Heading is magnetic-only | A compass is attached but there is no position, so the WMM correction has nothing to work from. Set a fix |
 | `portal.portal_addr: want host:port` | A typo such as `localhost` or `127.0.0.1` with no port. Use `host:port` |
@@ -393,7 +393,7 @@ rather than silently downgraded.
 
 - [gorrcbot](gorrcbot.md) — the same engine as an always-on RRC chat bot
 - [gobot](gobot.md) — one-shot CLI for asking a live bot a single question
-- [GRL Hardware Project Plans](../guides/hardware.md#project-4-the-go-reticulum-lifesaver-grl) — full GRL puck architecture, BOM table, and ESP32-C5 pinout
+- [GRB Hardware Project Plans](../guides/hardware.md#project-4-the-go-reticulum-buddy-grb) — full GRB puck architecture, BOM table, and ESP32-C5 pinout
 - [Hardware guides](../guides/hardware.md) — LoRa RNodes, carrier boards, and serial adapters
 - [ASIC Plans §6.9–§6.12](https://github.com/gmlewis/go-reticulum/blob/master/ASIC-Plans.md)
-  — the full GRL design, BOM, and pinout
+  — the full GRB design, BOM, and pinout

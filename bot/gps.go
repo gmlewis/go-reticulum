@@ -6,7 +6,7 @@
 // This file holds the pure-Go NMEA-0183 GNSS receiver front end: the sentence
 // parser and the streaming reader that keeps one live fix.
 //
-// It exists because the Go Reticulum Lifesaver has to know where it is with no
+// It exists because the Go Reticulum Buddy has to know where it is with no
 // network, no Cgo driver, and no third-party library: a GNSS receiver is a
 // serial device that emits ASCII sentences, and turning those into a validated
 // coordinate is a self-contained parsing problem. The parser is deliberately

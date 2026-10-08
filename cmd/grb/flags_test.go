@@ -41,7 +41,7 @@ func TestParseFlagsEveryOption(t *testing.T) {
 	t.Parallel()
 
 	opts, err := parseFlagsTo([]string{
-		"-config", "/tmp/grl/config.toml",
+		"-config", "/tmp/grb/config.toml",
 		"-portal-addr", "0.0.0.0:9111",
 		"-gps-port", "/dev/ttyUSB0",
 		"-compass-port", "/dev/ttyUSB1",
@@ -86,10 +86,10 @@ func TestParseFlagsHelp(t *testing.T) {
 		}
 		text := out.String()
 		for _, want := range []string{
-			"usage: grl",
+			"usage: grb",
 			"--version", "--config", "--portal-addr", "--gps-port",
 			"--compass-port", "--quiet", "--verbose",
-			"GRL_HOME", "config.toml", "localhost:9111",
+			"GRB_HOME", "config.toml", "localhost:9111",
 		} {
 			if !strings.Contains(text, want) {
 				t.Errorf("the usage text from %v does not mention %q", arg, want)

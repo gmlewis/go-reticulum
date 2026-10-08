@@ -445,7 +445,7 @@ func (r *registry) localNames() []string {
 // RunLocal executes one command line that needs no hub session. It is the
 // captive portal's entry point: the portal has no RRC link behind it, so only
 // the commands whose answers are computed in-process — the survival
-// intelligence the Lifesaver promises works with zero radio hops — are
+// intelligence the Buddy promises works with zero radio hops — are
 // available there. A command that needs a live link says so instead of
 // failing obscurely.
 func (r *registry) RunLocal(line string) []string {

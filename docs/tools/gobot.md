@@ -131,7 +131,7 @@ gobot whereami              # adds: Heading / Course  : 042° True (029° Mag, V
 gobot tower near            # adds: [Turn 15° RIGHT · 1 o'clock]
 ```
 
-See [The Go Reticulum Lifesaver](gorrcbot.md#the-go-reticulum-lifesaver-grl) for
+See [The Go Reticulum Buddy](gorrcbot.md#the-go-reticulum-buddy-grb) for
 the receiver, the compass, the `/whereami` card, and the captive portal.
 
 ### Options

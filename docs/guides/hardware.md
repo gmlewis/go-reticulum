@@ -30,9 +30,9 @@ For detailed manufacturing instructions, complete bills of materials (BOM), Gerb
 - **Operation**: Headless, solar-powered mesh repeater and RRC relay daemon
 - **Connectivity**: Simultaneously bridges LoRa mesh packets to a local Wi-Fi 6 SoftAP access point for nearby phones and laptops
 
-### Project 4: The Go Reticulum Lifesaver (GRL)
+### Project 4: The Go Reticulum Buddy (GRB)
 
-The **Go Reticulum Lifesaver (GRL)** is a sovereign, pocket-sized off-grid survival communicator and field assistant designed around a sealed, low-cost (~$22.50 BOM) hardware puck. It pairs an Espressif ESP32-C5 RISC-V SoC with an SX1262 LoRa transceiver, a multi-constellation GNSS receiver, an electronic compass, and an optional cryptographic ASIC coprocessor.
+The **Go Reticulum Buddy (GRB)** is a sovereign, pocket-sized off-grid survival communicator and field assistant designed around a sealed, low-cost (~$22.50 BOM) hardware puck. It pairs an Espressif ESP32-C5 RISC-V SoC with an SX1262 LoRa transceiver, a multi-constellation GNSS receiver, an electronic compass, and an optional cryptographic ASIC coprocessor.
 
 ```
 +-----------------------------------------------------------------------------+
@@ -43,11 +43,11 @@ The **Go Reticulum Lifesaver (GRL)** is a sovereign, pocket-sized off-grid survi
                                       | 5 GHz Wi-Fi 6 (Captive Portal / HTTP)
                                       v
 +-----------------------------------------------------------------------------+
-|             The Go Reticulum Lifesaver (GRL) (Sealed, Waterproof, ~$22 BOM) |
+|             The Go Reticulum Buddy (GRB) (Sealed, Waterproof, ~$22 BOM) |
 |                                                                             |
 |  +-----------------------------------------------------------------------+  |
 |  | ESP32-C5 Host MCU (RV32IMAC @ 240 MHz, 400KB SRAM + 8MB PSRAM)        |  |
-|  |  - Wi-Fi 6 SoftAP ("Reticulum-Lifesaver-[ID]") + HTTP/Micron Portal   |  |
+|  |  - Wi-Fi 6 SoftAP ("Reticulum-Buddy-[ID]") + HTTP/Micron Portal   |  |
 |  |  - Pure-Go RNS Transport + Local gorrcd Chat Hub                      |  |
 |  |  - Embedded bot Field Engine (first aid, towers, ephemeris, OLC)      |  |
 |  +-------------------+--------------------+--------------------+---------+  |
@@ -69,9 +69,9 @@ The **Go Reticulum Lifesaver (GRL)** is a sovereign, pocket-sized off-grid survi
 
 #### The Zero-Hardware UI Paradigm
 
-Rather than burdening the device with fragile screens and tiny keyboards that inflate cost to $80–$150, GRL uses the smartphone already in the traveler's pocket:
+Rather than burdening the device with fragile screens and tiny keyboards that inflate cost to $80–$150, GRB uses the smartphone already in the traveler's pocket:
 
-- **Automatic Captive Portal**: When the user connects to the device's Wi-Fi 6 SoftAP (`Reticulum-Lifesaver-[ID]`), iOS and Android automatically pop up the captive dashboard without installing any app, creating accounts, or requiring cellular service.
+- **Automatic Captive Portal**: When the user connects to the device's Wi-Fi 6 SoftAP (`Reticulum-Buddy-[ID]`), iOS and Android automatically pop up the captive dashboard without installing any app, creating accounts, or requiring cellular service.
 - **In-Process Survival Engine**: Wilderness first aid protocols (`med`), repeater and cell tower catalogs (`tower near`), solar/lunar ephemeris (`sun`, `moon`), geodetics (`whereami`, `geo`), and Plus Codes (`olc`) resolve locally in microseconds with **zero radio airtime and zero network hops**.
 - **Radio for True Emergencies**: LoRa radio airtime is reserved exclusively for broadcasting signed emergency SOS distress beacons, coordinating with human rescue parties, peer messaging, and syncing with hubs when reachable.
 
@@ -113,9 +113,9 @@ Rather than burdening the device with fragile screens and tiny keyboards that in
 | **Crypto ASIC** | `CLK`, `CS`, `IO0..IO3`, `IRQ` | `GPIO 2..8` | Bi-directional | 7-Pin QSPI interconnect + interrupt (optional) |
 
 !!! danger "Safety, Emergency & Medical Disclaimer"
-    **GRL is an experimental open-source appliance.** It is **NOT** a certified life-safety device, NOT a certified medical instrument, and NOT connected to official 911/112 dispatch or government search-and-rescue satellites. Transmission over unlicensed LoRa mesh frequencies is best-effort and never guaranteed. Always carry certified primary safety equipment (EPIRB/PLB, paper maps, magnetic compass). See the [**full legal and safety disclaimer**](../tools/grl.md#legal-safety-emergency-and-medical-disclaimer) for complete terms.
+    **GRB is an experimental open-source appliance.** It is **NOT** a certified life-safety device, NOT a certified medical instrument, and NOT connected to official 911/112 dispatch or government search-and-rescue satellites. Transmission over unlicensed LoRa mesh frequencies is best-effort and never guaranteed. Always carry certified primary safety equipment (EPIRB/PLB, paper maps, magnetic compass). See the [**full legal and safety disclaimer**](../tools/grb.md#legal-safety-emergency-and-medical-disclaimer) for complete terms.
 
-For complete software and configuration details, see the [`grl` tool documentation](../tools/grl.md) and [ASIC Plans §6.9–§6.12](https://github.com/gmlewis/go-reticulum/blob/master/ASIC-Plans.md).
+For complete software and configuration details, see the [`grb` tool documentation](../tools/grb.md) and [ASIC Plans §6.9–§6.12](https://github.com/gmlewis/go-reticulum/blob/master/ASIC-Plans.md).
 
 ---
 

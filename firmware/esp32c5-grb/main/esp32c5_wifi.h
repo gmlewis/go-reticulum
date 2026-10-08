@@ -15,7 +15,7 @@ extern "C" {
 #endif
 
 // Initialize Wi-Fi 6 SoftAP and start the captive portal DNS interception server.
-esp_err_t grl_wifi_init_softap(const char *ssid);
+esp_err_t grb_wifi_init_softap(const char *ssid);
 
 #ifdef __cplusplus
 }

@@ -53,12 +53,16 @@ func NewUDPInterface(name, listenIP string, listenPort int, forwardIP string, fo
 	bi := NewBaseInterface(name, ModeFull, UDPBitrateGuess)
 	bi.setDefaultIFACSize(UDPDefaultIFACSize)
 
-	lAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%v:%v", listenIP, listenPort))
+	// hostPortAddr brackets an IPv6 literal. Python builds these coordinates as
+	// (host, port) tuples, which is inherently IPv6-safe; joining them by hand
+	// turned "::" into ":::port" and net.ResolveUDPAddr rejected it with
+	// "too many colons in address", so no IPv6 UDP interface could start.
+	lAddr, err := net.ResolveUDPAddr("udp", hostPortAddr(listenIP, listenPort))
 	if err != nil {
 		return nil, err
 	}
 
-	fAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%v:%v", forwardIP, forwardPort))
+	fAddr, err := net.ResolveUDPAddr("udp", hostPortAddr(forwardIP, forwardPort))
 	if err != nil {
 		return nil, err
 	}

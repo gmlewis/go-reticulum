@@ -3,7 +3,7 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-// grl is the Go Reticulum Lifesaver: a sovereign, pocket-sized off-grid survival
+// grb is the Go Reticulum Buddy: a sovereign, pocket-sized off-grid survival
 // communicator and field assistant in a single executable.
 //
 // The same application is meant to run on an ultra-low-power ESP32-C5 as
@@ -31,11 +31,11 @@
 //
 // Usage:
 //
-//	grl [--version] [--config CONFIG] [--portal-addr ADDR]
+//	grb [--version] [--config CONFIG] [--portal-addr ADDR]
 //	    [--gps-port PORT] [--compass-port PORT] [--quiet] [--verbose]
 //
-// State paths honor the GRL_HOME environment variable (used literally when
-// truthy, no expansion) with ~/.grl as the default home.
+// State paths honor the GRB_HOME environment variable (used literally when
+// truthy, no expansion) with ~/.grb as the default home.
 //
 // Exit status is 0 on a clean exit, 1 for an operational failure, and 2 for a
 // usage error.
@@ -86,7 +86,7 @@ func run(args []string) int {
 	}
 
 	if opts.version {
-		fmt.Printf("grl %v\n", rns.VERSION)
+		fmt.Printf("grb %v\n", rns.VERSION)
 		return exitOK
 	}
 

@@ -200,7 +200,7 @@ river_flood_url = "https://api.water.noaa.gov/nwps/v1/gauges/{place}"
 #
 space_weather_url = "https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json"
 
-# The Go Reticulum Lifesaver's captive web portal: a self-contained survival
+# The Go Reticulum Buddy's captive web portal: a self-contained survival
 # dashboard a traveler's phone opens by itself the moment it joins this device's
 # Wi-Fi. Nothing has to be installed, because the page is served from this
 # binary: the position panel, the SOS button, and the offline field assistant

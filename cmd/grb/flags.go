@@ -24,7 +24,7 @@ var errHelp = errors.New("help requested")
 // so the command line can never accidentally erase a documented setting.
 type options struct {
 	// configPath overrides the appliance's configuration file. Empty means
-	// GRL_HOME/config.toml, or ~/.grl/config.toml when GRL_HOME is unset.
+	// GRB_HOME/config.toml, or ~/.grb/config.toml when GRB_HOME is unset.
 	configPath string
 	// portalAddr overrides the captive dashboard's listen address.
 	portalAddr string
@@ -40,7 +40,7 @@ type options struct {
 	verbose bool
 	// version asks for the version string and nothing else.
 	version bool
-	// args holds any positional arguments, which grl does not accept.
+	// args holds any positional arguments, which grb does not accept.
 	args []string
 }
 
@@ -59,14 +59,14 @@ func parseFlags(args []string) (*options, error) {
 // read the usage text without capturing the process's standard error.
 func parseFlagsTo(args []string, usageOutput io.Writer) (*options, error) {
 	opts := &options{}
-	fs := flag.NewFlagSet("grl", flag.ContinueOnError)
+	fs := flag.NewFlagSet("grb", flag.ContinueOnError)
 	// The flag package prints its own errors; this tool prints them once, in
 	// main, so the duplicated wording never reaches an operator.
 	fs.SetOutput(io.Discard)
 	fs.Usage = func() { opts.usage(usageOutput) }
 
 	fs.StringVar(&opts.configPath, "config", "",
-		"configuration file to use (default GRL_HOME/config.toml or ~/.grl/config.toml)")
+		"configuration file to use (default GRB_HOME/config.toml or ~/.grb/config.toml)")
 	fs.StringVar(&opts.portalAddr, "portal-addr", "",
 		"captive dashboard listen address, like 127.0.0.1:9111 or 0.0.0.0:9111 (empty disables)")
 	fs.StringVar(&opts.gpsPort, "gps-port", "",
@@ -106,13 +106,13 @@ func (o *options) validate() error {
 
 // usageText is the help text, in the shape the other tools in this repository
 // use.
-const usageText = `usage: grl [-h] [--version] [--config CONFIG] [--portal-addr ADDR]
+const usageText = `usage: grb [-h] [--version] [--config CONFIG] [--portal-addr ADDR]
            [--gps-port PORT] [--compass-port PORT] [--quiet] [--verbose]
 
-Run the Go Reticulum Lifesaver: an off-grid survival communicator and field
+Run the Go Reticulum Buddy: an off-grid survival communicator and field
 assistant in a single executable
 
-grl runs the whole appliance in one process: a local Reticulum stack, an
+grb runs the whole appliance in one process: a local Reticulum stack, an
 NMEA-0183 GNSS receiver and electronic compass (or their static fallbacks), the
 shared field-assistant engine that answers with zero radio hops, and the captive
 survival dashboard a smartphone can read. With no hardware attached it runs on
@@ -121,8 +121,8 @@ static test values, so the same configuration serves a desk and a trail.
 options:
   -h, --help            show this help message and exit
   --version             show program's version number and exit
-  --config CONFIG       configuration file to use (default GRL_HOME/config.toml
-                        or ~/.grl/config.toml)
+  --config CONFIG       configuration file to use (default GRB_HOME/config.toml
+                        or ~/.grb/config.toml)
   --portal-addr ADDR    captive dashboard listen address, like 127.0.0.1:9111
                         or 0.0.0.0:9111 (empty disables the dashboard)
   --gps-port PORT       GNSS receiver serial port, like
@@ -134,14 +134,14 @@ options:
                         at INFO
 
 files:
-  CONFIG        ~/.grl/config.toml   device, dashboard, sensors, mesh rooms
+  CONFIG        ~/.grb/config.toml   device, dashboard, sensors, mesh rooms
 
 The configuration file is created with documented defaults on the first run.
-GRL_HOME overrides the appliance's home directory, which is how a second
+GRB_HOME overrides the appliance's home directory, which is how a second
 appliance, or a test, stays isolated on one workstation.
 
 safety:
-  grl is experimental and NOT a certified medical or life-safety device.
+  grb is experimental and NOT a certified medical or life-safety device.
   Transmission over unlicensed LoRa is never guaranteed. See DISCLAIMER.md.
 
 Once it is running, open http://localhost:9111/ for the survival dashboard.

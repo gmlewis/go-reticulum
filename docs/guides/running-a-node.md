@@ -33,7 +33,7 @@ A full Reticulum node comprises five cooperating components:
 | [**gornsd**](../tools/cli-utilities.md) `-s` | Transport Daemon | Layer 3 | Owns all physical network interfaces (TCP server, AutoInterface, LoRa radios). Provides the shared IPC socket. |
 | [**golxmd**](../tools/golxmd.md) `-p` | LXMF Propagation Node | Layer 4 | Caches, synchronizes, and delivers asynchronous encrypted messages for offline peers across the mesh. |
 | [**gorrcd**](../tools/gorrcd.md) | Chat Hub Daemon | Layer 4 | Manages persistent Reticulum Relay Chat (RRC) rooms, channel history, and client notifications. |
-| [**gorrcbot**](../tools/gorrcbot.md) | Autonomous Field Assistant | Layer 4 | Connects to the local hub, providing offline station databases, navigation tools, and telemetry to chat users. On a field node it is also the **Go Reticulum Lifesaver (GRL)**: it reads a GNSS receiver, answers `/whereami` locally, and serves the captive survival portal to any smartphone that joins the node's Wi-Fi. |
+| [**gorrcbot**](../tools/gorrcbot.md) | Autonomous Field Assistant | Layer 4 | Connects to the local hub, providing offline station databases, navigation tools, and telemetry to chat users. On a field node it is also the **Go Reticulum Buddy (GRB)**: it reads a GNSS receiver, answers `/whereami` locally, and serves the captive survival portal to any smartphone that joins the node's Wi-Fi. |
 | **gonomadnet** | Micron Server & TUI | Layer 7 | Serves Micron markdown pages and file downloads over Reticulum, with an interactive terminal UI for the operator. |
 
 ---
@@ -233,11 +233,11 @@ journalctl -u gornsd -u golxmd -u gorrcd -f
 
 ---
 
-## The Field Node: The Go Reticulum Lifesaver (GRL)
+## The Field Node: The Go Reticulum Buddy (GRB)
 
 On a portable or vehicle node, `gorrcbot` takes on a second role: it is the
-**Go Reticulum Lifesaver**, the survival communicator described in
-[gorrcbot — The Go Reticulum Lifesaver](../tools/gorrcbot.md#the-go-reticulum-lifesaver-grl).
+**Go Reticulum Buddy**, the survival communicator described in
+[gorrcbot — The Go Reticulum Buddy](../tools/gorrcbot.md#the-go-reticulum-buddy-grb).
 Three settings turn it on, and all are optional:
 
 ```toml

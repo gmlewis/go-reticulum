@@ -227,7 +227,9 @@ func (tci *TCPClientInterface) TargetPort() int { return tci.targetPort }
 func (tci *TCPClientInterface) KISSFraming() bool { return tci.kissFraming }
 
 func (tci *TCPClientInterface) connect() error {
-	addr := fmt.Sprintf("%v:%v", tci.targetHost, tci.targetPort)
+	// hostPortAddr brackets an IPv6 literal; hand-rolling "host:port" here
+	// produced "too many colons in address" and left every IPv6 target down.
+	addr := hostPortAddr(tci.targetHost, tci.targetPort)
 	log.Printf("Go TCPClientInterface %v connecting to %v", tci.name, addr)
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
@@ -549,7 +551,7 @@ func (tci *TCPClientInterface) HashString() string {
 		host = tci.remoteIP
 		port = tci.remotePort
 	}
-	return "TCPInterface[" + tci.Name() + "/" + tcpHostPort(host, port) + "]"
+	return "TCPInterface[" + tci.Name() + "/" + hostPortAddr(host, port) + "]"
 }
 
 // IsOut reports whether this interface can originate outbound traffic.
@@ -631,7 +633,9 @@ func newTCPServerInterface(name, bindIP string, bindPort int, handler InboundHan
 	bi := NewBaseInterface(name, ModeFull, TCPBitrateGuess)
 	bi.setDefaultIFACSize(TCPDefaultIFACSize)
 
-	addr := fmt.Sprintf("%v:%v", bindIP, bindPort)
+	// hostPortAddr brackets an IPv6 literal: "::" would otherwise be bound as
+	// ":::port", which net.Listen rejects with "too many colons in address".
+	addr := hostPortAddr(bindIP, bindPort)
 	var l net.Listener
 	if held := PopPendingTCPListener(bindPort); held != nil {
 		// The test suite reserved this port with a listener already bound;
@@ -847,13 +851,19 @@ func (tsi *TCPServerInterface) Type() string {
 //
 //	"TCPServerInterface["+name+"/"+ip_str(bind_ip)+":"+str(bind_port)+"]"
 func (tsi *TCPServerInterface) HashString() string {
-	return "TCPServerInterface[" + tsi.Name() + "/" + tcpHostPort(tsi.bindIP, tsi.bindPort) + "]"
+	return "TCPServerInterface[" + tsi.Name() + "/" + hostPortAddr(tsi.bindIP, tsi.bindPort) + "]"
 }
 
-// tcpHostPort formats a host:port pair the way Python's TCP interface __str__
-// methods do: the host is bracketed in [] when it contains ":" (an IPv6
-// literal), so it round-trips through an IPv6 URI-style address.
-func tcpHostPort(host string, port int) string {
+// hostPortAddr formats a host and port into an address the net package accepts.
+//
+// It serves two callers. It reproduces the bracketing Python's interface
+// __str__ methods apply (RNS/Interfaces/TCPInterface.py:456-462,680-686), whose
+// output Interface.get_hash hashes. It is also the formatter for real dial and
+// bind addresses: Python passes (host, port) as a tuple, which is inherently
+// IPv6-safe, whereas Go must join them into one string, so an unbracketed IPv6
+// literal such as "::" would become ":::port" and be rejected by net with
+// "too many colons in address".
+func hostPortAddr(host string, port int) string {
 	if strings.Contains(host, ":") {
 		host = "[" + host + "]"
 	}

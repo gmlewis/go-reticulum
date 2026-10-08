@@ -20,7 +20,7 @@
 // US National Centers for Environmental Information and the British Geological
 // Survey publish, evaluated from its coefficient table. It is a few hundred
 // lines of arithmetic and no data files, no network, and no third-party
-// library, which is the only way the Go Reticulum Lifesaver can convert a
+// library, which is the only way the Go Reticulum Buddy can convert a
 // magnetic heading to a true one in a slot canyon with the radio off.
 
 package bot

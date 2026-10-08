@@ -6,7 +6,7 @@
 
 ### 1. NOT A CERTIFIED LIFE-SAFETY DEVICE / NO GUARANTEE OF RESCUE
 
-The software and hardware designs in this repository (including, but not limited to, the **Go Reticulum Lifesaver (GRL)**, `cmd/grl`, `cmd/gorrcbot`, `cmd/gobot`, and associated Reticulum/LXMF implementations):
+The software and hardware designs in this repository (including, but not limited to, the **Go Reticulum Buddy (GRB)**, `cmd/grb`, `cmd/gorrcbot`, `cmd/gobot`, and associated Reticulum/LXMF implementations):
 
 - **Operate on Unlicensed, Best-Effort Frequencies**: Transmissions occur over unlicensed, low-power Industrial, Scientific, and Medical (ISM) radio bands (such as 868 MHz / 915 MHz LoRa) and ad-hoc wireless networks. Communications are subject to packet loss, radio frequency interference, terrain blockage, antenna limitations, battery depletion, and complete network unavailability.
 - **NO Guaranteed Delivery or Acknowledgement**: Delivery of any message, emergency beacon, packet, or distress call (`/sos`) is **never guaranteed**.

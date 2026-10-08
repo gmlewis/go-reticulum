@@ -75,7 +75,7 @@ func applianceConfig(t *testing.T) Config {
 	writeRNSConfig(t, rnsDir, filepath.Base(dir))
 
 	cfg := DefaultConfig()
-	cfg.Device.Callsign = "GRL-TEST"
+	cfg.Device.Callsign = "GRB-TEST"
 	cfg.Device.StorageDir = filepath.Join(dir, "storage")
 	cfg.RNS.ConfigPath = rnsDir
 	cfg.Portal.PortalAddr = "127.0.0.1:0"

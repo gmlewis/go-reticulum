@@ -11,22 +11,22 @@
 #include "esp_mac.h"
 #include <string.h>
 
-void grl_entropy_enable(void) {
+void grb_entropy_enable(void) {
     bootloader_random_enable();
 }
 
-uint32_t grl_entropy_read_word(void) {
+uint32_t grb_entropy_read_word(void) {
     return esp_random();
 }
 
-void grl_entropy_read_bytes(uint8_t *buf, size_t len) {
+void grb_entropy_read_bytes(uint8_t *buf, size_t len) {
     esp_fill_random(buf, len);
 }
 
-void grl_entropy_disable(void) {
+void grb_entropy_disable(void) {
     bootloader_random_disable();
 }
 
-void grl_read_efuse_mac(uint8_t mac[6]) {
+void grb_read_efuse_mac(uint8_t mac[6]) {
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
 }

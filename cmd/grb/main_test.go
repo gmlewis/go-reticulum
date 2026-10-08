@@ -48,13 +48,13 @@ func TestRunVersion(t *testing.T) {
 	if code != exitOK {
 		t.Errorf("run(-version) = %v, want %v", code, exitOK)
 	}
-	if want := "grl " + rns.VERSION; !strings.Contains(out, want) {
+	if want := "grb " + rns.VERSION; !strings.Contains(out, want) {
 		t.Errorf("run(-version) printed %q, want it to contain %q", out, want)
 	}
 }
 
 // TestRunHelp asserts every spelling of help exits 0, which is what a shell
-// script checking `grl -h` expects.
+// script checking `grb -h` expects.
 func TestRunHelp(t *testing.T) {
 	for _, arg := range []string{"-h", "-help", "--help"} {
 		code, _ := captureStdout(t, func() int { return run([]string{arg}) })
@@ -79,10 +79,10 @@ func TestRunRefusesAnImpossibleCommandLine(t *testing.T) {
 	}
 }
 
-// TestLoadApplianceConfigUsesGRLHome asserts a fresh appliance creates its
-// documented configuration under GRL_HOME and runs from it, so a test or a
-// second appliance on one workstation never touches ~/.grl.
-func TestLoadApplianceConfigUsesGRLHome(t *testing.T) {
+// TestLoadApplianceConfigUsesGRBHome asserts a fresh appliance creates its
+// documented configuration under GRB_HOME and runs from it, so a test or a
+// second appliance on one workstation never touches ~/.grb.
+func TestLoadApplianceConfigUsesGRBHome(t *testing.T) {
 	dir := tempDir(t)
 	t.Setenv(homeEnvVar, dir)
 

@@ -35,9 +35,9 @@ func tempDir(t *testing.T) string {
 // /tmp sweeper can recognize it (scripts/clean-test-tmp.sh -c).
 func newTempDir() (string, error) {
 	if runtime.GOOS == "darwin" {
-		return os.MkdirTemp("/tmp", "grl-test-*")
+		return os.MkdirTemp("/tmp", "grb-test-*")
 	}
-	return os.MkdirTemp("", "grl-test-*")
+	return os.MkdirTemp("", "grb-test-*")
 }
 
 // writeConfig writes text to <dir>/config.toml and returns the path.
@@ -90,10 +90,10 @@ func TestDefaultConfig(t *testing.T) {
 	}
 }
 
-// TestDefaultPathsHonorGRLHome asserts the appliance's home, and therefore its
-// configuration and storage paths, follow GRL_HOME so that a test and a second
-// appliance on one workstation never touch ~/.grl.
-func TestDefaultPathsHonorGRLHome(t *testing.T) {
+// TestDefaultPathsHonorGRBHome asserts the appliance's home, and therefore its
+// configuration and storage paths, follow GRB_HOME so that a test and a second
+// appliance on one workstation never touch ~/.grb.
+func TestDefaultPathsHonorGRBHome(t *testing.T) {
 	dir := tempDir(t)
 	t.Setenv(homeEnvVar, dir)
 
@@ -129,7 +129,7 @@ func TestEnsureConfigFileCreatesDocumentedDefaults(t *testing.T) {
 	}
 	text := string(data)
 	for _, want := range []string{
-		"# Go Reticulum Lifesaver (GRL) configuration.",
+		"# Go Reticulum Buddy (GRB) configuration.",
 		"[device]", "[portal]", "[gnss]", "[compass]", "[rns]", "[mesh]",
 		"callsign", "nickname", "storage_dir", "portal_addr",
 		"static_fix", "static_heading", "config_path", "rooms",
@@ -159,7 +159,7 @@ func TestEnsureConfigFileNeverRewritesAnOperatorsFile(t *testing.T) {
 	dir := tempDir(t)
 	path := filepath.Join(dir, configFileName)
 	edited := `[device]
-callsign = "GRL-EDITED"
+callsign = "GRB-EDITED"
 
 [portal]
 portal_addr = "0.0.0.0:9111"
@@ -172,7 +172,7 @@ portal_addr = "0.0.0.0:9111"
 	if err != nil {
 		t.Fatalf("EnsureConfigFile: %v", err)
 	}
-	if cfg.Device.Callsign != "GRL-EDITED" {
+	if cfg.Device.Callsign != "GRB-EDITED" {
 		t.Errorf("Callsign = %q, want the operator's value", cfg.Device.Callsign)
 	}
 	if cfg.Portal.PortalAddr != "0.0.0.0:9111" {
@@ -197,8 +197,8 @@ portal_addr = "0.0.0.0:9111"
 func TestLoadConfigReadsEveryKey(t *testing.T) {
 	dir := tempDir(t)
 	path := writeConfig(t, dir, `[device]
-callsign = "GRL-7"
-nickname = "lifesaver"
+callsign = "GRB-7"
+nickname = "buddy"
 storage_dir = "`+dir+`/state"
 
 [portal]
@@ -225,10 +225,10 @@ rooms = ["general", "emergency", "ops"]
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
-	if cfg.Device.Callsign != "GRL-7" {
+	if cfg.Device.Callsign != "GRB-7" {
 		t.Errorf("Callsign = %q", cfg.Device.Callsign)
 	}
-	if cfg.Device.Nickname != "lifesaver" {
+	if cfg.Device.Nickname != "buddy" {
 		t.Errorf("Nickname = %q", cfg.Device.Nickname)
 	}
 	if want := filepath.Join(dir, "state"); cfg.Device.StorageDir != want {
@@ -315,7 +315,7 @@ func TestLoadConfigExpandsHome(t *testing.T) {
 	}
 	dir := tempDir(t)
 	path := writeConfig(t, dir, `[device]
-storage_dir = "~/.grl/state"
+storage_dir = "~/.grb/state"
 
 [rns]
 config_path = "~/reticulum"
@@ -328,7 +328,7 @@ port = "~/dev/gps"
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
-	if want := filepath.Join(home, ".grl", "state"); cfg.Device.StorageDir != want {
+	if want := filepath.Join(home, ".grb", "state"); cfg.Device.StorageDir != want {
 		t.Errorf("StorageDir = %q, want %q", cfg.Device.StorageDir, want)
 	}
 	if want := filepath.Join(home, "reticulum"); cfg.RNS.ConfigPath != want {
@@ -457,9 +457,9 @@ func TestConfigAdvertisedName(t *testing.T) {
 		nickname string
 		want     string
 	}{
-		{"callsign alone", "GRL-7", "", "GRL-7"},
-		{"nickname wins", "GRL-7", "lifesaver", "lifesaver"},
-		{"blank nickname falls back", "GRL-7", "   ", "GRL-7"},
+		{"callsign alone", "GRB-7", "", "GRB-7"},
+		{"nickname wins", "GRB-7", "buddy", "buddy"},
+		{"blank nickname falls back", "GRB-7", "   ", "GRB-7"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

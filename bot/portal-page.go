@@ -21,7 +21,7 @@ const portalDashboardHTML = `<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>GRL Survival Portal</title>
+<title>GRB Survival Portal</title>
 <style>
 :root {
   color-scheme: dark;
@@ -97,7 +97,7 @@ footer { text-align: center; padding: 16px 12px; margin-top: 24px; border-top: 1
 </head>
 <body>
 <header>
-  <h1>GRL Survival Portal</h1>
+  <h1>GRB Survival Portal</h1>
   <p id="link-state">Offline field assistant — no internet, no app, no account required.</p>
 </header>
 <main>

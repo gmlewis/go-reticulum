@@ -17,7 +17,7 @@ import (
 // zero-hop evaluator: Engine.Eval produces the same answer the radio would
 // carry, computed entirely in-process.
 //
-// An Engine is what a field appliance (cmd/grl) runs when no hub is reachable,
+// An Engine is what a field appliance (cmd/grb) runs when no hub is reachable,
 // and it is also what the captive portal drives, so the radio answer and the
 // dashboard answer can never disagree: both read one registry over one pair of
 // sensors.

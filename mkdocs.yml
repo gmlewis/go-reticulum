@@ -78,7 +78,7 @@ nav:
   - Tools & Daemons:
       - Directory: tools/index.md
       - gorrcbot (Chat Bot): tools/gorrcbot.md
-      - grl (Lifesaver Appliance): tools/grl.md
+      - grb (Buddy Appliance): tools/grb.md
       - gobot (Bot CLI): tools/gobot.md
       - golxmd (LXMF Propagation): tools/golxmd.md
       - gorrcd (Hub Daemon): tools/gorrcd.md
@@ -88,6 +88,7 @@ nav:
   - Guides:
       - Off-Grid Hardware: guides/hardware.md
       - Running a Node: guides/running-a-node.md
+      - Android (Termux): guides/android.md
       - Wasm Plugins: guides/wasm-plugins.md
       - Radio Diagnostics: guides/diagnostics.md
   - Reference:
