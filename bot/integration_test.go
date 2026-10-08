@@ -542,11 +542,11 @@ func TestIntegrationBotAnswersAnAddressedCommand(t *testing.T) {
 		t.Errorf("the bot replied to unaddressed chatter: %v notices, want 1", got)
 	}
 
-	// 3. An addressed command is answered with the generated listing.
+	// 3. An addressed command is answered with the generated category listing.
 	asker.SendMessage("general", "@"+DefaultNick+" help")
 	if !waitForCondition(integrationWait, func() bool {
 		for _, notice := range rig.notices(t, 0) {
-			if strings.HasPrefix(notice, "Commands: ") {
+			if strings.HasPrefix(notice, "Categories: ") {
 				return true
 			}
 		}
@@ -556,31 +556,23 @@ func TestIntegrationBotAnswersAnAddressedCommand(t *testing.T) {
 			DefaultNick, rig.notices(t, 0))
 	}
 
-	// 4. The listing names every registered command. The listing outgrew one
-	// envelope long ago, so the reply arrives as several notices, each marked
-	// with the continuation marker except the last; every command has to appear
-	// across them.
-	reg := newRegistry(newBot(defaultTestConfig(), BotPaths{}, nil, mustHex(rig.botHash), nil, botHooks{}))
-	var help strings.Builder
-	first := true
+	// 4. The listing names every category. Grouping keeps the whole answer
+	// inside one envelope, so it arrives as a single notice with no continuation
+	// marker — the mid-word split the flat listing suffered cannot occur.
+	listing := ""
 	for _, notice := range rig.notices(t, 0) {
-		if first {
-			if !strings.HasPrefix(notice, "Commands: ") {
-				continue
-			}
-			first = false
-		}
-		help.WriteString(strings.TrimSuffix(notice, splitMarker))
-	}
-	listing := help.String()
-	for _, name := range reg.names() {
-		if !strings.Contains(listing, name) {
-			t.Errorf("the help notices = %q, want them to list %q", listing, name)
+		if strings.HasPrefix(notice, "Categories: ") {
+			listing = notice
+			break
 		}
 	}
-	if !strings.HasSuffix(listing, reg.names()[len(reg.names())-1]) {
-		t.Errorf("the help notices end at %q, want the last command %q",
-			listing[len(listing)-min(len(listing), 24):], reg.names()[len(reg.names())-1])
+	if strings.HasSuffix(listing, splitMarker) {
+		t.Errorf("the help listing = %q, want it to fit one notice", listing)
+	}
+	for _, category := range commandCategories {
+		if !strings.Contains(listing, category.name) {
+			t.Errorf("the help listing = %q, want it to name category %q", listing, category.name)
+		}
 	}
 
 	// 5. An unknown command gets exactly one short line.
@@ -686,7 +678,7 @@ func TestIntegrationBotAnswersARoomRequestInTheRoom(t *testing.T) {
 	asker.SendMessage("general", "@"+DefaultNick+" help")
 	if !waitForCondition(integrationWait, func() bool {
 		for _, notice := range rig.notices(t, 0) {
-			if strings.HasPrefix(notice, "Commands: ") {
+			if strings.HasPrefix(notice, "Categories: ") {
 				return true
 			}
 		}
@@ -699,7 +691,7 @@ func TestIntegrationBotAnswersARoomRequestInTheRoom(t *testing.T) {
 	// The answer went out exactly once: the route is chosen before anything is
 	// sent, so an in-room answer is never also delivered privately.
 	for _, text := range rig.hubs[0].inbound.fromDirect(rig.botHash) {
-		if strings.HasPrefix(text, "Commands: ") {
+		if strings.HasPrefix(text, "Categories: ") {
 			t.Errorf("an in-room answer was also sent as a direct notice: %q", text)
 		}
 	}
@@ -754,7 +746,7 @@ func TestIntegrationBotServesEveryHubWithOneIdentity(t *testing.T) {
 		hub.asker.SendMessage("general", "@"+DefaultNick+" id")
 		if !waitForCondition(integrationWait, func() bool {
 			for _, notice := range rig.notices(t, index) {
-				if strings.HasPrefix(notice, "identity=") {
+				if strings.Contains(notice, "identity=") {
 					return true
 				}
 			}
@@ -790,12 +782,13 @@ func TestIntegrationBotServesEveryHubWithOneIdentity(t *testing.T) {
 func identityFromID(t *testing.T, notices []string) string {
 	t.Helper()
 	for _, notice := range notices {
-		if !strings.HasPrefix(notice, "identity=") {
+		_, rest, ok := strings.Cut(notice, "identity=")
+		if !ok {
 			continue
 		}
-		field, _, _ := strings.Cut(strings.TrimPrefix(notice, "identity="), ";")
+		field, _, _ := strings.Cut(rest, ";")
 		if !isHexString(field) {
-			t.Fatalf("id reply %q does not start with a hash", notice)
+			t.Fatalf("id reply %q does not carry a hash after identity=", notice)
 		}
 		return field
 	}
@@ -971,7 +964,7 @@ func TestLiveHubRoundTrip(t *testing.T) {
 	// production default is "auto": the collector sees both routes.
 	answered := func() bool {
 		return slices.ContainsFunc(live.all(), func(msg *rrc.RRCMessage) bool {
-			return strings.HasPrefix(msg.Text, "Commands: ")
+			return strings.HasPrefix(msg.Text, "Categories: ")
 		})
 	}
 	if !waitForCondition(integrationWait, func() bool {

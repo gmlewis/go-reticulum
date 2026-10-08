@@ -756,23 +756,26 @@ func TestLXMFClosesOnShutdown(t *testing.T) {
 	})
 }
 
-// TestMsgCommandsAreRegistered asserts the command and its alias both exist, are
-// documented, and share one handler, so the generated help lists them.
+// TestMsgCommandsAreRegistered asserts msg is the one listed name for LXMF
+// delivery and that lxmf is an alias that resolves to it, so one behavior never
+// appears twice in the command listing.
 func TestMsgCommandsAreRegistered(t *testing.T) {
 	t.Parallel()
 
 	reg, session, _ := commandFixture(t, nil)
-	for _, name := range []string{"msg", "lxmf"} {
-		cmd, ok := reg.byName[name]
-		if !ok {
-			t.Fatalf("the command registry has no %q command", name)
-		}
-		if cmd.usage != msgUsage {
-			t.Errorf("%v usage = %q, want %q", name, cmd.usage, msgUsage)
-		}
-		if strings.TrimSpace(cmd.summary) == "" {
-			t.Errorf("%v has no summary", name)
-		}
+	msgCmd, ok := reg.byName["msg"]
+	if !ok {
+		t.Fatalf("the command registry has no msg command")
+	}
+	if msgCmd.usage != msgUsage {
+		t.Errorf("msg usage = %q, want %q", msgCmd.usage, msgUsage)
+	}
+	if strings.TrimSpace(msgCmd.summary) == "" {
+		t.Errorf("msg has no summary")
+	}
+	lxmfCmd, ok := reg.byName["lxmf"]
+	if !ok || lxmfCmd.name != "msg" {
+		t.Errorf("byName[lxmf] = %v, want the msg command", lxmfCmd)
 	}
 	if got := reg.aliases["lxmf"]; got != "msg" {
 		t.Errorf("aliases[lxmf] = %q, want %q", got, "msg")
@@ -781,19 +784,21 @@ func TestMsgCommandsAreRegistered(t *testing.T) {
 	if len(lines) == 0 || !strings.Contains(lines[0], msgUsage) {
 		t.Errorf("help msg = %q, want the command's usage line", lines)
 	}
-	msgCmd, _ := reg.byName["msg"]
 	if want := helpLineCount(msgCmd, reg.config()); len(lines) != want {
-		t.Errorf("help msg returned %v lines, want the summary line plus %v detail lines",
-			len(lines), len(msgCmd.detail))
+		t.Errorf("help msg returned %v lines, want %v", len(lines), want)
 	}
-	// The listing is alphabetical, so msg and its lxmf alias are not adjacent
-	// once the field-assistant commands are registered; what matters is that
-	// both are listed, in order.
-	got := runLines(t, reg, session, "help")[0]
-	lxmfAt := strings.Index(got, "lxmf")
-	msgAt := strings.Index(got, "msg")
-	if lxmfAt < 0 || msgAt < 0 || lxmfAt > msgAt {
-		t.Errorf("help = %q, want both lxmf and msg listed with lxmf first", got)
+	// Asking about the alias names the command it stands for.
+	alias := runLines(t, reg, session, "help lxmf")
+	if len(alias) < 2 || !strings.Contains(alias[0], "alias for msg") {
+		t.Errorf("help lxmf = %q, want it to say lxmf aliases msg", alias)
+	}
+	// The category listing carries the one canonical name, never the alias.
+	got := runLines(t, reg, session, "help messaging")[0]
+	if !strings.Contains(got, "msg") {
+		t.Errorf("help messaging = %q, want it to list msg", got)
+	}
+	if strings.Contains(got, "lxmf") {
+		t.Errorf("help messaging = %q, want the alias lxmf left out", got)
 	}
 }
 

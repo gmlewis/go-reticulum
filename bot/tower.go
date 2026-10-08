@@ -301,6 +301,14 @@ func firstNonEmpty(values []string) string {
 func (c *commandContext) runTower() []string {
 	records, entries := c.towerRecords()
 	command := towerCommandWord(c.req.Command)
+	// "repeater" and "cell" are the same catalog over one service. An alias
+	// resolves to its canonical name first, so "mast" narrows exactly as "cell"
+	// does while the answer still quotes the word the asker typed.
+	service := command
+	if cmd, ok := c.reg.byName[command]; ok {
+		service = cmd.name
+	}
+	records, entries = filterTowerService(service, records, entries)
 	if kind, text := splitDiscovery(c.Args); kind != "" {
 		return c.runTowerDiscovery(command, records, entries, kind, text)
 	}
@@ -333,6 +341,45 @@ func towerCommandWord(line string) string {
 		return name
 	}
 	return "tower"
+}
+
+// towerServiceType maps a tower-command name to the one service it answers over.
+// "tower" names no service and gets the whole catalog; "repeater" and "cell"
+// each narrow it, so the summary a reader sees is one the handler keeps.
+func towerServiceType(command string) (TowerType, bool) {
+	switch command {
+	case "repeater":
+		return TowerTypeRepeater, true
+	case "cell":
+		return TowerTypeCellular, true
+	default:
+		return "", false
+	}
+}
+
+// filterTowerService narrows the catalog and its discovery rows to the service a
+// command name selects. A command that names no service is answered from the
+// whole catalog unchanged.
+func filterTowerService(command string, records []TowerRecord, entries []catalogEntry) ([]TowerRecord, []catalogEntry) {
+	want, ok := towerServiceType(command)
+	if !ok {
+		return records, entries
+	}
+	keep := make(map[string]bool, len(records))
+	filteredRecords := make([]TowerRecord, 0, len(records))
+	for _, record := range records {
+		if record.Type == want {
+			keep[record.ID] = true
+			filteredRecords = append(filteredRecords, record)
+		}
+	}
+	filteredEntries := make([]catalogEntry, 0, len(entries))
+	for _, entry := range entries {
+		if keep[entry.ID] {
+			filteredEntries = append(filteredEntries, entry)
+		}
+	}
+	return filteredRecords, filteredEntries
 }
 
 // runTowerDiscovery answers a search, near, or list request from the catalog.

@@ -147,7 +147,7 @@ func TestPortalRootServesTheDashboard(t *testing.T) {
 		"Copy Plus Code",
 		"SOS",
 		"Field Assistant",
-		"med hypothermia",
+		"firstaid hypothermia",
 		"/api/whereami",
 		"/api/query",
 	} {
@@ -319,7 +319,7 @@ func TestPortalQueryAnswersUnknownCommands(t *testing.T) {
 	if !strings.Contains(joined, "unknown command") {
 		t.Errorf("unknown command = %v, want it named as unknown", got.Lines)
 	}
-	if !strings.Contains(joined, "med") {
+	if !strings.Contains(joined, "firstaid") {
 		t.Errorf("unknown command = %v, want the offline command list", got.Lines)
 	}
 }

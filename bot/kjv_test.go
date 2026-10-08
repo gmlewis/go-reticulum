@@ -517,8 +517,8 @@ func TestKJVIsRegisteredAndDocumented(t *testing.T) {
 		t.Errorf("help kjv returned %v lines, want the summary line plus %v detail lines",
 			len(lines), len(cmd.detail))
 	}
-	if got := runLines(t, reg, session, "help"); !strings.Contains(got[0], "kjv") {
-		t.Errorf("the command listing = %q, want it to include kjv", got[0])
+	if got := runLines(t, reg, session, "help reference"); !strings.Contains(got[0], "kjv") {
+		t.Errorf("the reference listing = %q, want it to include kjv", got[0])
 	}
 }
 

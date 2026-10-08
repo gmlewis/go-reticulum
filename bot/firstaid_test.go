@@ -145,13 +145,14 @@ func TestFirstAidTopicsAreDistinct(t *testing.T) {
 	}
 }
 
-// TestFirstAidIsRegisteredWithItsAliases asserts the command, its two aliases,
-// and the alias table all agree.
+// TestFirstAidIsRegisteredWithItsAliases asserts the command, its three
+// aliases, and the alias table all agree. "med" is the one the field guides and
+// the portal chat box use, and it was once silently missing from the alias map.
 func TestFirstAidIsRegisteredWithItsAliases(t *testing.T) {
 	t.Parallel()
 
 	reg, _, _ := commandFixture(t, nil)
-	for _, name := range []string{"firstaid", "rx", "triage"} {
+	for _, name := range []string{"firstaid", "rx", "med", "triage"} {
 		cmd, ok := reg.byName[name]
 		if !ok {
 			t.Fatalf("command %q is not registered", name)
@@ -160,7 +161,7 @@ func TestFirstAidIsRegisteredWithItsAliases(t *testing.T) {
 			t.Errorf("command %q is not documented", name)
 		}
 	}
-	for alias, target := range map[string]string{"rx": "firstaid", "triage": "firstaid"} {
+	for alias, target := range map[string]string{"rx": "firstaid", "med": "firstaid", "triage": "firstaid"} {
 		if got := reg.aliases[alias]; got != target {
 			t.Errorf("alias %q maps to %q, want %q", alias, got, target)
 		}

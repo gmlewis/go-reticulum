@@ -3,17 +3,23 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-// This file holds the command registry: one entry per command, with a summary
+// This file holds the command registry: one entry per behavior, with a summary
 // and a handler, so the help listing and the per-command help are generated from
 // the same table and can never drift apart.
 //
-// The command NAMES mirror the official RRC hub bot minus its '!' prefix
-// (botinfo, dn, dnotice, dnoticecap, dnoticeme, help, ping, uptime, weather,
-// whoami, wx), because a client that already knows that bot should feel at
-// home, and the wording of their replies matches its usage lines. A handful of
-// commands go beyond the official set: they answer
-// questions that only matter on a mesh, where a peer may have been offline for
-// hours (seen, members, rooms, id).
+// The listed command NAMES mirror the official RRC hub bot minus its '!' prefix
+// (botinfo, dnotice, dnoticecap, dnoticeme, help, ping, uptime, weather,
+// whoami), because a client that already knows that bot should feel at home, and
+// the wording of their replies matches its usage lines. A handful of commands go
+// beyond the official set: they answer questions that only matter on a mesh,
+// where a peer may have been offline for hours (seen, rooms, search, catchup).
+//
+// One behavior has exactly one listed name. The other names that reach it — the
+// official bot's "wx", the field guides' "med", the shorter "dn" — live in the
+// taxonomy below as aliases: they still resolve, but they are never listed, so a
+// reader is not asked to choose between two names that do the same thing. The
+// taxonomy also files every command under the help category that keeps "help"
+// short enough for one NOTICE however many commands the bot grows.
 
 package bot
 
@@ -71,6 +77,129 @@ const (
 	maxProviderBodyBytes = 256 << 10
 )
 
+// Help categories. Every canonical command belongs to exactly one, so the
+// listing a bare "help" answers with stays short enough for one NOTICE however
+// many commands the bot grows, and a reader drills into the group they want
+// instead of scanning a wall of names.
+const (
+	categoryCore        = "core"
+	categoryHistory     = "history"
+	categoryMessaging   = "messaging"
+	categoryNetwork     = "network"
+	categoryNavigation  = "navigation"
+	categorySky         = "sky"
+	categoryEmergency   = "emergency"
+	categoryEnvironment = "environment"
+	categorySpace       = "space"
+	categorySites       = "sites"
+	categoryReference   = "reference"
+)
+
+// commandCategory is one help group and the clause help prints beside it.
+type commandCategory struct {
+	name    string
+	summary string
+}
+
+// commandCategories is the help order. The order is deliberate: the commands a
+// newcomer needs first, then the field tools, then the reference material.
+var commandCategories = []commandCategory{
+	{categoryCore, "bot status, identity, and rooms"},
+	{categoryHistory, "what was said while you were away"},
+	{categoryMessaging, "direct notices and store-and-forward messages"},
+	{categoryNetwork, "paths, announces, and watches"},
+	{categoryNavigation, "positions, distances, and dead reckoning"},
+	{categorySky, "sun and moon almanacs"},
+	{categoryEmergency, "distress, check-in, situation reports, and field medicine"},
+	{categoryEnvironment, "forecasts, warnings, and environmental telemetry"},
+	{categorySpace, "launches and flights"},
+	{categorySites, "cell towers and radio repeaters"},
+	{categoryReference, "texts and lookups"},
+}
+
+// commandTaxonomy is one canonical command's place in help: the category it is
+// listed under, and the other names that reach the same handler.
+//
+// The whole tree lives in this one table, rather than in a field on each of the
+// dozens of command entries, so it is possible to see at a glance that every
+// behavior has exactly one listed name, every name has a home, and no alias is
+// silently forgotten — a hand-maintained alias map once left "med" out.
+type commandTaxonomy struct {
+	category string
+	aliases  []string
+}
+
+// taxonomy assigns every canonical command its help category and aliases. A name
+// not in this table is either an alias or a command that has no group, and
+// TestEveryCommandIsCategorized catches both.
+var taxonomy = map[string]commandTaxonomy{
+	// Core & administration.
+	"help":    {categoryCore, nil},
+	"ping":    {categoryCore, nil},
+	"uptime":  {categoryCore, nil},
+	"whoami":  {categoryCore, nil},
+	"botinfo": {categoryCore, []string{"id"}},
+	"rooms":   {categoryCore, []string{"members"}},
+	"more":    {categoryCore, []string{"next"}},
+
+	// Room history.
+	"seen":    {categoryHistory, nil},
+	"catchup": {categoryHistory, nil},
+	"search":  {categoryHistory, nil},
+
+	// Private & direct messaging.
+	"dnotice":    {categoryMessaging, []string{"dn"}},
+	"dnoticecap": {categoryMessaging, nil},
+	"dnoticeme":  {categoryMessaging, nil},
+	"msg":        {categoryMessaging, []string{"lxmf"}},
+
+	// Network & mesh diagnostics.
+	"path":    {categoryNetwork, nil},
+	"watch":   {categoryNetwork, nil},
+	"unwatch": {categoryNetwork, nil},
+	"watches": {categoryNetwork, nil},
+	"net":     {categoryNetwork, nil},
+
+	// Offline geodesy & navigation.
+	"loc":      {categoryNavigation, nil},
+	"dist":     {categoryNavigation, nil},
+	"proj":     {categoryNavigation, nil},
+	"whereami": {categoryNavigation, nil},
+
+	// Celestial ephemeris, and space and aviation above it.
+	"sun":      {categorySky, []string{"solar"}},
+	"moon":     {categorySky, nil},
+	"launches": {categorySpace, nil},
+	"flight":   {categorySpace, nil},
+
+	// Emergency, search & rescue, and field operations.
+	"sos":       {categoryEmergency, nil},
+	"checkin":   {categoryEmergency, nil},
+	"sitrep":    {categoryEmergency, nil},
+	"firstaid":  {categoryEmergency, []string{"rx", "med", "triage"}},
+	"coldwater": {categoryEmergency, []string{"immersion"}},
+	"signal":    {categoryEmergency, nil},
+	"morse":     {categoryEmergency, nil},
+	"conv":      {categoryEmergency, nil},
+
+	// Weather, marine, aviation, and space-weather telemetry.
+	"weather": {categoryEnvironment, []string{"wx"}},
+	"alerts":  {categoryEnvironment, []string{"wxalert"}},
+	"metar":   {categoryEnvironment, nil},
+	"spacewx": {categoryEnvironment, nil},
+	"tide":    {categoryEnvironment, nil},
+	"buoy":    {categoryEnvironment, nil},
+	"river":   {categoryEnvironment, nil},
+
+	// Cell & radio site finder.
+	"tower":    {categorySites, nil},
+	"repeater": {categorySites, nil},
+	"cell":     {categorySites, []string{"mast"}},
+
+	// Reference material.
+	"kjv": {categoryReference, nil},
+}
+
 // command is one registry entry.
 type command struct {
 	// name is the command word, lowercase and without a prefix.
@@ -99,6 +228,13 @@ type command struct {
 	// at all. A command that touches a session, the pager, the announce cache,
 	// or a peer's identity must leave this false.
 	local bool
+	// category is the help group this command is listed under, taken from the
+	// taxonomy.
+	category string
+	// aliases are the other names that reach this command. They resolve to the
+	// same handler but are never listed as commands of their own, so a reader
+	// sees one entry per behavior.
+	aliases []string
 }
 
 // commandContext is one command invocation.
@@ -189,16 +325,11 @@ type registry struct {
 // newRegistry builds the command table for one bot.
 func newRegistry(b *bot) *registry {
 	r := &registry{
-		bot:    b,
-		byName: make(map[string]*command),
-		aliases: map[string]string{
-			"dn": "dnotice", "wx": "weather", "lxmf": "msg",
-			"rx": "firstaid", "triage": "firstaid", "solar": "spacewx",
-			"immersion": "coldwater", "next": "more",
-			"repeater": "tower", "cell": "tower", "mast": "tower",
-		},
-		fetch: httpFetch,
-		cache: newProviderCache(providerCacheTTL, providerCacheMaxEntries),
+		bot:     b,
+		byName:  make(map[string]*command),
+		aliases: make(map[string]string),
+		fetch:   httpFetch,
+		cache:   newProviderCache(providerCacheTTL, providerCacheMaxEntries),
 		// Flight answers are cached apart from the shared provider cache: a
 		// route is static, while a live position is only worth reusing for as
 		// long as it is still roughly where the aircraft is.
@@ -217,13 +348,42 @@ func newRegistry(b *bot) *registry {
 	}
 	r.commands = r.build()
 	sort.Slice(r.commands, func(i, j int) bool { return r.commands[i].name < r.commands[j].name })
-	for i := range r.commands {
-		r.byName[r.commands[i].name] = &r.commands[i]
-	}
+	r.applyTaxonomy()
 	return r
 }
 
-// names returns the command names in registry order.
+// applyTaxonomy folds the taxonomy into the registry: every canonical command
+// learns its help category and its aliases, and every alias name resolves to the
+// command it stands for. A command with no taxonomy entry is a programming error
+// the tests catch, so it is left uncategorized here rather than guessed at.
+func (r *registry) applyTaxonomy() {
+	for i := range r.commands {
+		cmd := &r.commands[i]
+		entry, ok := taxonomy[cmd.name]
+		if !ok {
+			logf("command %q has no help category", cmd.name)
+			continue
+		}
+		cmd.category = entry.category
+		cmd.aliases = entry.aliases
+	}
+	for i := range r.commands {
+		cmd := &r.commands[i]
+		r.byName[cmd.name] = cmd
+		for _, alias := range cmd.aliases {
+			if other, exists := r.byName[alias]; exists {
+				logf("alias %q is already the name of command %q", alias, other.name)
+				continue
+			}
+			r.byName[alias] = cmd
+			r.aliases[alias] = cmd.name
+		}
+	}
+}
+
+// names returns the canonical command names in registry order. Alias names are
+// deliberately absent: a reader who sees one name per behavior is never asked to
+// choose between two names that do the same thing.
 func (r *registry) names() []string {
 	out := make([]string, 0, len(r.commands))
 	for _, cmd := range r.commands {
@@ -269,7 +429,9 @@ func (r *registry) currentHeading() (CompassHeading, bool) {
 	return heading, heading.Valid
 }
 
-// localNames returns the names the offline portal can run, in registry order.
+// localNames returns the canonical names the offline portal can run, in
+// registry order. An alias reaches the same handler through byName, so leaving
+// aliases out here never blocks one from running.
 func (r *registry) localNames() []string {
 	out := make([]string, 0, len(r.commands))
 	for _, cmd := range r.commands {
@@ -306,7 +468,7 @@ func (r *registry) Run(req *commandRequest) []string {
 	name, args := splitCommandLine(req.Command)
 	if name == "" {
 		// Addressed with no command: the only useful answer is the listing.
-		return r.helpListing()
+		return r.helpCategories()
 	}
 	cmd, ok := r.byName[name]
 	if !ok {
@@ -315,9 +477,41 @@ func (r *registry) Run(req *commandRequest) []string {
 	return cmd.run(&commandContext{reg: r, req: req, Args: args})
 }
 
-// helpListing renders the one-line command listing, in the official bot's shape.
-func (r *registry) helpListing() []string {
-	return []string{"Commands: " + strings.Join(r.names(), ", ")}
+// helpCategories renders the one-line group listing a bare "help" answers with.
+// The listing stays inside one NOTICE even though the bot offers dozens of
+// commands, and a reader names the group they want next instead of scanning a
+// wall of names.
+func (r *registry) helpCategories() []string {
+	names := make([]string, 0, len(commandCategories))
+	for _, category := range commandCategories {
+		names = append(names, category.name)
+	}
+	return []string{"Categories: " + strings.Join(names, ", ") +
+		` — "help <category>" lists one, "help <command>" explains one.`}
+}
+
+// helpCategory renders one group: its canonical commands in registry order, with
+// the clause that says what the group is for. It returns nil when name is not a
+// category, which is how runHelp falls through to a command name.
+func (r *registry) helpCategory(name string) []string {
+	var category *commandCategory
+	for i := range commandCategories {
+		if commandCategories[i].name == name {
+			category = &commandCategories[i]
+			break
+		}
+	}
+	if category == nil {
+		return nil
+	}
+	names := make([]string, 0, len(r.commands))
+	for _, cmd := range r.commands {
+		if cmd.category == name {
+			names = append(names, cmd.name)
+		}
+	}
+	return []string{fmt.Sprintf("%v (%v): %v — %v",
+		category.name, len(names), strings.Join(names, ", "), category.summary)}
 }
 
 // unknownCommandLine is the single short line an unrecognised command produces.
@@ -432,17 +626,6 @@ func (r *registry) build() []command {
 			run: (*commandContext).runBotinfo,
 		},
 		{
-			name:    "dn",
-			summary: "send a direct NOTICE to one client",
-			usage:   dnoticeUsage,
-			detail: []string{
-				"<nick|hash|me> picks the recipient; a hash prefix needs at least 6",
-				"hex characters, and me means you.",
-				"The text travels as a direct NOTICE, so it must fit one envelope.",
-			},
-			run: (*commandContext).runDnotice,
-		},
-		{
 			name:    "dnotice",
 			summary: "send a direct NOTICE to one client",
 			usage:   dnoticeUsage,
@@ -487,15 +670,6 @@ func (r *registry) build() []command {
 			},
 			configured: func(cfg *BotConfig) bool { return cfg.WeatherURL != "" },
 			run:        (*commandContext).runWeather,
-		},
-		{
-			name:    "wx",
-			summary: "look up the weather for a place",
-			usage:   weatherUsage,
-			detail: []string{
-				"Same command as weather.",
-			},
-			run: (*commandContext).runWeather,
 		},
 		{
 			name:    "seen",
@@ -616,15 +790,6 @@ func (r *registry) build() []command {
 			run:        (*commandContext).runMsg,
 		},
 		{
-			name:    "lxmf",
-			summary: "send an LXMF message to a peer, online or not",
-			usage:   msgUsage,
-			detail: []string{
-				"Same command as msg.",
-			},
-			run: (*commandContext).runMsg,
-		},
-		{
 			name:    "kjv",
 			summary: "look up a Bible verse, or search the King James text",
 			usage:   kjvUsage,
@@ -645,31 +810,14 @@ func (r *registry) build() []command {
 			run:        (*commandContext).runKJV,
 		},
 		{
-			name:    "members",
-			summary: "list the clients in a room",
-			usage:   "members [room]",
-			detail: []string{
-				"With no room, answers for the first joined room and names it, then",
-				"mentions the others.",
-			},
-			run: (*commandContext).runMembers,
-		},
-		{
 			name:    "rooms",
-			summary: "list the rooms the bot has joined",
+			summary: "list the rooms the bot has joined, or the clients in one",
+			usage:   "rooms [room]",
 			detail: []string{
-				"Lists the rooms the bot has joined on this hub.",
+				"With no room, lists every room the bot has joined on this hub.",
+				"With a room, lists the clients the hub reports in it.",
 			},
 			run: (*commandContext).runRooms,
-		},
-		{
-			name:    "id",
-			summary: "report the identity hash clients can use to address the bot",
-			detail: []string{
-				"Reports the bot's identity hash, its nick, and the @<hash-prefix>",
-				"alias that works even where its nickname is taken.",
-			},
-			run: (*commandContext).runID,
 		},
 		{
 			name:    "loc",
@@ -798,37 +946,6 @@ func (r *registry) build() []command {
 			local: true,
 		},
 		{
-			name:    "rx",
-			summary: "offline wilderness-medicine action card",
-			usage:   firstaidUsage,
-			detail: []string{
-				"Same command as firstaid.",
-			},
-			run:   (*commandContext).runFirstAid,
-			local: true,
-		},
-		{
-			name:    "med",
-			summary: "offline wilderness-medicine action card",
-			usage:   firstaidUsage,
-			detail: []string{
-				"Same command as firstaid, under the short name the field guides",
-				"and the captive portal's chat box use.",
-			},
-			run:   (*commandContext).runFirstAid,
-			local: true,
-		},
-		{
-			name:    "triage",
-			summary: "offline wilderness-medicine action card",
-			usage:   firstaidUsage,
-			detail: []string{
-				"Same command as firstaid.",
-			},
-			run:   (*commandContext).runFirstAid,
-			local: true,
-		},
-		{
 			name:    "spacewx",
 			summary: "report space weather and the HF band outlook",
 			usage:   spacewxUsage,
@@ -845,15 +962,6 @@ func (r *registry) build() []command {
 			},
 			configured: func(cfg *BotConfig) bool { return cfg.SpaceWeatherURL != "" },
 			run:        (*commandContext).runSpacewx,
-		},
-		{
-			name:    "solar",
-			summary: "report space weather and the HF band outlook",
-			usage:   spacewxUsage,
-			detail: []string{
-				"Same command as spacewx.",
-			},
-			run: (*commandContext).runSpacewx,
 		},
 		{
 			name:    "conv",
@@ -910,13 +1018,13 @@ func (r *registry) build() []command {
 			run:        (*commandContext).runMetar,
 		},
 		{
-			name:    "wxalert",
+			name:    "alerts",
 			summary: "report severe weather warnings in force for a place",
 			usage:   wxalertUsage,
 			detail: []string{
 				"Accepts a place or a two-letter area code, like OK or TX.",
 				"Answers are cached for 15 minutes.",
-				"{nick} wxalert OK",
+				"{nick} alerts OK",
 			},
 			configHint: []string{
 				"Needs weather_alert_url in config.toml to enable it.",
@@ -950,16 +1058,6 @@ func (r *registry) build() []command {
 				"With a water temperature (48F, or 8.9C; a bare number is",
 				"Fahrenheit) it prints the swim-failure and survival windows.",
 				"{nick} coldwater | {nick} coldwater 48F",
-			},
-			run:   (*commandContext).runColdwater,
-			local: true,
-		},
-		{
-			name:    "immersion",
-			summary: "cold-water immersion and hypothermia survival windows",
-			usage:   coldwaterUsage,
-			detail: []string{
-				"Same command as coldwater.",
 			},
 			run:   (*commandContext).runColdwater,
 			local: true,
@@ -1052,8 +1150,9 @@ func (r *registry) build() []command {
 			summary: "find the nearest amateur radio repeaters",
 			usage:   towerUsage,
 			detail: []string{
-				"Same command as tower.",
-				"{nick} repeater near <place|coords|pluscode> names the 3 closest sites.",
+				"Answers exactly as tower does, over amateur repeaters (RPT sites) only.",
+				"{nick} repeater near <place|coords|pluscode> names the 3 closest repeaters.",
+				"{nick} repeater search <callsign|city> finds one, like tower search.",
 			},
 			run:   (*commandContext).runTower,
 			local: true,
@@ -1063,19 +1162,9 @@ func (r *registry) build() []command {
 			summary: "find the nearest cellular masts",
 			usage:   towerUsage,
 			detail: []string{
-				"Same command as tower.",
+				"Answers exactly as tower does, over cellular base stations (CELL sites) only.",
 				"{nick} cell near <place|coords|pluscode> names the 3 closest masts.",
-			},
-			run:   (*commandContext).runTower,
-			local: true,
-		},
-		{
-			name:    "mast",
-			summary: "find the nearest cellular masts",
-			usage:   towerUsage,
-			detail: []string{
-				"Same command as tower.",
-				"{nick} mast near <place|coords|pluscode> names the 3 closest masts.",
+				"{nick} cell search <carrier|city> finds one, like tower search.",
 			},
 			run:   (*commandContext).runTower,
 			local: true,
@@ -1090,15 +1179,6 @@ func (r *registry) build() []command {
 				"The page is remembered per identity for five minutes; with",
 				"nothing pending the answer is \"no more pages or search expired\".",
 				"{nick} buoy search san francisco | {nick} more",
-			},
-			run: (*commandContext).runMore,
-		},
-		{
-			name:    "next",
-			summary: "show the next page of the last search, near, or list",
-			usage:   "next",
-			detail: []string{
-				"Same command as more.",
 			},
 			run: (*commandContext).runMore,
 		},
@@ -1118,23 +1198,33 @@ func (r *registry) build() []command {
 	}
 }
 
-// runHelp lists the commands, or explains the one that was named. An explanation
-// is the summary line followed by the command's own detail, with {nick} replaced
-// by the nick this bot really answers to, so the examples are usable as written.
+// runHelp lists the categories, lists one category's commands, or explains one
+// command. An explanation is the summary line followed by the command's own
+// detail, with {nick} replaced by the nick this bot really answers to, so the
+// examples are usable as written. Asking about an alias answers with the command
+// it stands for and says so, instead of leaving the reader with a duplicate.
 func (c *commandContext) runHelp() []string {
 	if c.Args == "" {
-		return c.reg.helpListing()
+		return c.reg.helpCategories()
 	}
 	name, _ := splitCommandLine(c.Args)
 	cmd, ok := c.reg.byName[name]
 	if !ok {
+		// A category name is the other thing "help <word>" can name.
+		if lines := c.reg.helpCategory(name); lines != nil {
+			return lines
+		}
 		return []string{unknownCommandLine(c.effectiveTriggerNick())}
+	}
+	var lines []string
+	if name != cmd.name {
+		lines = append(lines, fmt.Sprintf("%v is an alias for %v.", name, cmd.name))
 	}
 	line := cmd.name + " — " + cmd.summary
 	if cmd.usage != "" {
 		line += ". Usage: " + cmd.usage
 	}
-	lines := []string{line}
+	lines = append(lines, line)
 	nick := c.effectiveTriggerNick()
 	for _, detail := range cmd.detail {
 		lines = append(lines, strings.ReplaceAll(detail, "{nick}", nick))
@@ -1148,6 +1238,9 @@ func (c *commandContext) runHelp() []string {
 				lines = append(lines, strings.ReplaceAll(hint, "{nick}", nick))
 			}
 		}
+	}
+	if len(cmd.aliases) > 0 {
+		lines = append(lines, "Also reachable as: "+strings.Join(cmd.aliases, ", ")+".")
 	}
 	return lines
 }
@@ -1186,11 +1279,14 @@ func (c *commandContext) runWhoami() []string {
 
 // runBotinfo reports the bot, the hub, and the bot's own identity. The official
 // bot reports hub-side scripts; gorrcbot loads none, so it reports the size of
-// its own command set instead of a meaningless zero.
+// its own command set instead of a meaningless zero. The "@hash-prefix" alias
+// clients can address it by is included, because that is the one fact the old
+// "id" command existed to report.
 func (c *commandContext) runBotinfo() []string {
 	session := c.session()
 	conn := c.conn()
 	nick := c.reg.advertisedNick(session)
+	hash := c.reg.identityHex()
 	rooms := len(conn.JoinedRoomList())
 	fields := []string{
 		"nickname=" + nick,
@@ -1208,7 +1304,8 @@ func (c *commandContext) runBotinfo() []string {
 		fields = append(fields, "hubversion="+hubVersion)
 	}
 	fields = append(fields,
-		"identity="+c.reg.identityHex(),
+		"identity="+hash,
+		"alias=@"+shortHash(hash),
 		fmt.Sprintf("rooms=%v", rooms),
 		fmt.Sprintf("commands=%v", len(c.reg.commands)))
 	return []string{"BotInfo: " + strings.Join(fields, "; ") + "."}
@@ -1356,7 +1453,23 @@ func (c *commandContext) runSeen() []string {
 		safeTarget(target), age, bestRoom, text)}
 }
 
-// runMembers lists the clients the hub reports in a room.
+// runRooms lists the rooms the bot has joined, or, with a room named, the clients
+// the hub reports in it. The two answers belong to one question — "where is the
+// bot, and who else is there" — so they share one command instead of two names a
+// reader has to tell apart.
+func (c *commandContext) runRooms() []string {
+	if room := normalizeRoom(c.Args); room != "" {
+		return c.roomMemberLines(room)
+	}
+	rooms := c.conn().JoinedRoomList()
+	if len(rooms) == 0 {
+		return []string{"I have not joined any room yet."}
+	}
+	sort.Strings(rooms)
+	return []string{fmt.Sprintf("joined rooms on %v: %v", c.conn().HubAddressHex(), strings.Join(rooms, ", "))}
+}
+
+// roomMemberLines lists the clients the hub reports in one room.
 //
 // The wording deliberately does NOT start with "members in ", which is the shape
 // the hub's own /who reply uses (rrc/commands.go, handleWho). A client parses a
@@ -1367,33 +1480,15 @@ func (c *commandContext) runSeen() []string {
 // to corrupt the member list of every client in the room. Observed live: the bot
 // logged "replied ... with 1 notice(s)" while neither of two clients displayed
 // anything. TestMembersReplyIsNotProtocolTraffic guards the shape.
-func (c *commandContext) runMembers() []string {
-	room := normalizeRoom(c.Args)
+func (c *commandContext) roomMemberLines(room string) []string {
+	room = normalizeRoom(room)
 	if room == "" {
-		room = normalizeRoom(c.req.Room)
-	}
-	var also []string
-	if room == "" {
-		// A direct NOTICE carries no room, and the bot is usually in one, so
-		// demanding a room name would be friction for no reason. Answer for the
-		// first joined room — the answer names it, so there is nothing to guess —
-		// and mention the others rather than pretending they do not exist.
-		rooms := c.conn().JoinedRoomList()
-		if len(rooms) == 0 {
-			return []string{"I have not joined any room yet."}
-		}
-		sort.Strings(rooms)
-		room = normalizeRoom(rooms[0])
-		for _, other := range rooms[1:] {
-			if name := normalizeRoom(other); name != "" {
-				also = append(also, name)
-			}
-		}
+		return []string{"name a room: rooms <room>"}
 	}
 	members := c.conn().GetRoomMembers(room)
 	if len(members) == 0 {
-		return append([]string{fmt.Sprintf(
-			"members of %v: (none reported; the hub only answers for rooms it tracks)", room)}, alsoLines(also)...)
+		return []string{fmt.Sprintf(
+			"members of %v: (none reported; the hub only answers for rooms it tracks)", room)}
 	}
 	parts := make([]string, 0, len(members))
 	for _, member := range members {
@@ -1407,36 +1502,7 @@ func (c *commandContext) runMembers() []string {
 		parts = append(parts, fmt.Sprintf("%v (%v)", nick, shortHash(member.HashHex)))
 	}
 	sort.Strings(parts)
-	return append([]string{fmt.Sprintf("members of %v: %v", room, strings.Join(parts, ", "))},
-		alsoLines(also)...)
-}
-
-// alsoLines reports the other rooms the bot has joined, when there is more than
-// one, so an answer that defaulted to a room never hides the rest.
-func alsoLines(rooms []string) []string {
-	if len(rooms) == 0 {
-		return nil
-	}
-	return []string{"also joined: " + strings.Join(rooms, ", ")}
-}
-
-// runRooms lists the rooms the bot has joined.
-func (c *commandContext) runRooms() []string {
-	rooms := c.conn().JoinedRoomList()
-	if len(rooms) == 0 {
-		return []string{"I have not joined any room yet."}
-	}
-	sort.Strings(rooms)
-	return []string{fmt.Sprintf("joined rooms on %v: %v", c.conn().HubAddressHex(), strings.Join(rooms, ", "))}
-}
-
-// runID reports the identity hash and the nicks clients can address the bot by.
-func (c *commandContext) runID() []string {
-	session := c.session()
-	hash := c.reg.identityHex()
-	nick := c.reg.advertisedNick(session)
-	return []string{fmt.Sprintf("identity=%v; nick=%v; dest=%v; also answers to @%v and to a room's trigger nick.",
-		hash, nick, HubDestName, shortHash(hash))}
+	return []string{fmt.Sprintf("members of %v: %v", room, strings.Join(parts, ", "))}
 }
 
 // normalizePeerToken trims a peer token and drops one leading "@" sigil, the

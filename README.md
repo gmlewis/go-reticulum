@@ -402,29 +402,28 @@ plus a few that only matter on a mesh:
 
 | Command | What it does |
 |---------|--------------|
-| `help` | list every command, or explain one (`help dnotice`) |
+| `help` | list the command categories, list one category, or explain one command (`help dnotice`, `help messaging`) |
 | `ping` | answer `pong` — a liveness check |
 | `uptime` | runtime, hub hash, and how long this connection has been up |
 | `whoami` | your nick and full identity hash as this hub sees them |
-| `botinfo` | the bot, this hub, and the bot's own identity hash |
-| `dn`, `dnotice <nick\|hash\|me> <text>` | send one client a direct NOTICE |
+| `botinfo` | the bot, this hub, and the bot's own identity hash (alias `id`) |
+| `dnotice <nick\|hash\|me> <text>` (alias `dn`) | send one client a direct NOTICE |
 | `dnoticecap [target]` | whether the hub supports direct notices, and whether a target is reachable |
 | `dnoticeme <text>` | send yourself a direct NOTICE — a live test of the private path |
-| `weather`, `wx <place>` | look up the weather (needs `weather_url`; the place is any real name — see below — and the answer is stripped of terminal escapes) |
+| `weather <place>` (alias `wx`) | look up the weather (needs `weather_url`; the place is any real name — see below — and the answer is stripped of terminal escapes) |
 | `launches [upcoming\|past] [1-5]` | the next few launches, or the most recent ones (needs `launch_url`; answers are cached, because the provider allows 15 anonymous calls per hour) |
 | `flight <number>` | where one flight is right now, by the number a passenger knows (`BA123`): the route it is flying, then its altitude, climb or descent, speed, track, position, squawk and how old that position is (needs `flight_url`; see below) |
 | `path <nick\|hash>` | how the transport would reach a peer: the destinations its identity publishes, with hops, next hop, interface, and path age |
 | `watch <name\|hash> [ttl]` | ask for a direct NOTICE when something announces — a peer, a node, or a hub. At most 10 per client, 100 per bot, 24 h by default and never more than 7 d |
 | `unwatch <n\|all>` | stop watching for one of them, or all of them |
 | `watches` | what you are watching for, and how long each has left |
-| `msg`, `lxmf <nick\|hash> <text>` | send an LXMF message to a peer, so it is handed over when they come back (needs `lxmf_enabled = true`; store-and-forward additionally needs a propagation node) |
+| `msg <nick\|hash> <text>` (alias `lxmf`) | send an LXMF message to a peer, so it is handed over when they come back (needs `lxmf_enabled = true`; store-and-forward additionally needs a propagation node) |
 | `catchup [window]` | what was said in your joined rooms while you were away |
 | `search <term> [#room]` | find where a term appeared in the rooms the bot has joined, newest first |
 | `kjv <reference\|words\|regex>` | look up a Bible verse or search the King James text (needs `kjv_txt_file`; see below) |
 | `seen <nick\|hash>` | when a client last spoke in a joined room |
-| `members [room]` | the clients the hub reports in a room |
-| `rooms` | the rooms the bot has joined |
-| `id` | the identity hash and nicks a client can address the bot by |
+| `rooms [room]` | the rooms the bot has joined, or with a room named the clients the hub reports in it (alias `members`) |
+| `botinfo` | the bot's nick, identity hash, `@hash-prefix` alias, version, hub, and command count (alias `id`) |
 
 Each of these can be explained on demand: `@gobot help kjv` prints that one
 command's purpose, its usage, its inputs, and a worked example — as does
@@ -442,24 +441,24 @@ the announce cache the bot already keeps.
 | `loc <pluscode\|coords\|grid>` | resolve any of the five location notations and render it in all of them: `DD: 37.4220°N, 122.0841°W \| DDM: … \| Grid: CM87wk \| OLC: 849VCWC8+R9`, plus the GCJ-02 "Mars coordinate" when the position is inside China |
 | `dist <from> <to>` | great-circle distance and both headings between two locations, in km, miles, and nautical miles |
 | `proj <origin> <bearing> <distance>` | dead reckoning: where a course and distance from a known point ends up, as a Plus Code, a coordinate, and a grid locator |
-| `sun <loc> [date]` | sunrise, sunset, civil twilight, day length, and the moon's phase and illumination, all in UTC |
+| `sun <loc> [date]` (alias `solar`) | sunrise, sunset, civil twilight, day length, and the moon's phase and illumination, all in UTC |
 | `sos <loc> <RED\|YELLOW\|GREEN\|INFO> <details>` | raise a distress beacon: recorded on disk, alerted in every joined room, confirmed to the sender by direct NOTICE, and queued to the configured LXMF dispatch destination when there is one. `sos list` and `sos clear <id>` (the sender only) complete it |
 | `checkin <loc> overdue <duration> <note>` | arm a dead-man switch: if the check-in never comes, the bot broadcasts an overdue alarm on its own. `checkin ok` clears it, `checkin list` shows them; windows are capped between 10 minutes and 48 hours |
 | `sitrep add <loc> <category> <text>` | file a geolocated situation report (HAZARD, RESOURCE, SHELTER, ROAD, INFO) on a board that expires after 7 days. `sitrep near <loc> [radius]` answers what is within reach, closest first, and `sitrep recent [n]` lists the newest |
-| `firstaid <topic>` (aliases `rx`, `triage`) | one-line offline wilderness-medicine action cards: bleed, cpr, triage, shock, hypo, heat, burns, water, snake. Decision support, not a substitute for training |
-| `spacewx` (alias `solar`) | solar flux, sunspot number, K-index, geomagnetic storm scale, and which HF bands are worth trying — the diagnosis for an HF link that stopped working. `spacewx set sfi=N ssn=N kp=N` enters a reading by hand |
+| `firstaid <topic>` (aliases `rx`, `med`, `triage`) | one-line offline wilderness-medicine action cards: bleed, cpr, triage, shock, hypo, heat, burns, water, snake. Decision support, not a substitute for training |
+| `spacewx` | solar flux, sunspot number, K-index, geomagnetic storm scale, and which HF bands are worth trying — the diagnosis for an HF link that stopped working. `spacewx set sfi=N ssn=N kp=N` enters a reading by hand |
 | `net [hops]` | the mesh directory: every announced hub, LXMF node, and NomadNet node the bot has heard, with its hop count and interface |
 | `conv <value><unit> <target>` | tactical conversions: pressure and altimeter settings, distance, speed, temperature, water and fuel weight, and battery capacity (`5000mAh@3.7V` → `18.50 Wh`) |
 | `signal [air\|sound\|light]` | the distress-signal guide: ground-to-air markings, whistle and horn cadences, and mirror or torch flashes |
 | `morse <text>` / `morse -d <code…>` | translate text to Morse code and back |
 | `metar <ICAO>` | decode the aviation weather report for an airfield into wind, visibility, temperature, dewpoint, and altimeter setting (needs `metar_url`). `metar search <city\|name\|code>`, `metar near <place>`, and `metar list [state\|country]` find the code offline first |
-| `wxalert <place\|area>` | severe weather warnings in force (needs `weather_alert_url`; answers are cached for 15 minutes) |
+| `alerts <place\|area>` (alias `wxalert`) | severe weather warnings in force (needs `weather_alert_url`; answers are cached for 15 minutes) |
 | `moon [loc] [date]` | the lunar almanac: phase and age, moonrise, transit, moonset, the coming night's illumination rating (Dark Night, Moderate Light, Bright Moonlight), and the next new, first-quarter, full and last-quarter moons — the new and full ones named as the spring tides they drive |
 | `tide <station\|coords\|place> [date]` | high and low water for a station (a 7-digit provider id like `9414290`, a port name, or a position resolved against the bot's own reference table of ~110 stations), the state of the tide now, and the spring/neap assessment (needs `tide_url`, which carries `{place}` and `{date}`). `tide search <query>`, `tide near <place>`, and `tide list [state]` find the station offline first |
 | `buoy <station_id>` | the sea state from an offshore weather buoy: wave height, dominant period and direction, wind, water temperature, and the pressure trend. The period, not the height, decides whether the sea is groundswell or chop, and the answer names it (needs `buoy_url`). `buoy search <query>`, `buoy near <place>`, and `buoy list [region\|state]` find the buoy offline first |
 | `river <gauge_id>` | a stream gauge's stage and discharge, how the stage has moved over three hours, and the flood category (needs `river_url`; `river_flood_url` adds the flood thresholds and the action stage). The gauge is a USGS site number: a river *name* is deliberately not accepted, because resolving one offline would risk answering for a different river of the same name |
 | `coldwater [temp_f\|temp_c]` (alias `immersion`) | the 1-10-1 cold-water rule, or the swim-failure and survival windows for a water temperature (`48F`, `8.9C`; a bare number is Fahrenheit). Entirely offline |
-| `tower near <place\|coords\|pluscode>` (aliases `repeater`, `cell`, `mast`) | the nearest communications sites — cellular masts, amateur VHF/UHF repeaters, emergency/public-safety relays, and marine VHF — with the **distance in kilometers and the bearing** to aim a directional antenna or choose a direction to walk, plus the frequency, the repeater offset, the CTCSS/PL tone, and the operator. With no argument and a live compass heading it adds the **relative steering instruction** that aims an antenna with no arithmetic: `[Turn 15° RIGHT · 1 o'clock]`. Entirely offline: the catalog is embedded and no provider is needed |
+| `tower near <place\|coords\|pluscode>` | the nearest communications sites — cellular masts, amateur VHF/UHF repeaters, emergency/public-safety relays, and marine VHF — with the **distance in kilometers and the bearing** to aim a directional antenna or choose a direction to walk, plus the frequency, the repeater offset, the CTCSS/PL tone, and the operator. `repeater` narrows the same catalog to amateur repeaters and `cell` to cellular masts (alias `mast`). With no argument and a live compass heading it adds the **relative steering instruction** that aims an antenna with no arithmetic: `[Turn 15° RIGHT · 1 o'clock]`. Entirely offline: the catalog is embedded and no provider is needed |
 | `tower search <query> [page]` | find a site offline by callsign, identifier, name, city, pinyin place name, state or province, frequency, or operator (`sutro`, `beijing`, `sichuan`, `145.150`, `china mobile`) |
 | `tower list [country\|region] [page]` | every site, or one country's (`US`, `CN`, `GB`), one country's by name (`china`, `germany`), one US state's (`CA`, `CO`) or its name, or one Chinese province's (`BJ`, `GD`, `SC`, `XJ`) |
 | `tower info <id>` | one site in full: the exact WGS-84 position, the GCJ-02 "Mars coordinate" when the site is in China, the Maidenhead grid, the elevation, the frequency, the offset, the tone, and the operator |
@@ -477,8 +476,9 @@ closest stations with the distance in nautical miles and the bearing; and
 country. A station id outside a catalog is still accepted, because the provider
 is authoritative about its own stations.
 
-**The cell and repeater finder needs no provider at all.** `tower` (aliases
-`repeater`, `cell`, `mast`) answers "what transmits near here, which way, and how
+**The cell and repeater finder needs no provider at all.** `tower` — with
+`repeater` and `cell` narrowing the same catalog to one service — answers "what
+transmits near here, which way, and how
 far?" from a hand-maintained catalog of ~220 mountain-top and regional communications
 sites — amateur repeaters, cellular masts, public-safety relays, and marine VHF
 — **balanced between the United States and China**, with major international

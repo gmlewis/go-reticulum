@@ -157,10 +157,10 @@ footer { text-align: center; padding: 16px 12px; margin-top: 24px; border-top: 1
   <section class="card" id="assistant">
     <h2>Field Assistant</h2>
     <form id="query-form" autocomplete="off">
-      <input type="text" id="query" name="command" placeholder="med hypothermia" aria-label="Field assistant command">
+      <input type="text" id="query" name="command" placeholder="firstaid hypothermia" aria-label="Field assistant command">
       <button class="primary" type="submit">Ask</button>
     </form>
-    <p class="hint">Offline commands only, answered in microseconds: med, tower near, tide near, sun, whereami, morse, conv.</p>
+    <p class="hint">Offline commands only, answered in microseconds: firstaid, tower near, tide near, sun, whereami, morse, conv.</p>
     <div id="replies" aria-live="polite"></div>
   </section>
 </main>

@@ -69,7 +69,9 @@ func (e *Engine) RunLocal(line string) []string {
 	return e.reg.RunLocal(line)
 }
 
-// Commands returns every command name the engine answers, in registry order.
+// Commands returns the canonical command names the engine answers, in registry
+// order. An alias still reaches its command but is not listed, so a caller that
+// presents this list shows one entry per behavior.
 func (e *Engine) Commands() []string {
 	if e == nil || e.reg == nil {
 		return nil
@@ -77,8 +79,10 @@ func (e *Engine) Commands() []string {
 	return e.reg.names()
 }
 
-// OfflineCommands returns the command names the engine can answer with no hub
-// link behind it, in registry order. It is the list the offline portal offers.
+// OfflineCommands returns the canonical command names the engine can answer with
+// no hub link behind it, in registry order. It is the list the offline portal
+// offers; aliases resolve through the same registry, so hiding them never blocks
+// one from running.
 func (e *Engine) OfflineCommands() []string {
 	if e == nil || e.reg == nil {
 		return nil

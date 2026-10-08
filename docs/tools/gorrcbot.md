@@ -442,7 +442,8 @@ tower info <id>
 more / next
 ```
 
-`repeater`, `cell`, and `mast` are aliases for `tower` and behave identically.
+`repeater` narrows the same catalog to amateur repeaters and `cell` (alias
+`mast`) to cellular masts; every other sub-command works the same way.
 
 ### Examples
 
@@ -914,16 +915,14 @@ and says that no room could be alerted.
 
 | Command | Syntax | Description & Example |
 |---------|--------|-----------------------|
-| `help` | `@gobot help [command]` | Lists all available commands, or provides comprehensive help for a specific command (e.g. `@gobot help loc`). |
+| `help` | `@gobot help [category\|command]` | Lists the command categories, lists one category's commands, or provides comprehensive help for a specific command (e.g. `@gobot help loc`, `@gobot help messaging`). |
 | `ping` | `@gobot ping` | Responds `pong` to verify link liveness and latency. |
 | `uptime` | `@gobot uptime` | Reports bot uptime, hub connection duration, and hub identity hash. |
 | `whoami` | `@gobot whoami` | Displays your nickname and full 32-character identity hash as seen by the current hub. |
-| `botinfo` | `@gobot botinfo` | Details the bot's identity hash, version, connected hubs, and active rooms. |
-| `rooms` | `@gobot rooms` | Lists all rooms the bot is currently participating in. |
-| `members` | `@gobot members [room]` | Lists members reported by the hub in the specified room. |
+| `botinfo` | `@gobot botinfo` | Details the bot's identity hash, `@hash-prefix` alias, version, connected hubs, and active rooms (alias `id`). |
+| `rooms` | `@gobot rooms [room]` | Lists the rooms the bot is participating in; with a room named, lists the members the hub reports in it (alias `members`). |
 | `seen` | `@gobot seen <nick\|hash>` | Shows the timestamp when a given nick or identity hash was last seen speaking in joined rooms. |
-| `id` | `@gobot id` | Displays the bot's full identity hash and configured trigger nicknames. |
-| `more` / `next` | `@gobot more` | Shows the next page of the last `search`, `near`, or `list` answer (see [Low-Bandwidth Pagination](#low-bandwidth-pagination-more-next)). The pending page is remembered per identity for 5 minutes; with nothing pending the answer is `no more pages or search expired`. |
+| `more` | `@gobot more` | Shows the next page of the last `search`, `near`, or `list` answer (alias `next`; see [Low-Bandwidth Pagination](#low-bandwidth-pagination-more-next)). The pending page is remembered per identity for 5 minutes; with nothing pending the answer is `no more pages or search expired`. |
 
 ---
 
@@ -931,10 +930,10 @@ and says that no room could be alerted.
 
 | Command | Syntax | Description & Example |
 |---------|--------|-----------------------|
-| `dn` / `dnotice` | `@gobot dn <nick\|hash\|me> <text>` | Sends an encrypted direct notice (`K_DST`) to the specified client. |
+| `dnotice` (alias `dn`) | `@gobot dnotice <nick\|hash\|me> <text>` | Sends an encrypted direct notice (`K_DST`) to the specified client. |
 | `dnoticecap` | `@gobot dnoticecap [target]` | Checks if the current hub supports direct notice delivery, and checks if a target user is online. |
 | `dnoticeme` | `@gobot dnoticeme <text>` | Sends a direct notice to your own identity (tests private path functionality). |
-| `msg` / `lxmf` | `@gobot msg <nick\|hash> <text>` | Queues an asynchronous LXMF message to an offline peer via propagation nodes. |
+| `msg` (alias `lxmf`) | `@gobot msg <nick\|hash> <text>` | Queues an asynchronous LXMF message to an offline peer via propagation nodes. |
 
 ---
 
@@ -996,7 +995,7 @@ which is how a reader sees the region that was picked.
 
 | Command | Syntax | Description & Example |
 |---------|--------|-----------------------|
-| `sun` | `@gobot sun [location] [date]` | Computes UTC sunrise, sunset, civil twilight dawn/dusk, and total daylight hours for any location on Earth. With no location it uses the live GNSS fix, and a bare date (`sun 2026-06-21`) keeps the date while taking the position from the fix. |
+| `sun` (alias `solar`) | `@gobot sun [location] [date]` | Computes UTC sunrise, sunset, civil twilight dawn/dusk, and total daylight hours for any location on Earth. With no location it uses the live GNSS fix, and a bare date (`sun 2026-06-21`) keeps the date while taking the position from the fix. The `solar` alias names this command, where the word reads as a reader expects; space weather is `spacewx`. |
 | `moon` | `@gobot moon [location] [date]` | Reports moon phase, illumination percentage, lunar age, moonrise/moonset, nighttime illumination rating, and upcoming spring/neap tides. |
 
 ---
@@ -1019,8 +1018,8 @@ which is how a reader sees the region that was picked.
 
 | Command | Syntax | Description & Example |
 |---------|--------|-----------------------|
-| `firstaid` / `rx` / `med` | `@gobot firstaid <topic>` | Offline clinical decision-support cards for wilderness medicine: `bleed`, `cpr`, `triage`, `shock`, `hypo` (hypothermia), `heat`, `burns`, `water`, `snake`. `med` is the short name the field guides and the portal chat box use. |
-| `coldwater` | `@gobot coldwater [temp]` | 1-10-1 cold water survival rule and swim failure timelines for water temperatures (e.g. `@gobot coldwater 48F`). |
+| `firstaid` (aliases `rx`, `med`, `triage`) | `@gobot firstaid <topic>` | Offline clinical decision-support cards for wilderness medicine: `bleed`, `cpr`, `triage`, `shock`, `hypo` (hypothermia), `heat`, `burns`, `water`, `snake`. `med` is the short name the field guides and the portal chat box use. |
+| `coldwater` (alias `immersion`) | `@gobot coldwater [temp]` | 1-10-1 cold water survival rule and swim failure timelines for water temperatures (e.g. `@gobot coldwater 48F`). |
 | `signal` | `@gobot signal [air\|sound\|light]` | Distress signaling standards: ground-to-air visual markers (V, X, N, Y), whistle cadences, mirror/torch patterns. |
 | `morse` | `@gobot morse <text>` / `morse -d <code...>` | Bidirectional Morse code encoder and decoder. |
 | `conv` | `@gobot conv <val><unit> <target>` | Tactical unit conversions: barometric pressure (`29.92inHg` → `hPa`), distance, speed, fuel/water weight, and battery watt-hours (`5000mAh@3.7V` → `Wh`). |
@@ -1031,7 +1030,7 @@ which is how a reader sees the region that was picked.
 
 | Command | Syntax | Description & Example |
 |---------|--------|-----------------------|
-| `weather` / `wx` | `@gobot weather <location>` | Live conditions from plain-text weather feed. |
+| `weather` (alias `wx`) | `@gobot weather <location>` | Live conditions from plain-text weather feed. |
 | `tide` | `@gobot tide <station\|coords\|place> [date]` | 48-hour high/low water predictions, Rule of Twelfths hourly depth interpolation, and spring/neap tide classification. |
 | `tide search` | `@gobot tide search <query> [page]` | Finds a station offline by name, state, or id, four per page. |
 | `tide near` | `@gobot tide near [place\|coords\|pluscode]` | The three closest stations, with distance in nautical miles and bearing. With no argument it uses the live GNSS fix. |
@@ -1045,8 +1044,8 @@ which is how a reader sees the region that was picked.
 | `metar search` | `@gobot metar search <city\|name\|code> [page]` | Finds an airfield offline by city, airport name, ICAO code, or IATA code (`denver`, `heathrow`, `KDEN`, `LHR`). |
 | `metar near` | `@gobot metar near <place\|coords\|pluscode>` | The three closest airfields, with distance in nautical miles and bearing. |
 | `metar list` | `@gobot metar list [state\|country] [page]` | Every airfield, or one state's or country's (`CO`, `CA`, `TX`, `GB`, `JP`, …). |
-| `wxalert` | `@gobot wxalert <place\|zone>` | Queries active National Weather Service severe weather warnings and advisories. |
-| `spacewx` / `solar` | `@gobot spacewx` | Reports Solar Flux Index (SFI), Sunspot Number (SSN), K-index, geomagnetic storm levels, and recommended HF propagation bands. |
+| `alerts` (alias `wxalert`) | `@gobot alerts <place\|zone>` | Queries active National Weather Service severe weather warnings and advisories. |
+| `spacewx` | `@gobot spacewx` | Reports Solar Flux Index (SFI), Sunspot Number (SSN), K-index, geomagnetic storm levels, and recommended HF propagation bands. |
 | `launches` | `@gobot launches [upcoming\|past]` | Schedules and status of upcoming orbital space launches. |
 | `flight` | `@gobot flight <flight_num>` | Real-time ADS-B flight telemetry: route, altitude, groundspeed, climb rate, and squawk code. |
 
@@ -1056,7 +1055,9 @@ which is how a reader sees the region that was picked.
 
 | Command | Syntax | Description & Example |
 |---------|--------|-----------------------|
-| `tower` / `repeater` / `cell` / `mast` | `@gobot tower near [place\|coords\|pluscode]` | The three closest communications sites, with the distance in kilometers, the bearing, the service, the frequency with its offset and tone, and the place. Entirely offline; a site inside China also prints the GCJ-02 coordinate for Amap/Gaode/WeChat. With no argument beyond `near` it uses the live GNSS fix, and with a live compass heading it adds the relative steering instruction that aims an antenna — `[Turn 15° RIGHT · 1 o'clock]`. See [Cell & Radio Tower Finder](#cell-radio-tower-finder-tower-repeater-cell) and [Radio direction finding](#radio-direction-finding-aiming-an-antenna-in-one-step). |
+| `tower` | `@gobot tower near [place\|coords\|pluscode]` | The three closest communications sites, with the distance in kilometers, the bearing, the service, the frequency with its offset and tone, and the place. Entirely offline; a site inside China also prints the GCJ-02 coordinate for Amap/Gaode/WeChat. With no argument beyond `near` it uses the live GNSS fix, and with a live compass heading it adds the relative steering instruction that aims an antenna — `[Turn 15° RIGHT · 1 o'clock]`. See [Cell & Radio Tower Finder](#cell-radio-tower-finder-tower-repeater-cell) and [Radio direction finding](#radio-direction-finding-aiming-an-antenna-in-one-step). |
+| `repeater` | `@gobot repeater near [place\|coords\|pluscode]` | The same finder narrowed to amateur repeaters (RPT sites) only, so "the nearest repeater" is one word. `repeater search` and `repeater list` work as `tower`'s do. |
+| `cell` (alias `mast`) | `@gobot cell near [place\|coords\|pluscode]` | The same finder narrowed to cellular base stations (CELL sites) only. `cell search` and `cell list` work as `tower`'s do. |
 | `tower search` | `@gobot tower search <query> [page]` | Finds a site offline by callsign, identifier, name, city, pinyin place name, state or province, frequency, or operator (`sutro`, `beijing`, `sichuan`, `145.150`, `china mobile`). |
 | `tower list` | `@gobot tower list [country\|region] [page]` | Every site, or one country's (`US`, `CN`, `GB`), one country's by name (`china`, `germany`), one US state's (`CA`, `CO`) or its name, or one Chinese province's (`BJ`, `GD`, `SC`, `XJ`). |
 | `tower info` | `@gobot tower info <id>` | One site in full: the exact WGS-84 position, the GCJ-02 position when the site is in China, the Maidenhead grid, the elevation, the frequency, the offset, the tone, and the operator. |

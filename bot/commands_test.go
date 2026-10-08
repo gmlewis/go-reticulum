@@ -40,38 +40,34 @@ func runLines(t *testing.T, reg *registry, session *hubSession, line string) []s
 	})
 }
 
-// TestRegistryNamesAreStable asserts the exact command set: the official hub
-// bot's names minus the '!' plus this bot's own additions, with no duplicates and
-// no name carrying a prefix. It is exact rather than a substring check because
-// "id" is a substring of "dnotice", which would hide a missing command.
+// TestRegistryNamesAreStable asserts the exact canonical command set: one listed
+// name per behavior, with no duplicates and no name carrying a prefix. It is
+// exact rather than a substring check because "id" is a substring of "dnotice",
+// which would hide a missing command. Alias names are deliberately absent: they
+// resolve through byName but are never listed, so a reader sees one entry per
+// behavior.
 func TestRegistryNamesAreStable(t *testing.T) {
 	t.Parallel()
 
 	reg, _, _ := commandFixture(t, nil)
 	want := []string{
-		// The official RNS Community Hub bot's set, minus its '!' prefix.
-		"botinfo", "dn", "dnotice", "dnoticecap", "dnoticeme", "help", "ping",
-		"uptime", "weather", "whoami", "wx",
+		// The official RNS Community Hub bot's set, minus its '!' prefix and
+		// its duplicate alias names.
+		"botinfo", "dnotice", "dnoticecap", "dnoticeme", "help", "ping",
+		"uptime", "weather", "whoami",
 		// This bot's own additions.
-		"catchup", "flight", "id", "kjv", "launches", "lxmf", "members", "msg", "path", "rooms",
+		"catchup", "flight", "kjv", "launches", "msg", "path", "rooms",
 		"search", "seen", "unwatch", "watch", "watches",
-		// The field assistant's navigation commands.
-		"dist", "loc", "proj", "sun", "whereami",
+		// The field assistant's navigation and celestial commands.
+		"dist", "loc", "moon", "proj", "sun", "whereami",
 		// The field assistant's emergency and situation commands.
-		"checkin", "firstaid", "med", "rx", "sitrep", "sos", "triage",
-		// The field assistant's propagation and mesh commands.
-		"net", "solar", "spacewx",
-		// The field assistant's tactical references.
-		"conv", "morse", "signal",
-		// The field assistant's aviation weather commands.
-		"metar", "wxalert",
-		// The field assistant's lunar and marine commands.
-		"buoy", "coldwater", "immersion", "moon", "river", "tide",
-		// The field assistant's offline cell and repeater finder, and its
-		// aliases.
-		"cell", "mast", "repeater", "tower",
-		// The shared discovery pagination shortcuts.
-		"more", "next",
+		"checkin", "coldwater", "conv", "firstaid", "morse", "signal", "sitrep", "sos",
+		// The field assistant's telemetry, mesh, and reference commands.
+		"alerts", "buoy", "metar", "net", "river", "spacewx", "tide",
+		// The offline cell and repeater finder, and its service-specific views.
+		"cell", "repeater", "tower",
+		// The shared discovery pagination shortcut.
+		"more",
 	}
 	// The registry sorts its rows, so the expectation is sorted too; the groups
 	// above are for the reader, not the comparison.
@@ -116,7 +112,9 @@ func missingFrom(want, have []string) []string {
 }
 
 // TestHelpIsGeneratedFromTheRegistry asserts help is never hand-maintained: the
-// listing matches the registry and the wording mirrors the official bot's.
+// bare listing names every category, and each category names exactly the
+// commands the registry files under it. Grouping is what keeps the listing
+// inside one NOTICE however many commands the bot grows.
 func TestHelpIsGeneratedFromTheRegistry(t *testing.T) {
 	t.Parallel()
 
@@ -126,47 +124,135 @@ func TestHelpIsGeneratedFromTheRegistry(t *testing.T) {
 		t.Fatalf("help returned %v lines, want 1: %v", len(lines), lines)
 	}
 	got := lines[0]
-	if !strings.HasPrefix(got, "Commands: ") {
-		t.Fatalf("help = %q, want it to start like the official bot's listing", got)
+	if !strings.HasPrefix(got, "Categories: ") {
+		t.Fatalf("help = %q, want it to start with the category listing", got)
 	}
-	list := strings.TrimPrefix(got, "Commands: ")
-	names := strings.Split(list, ", ")
-	if len(names) != len(reg.commands) {
-		t.Errorf("help lists %v commands, the registry has %v", len(names), len(reg.commands))
+	list := strings.TrimPrefix(got, "Categories: ")
+	if idx := strings.Index(list, " — "); idx >= 0 {
+		list = list[:idx]
 	}
-	for i, cmd := range reg.commands {
-		if i < len(names) && names[i] != cmd.name {
-			t.Errorf("help entry %v = %q, want %q", i, names[i], cmd.name)
+	listed := strings.Split(list, ", ")
+	if len(listed) != len(commandCategories) {
+		t.Fatalf("help lists %v categories, want %v: %v", len(listed), len(commandCategories), listed)
+	}
+	for i, category := range commandCategories {
+		if listed[i] != category.name {
+			t.Errorf("help category %v = %q, want %q", i, listed[i], category.name)
+		}
+		group := runLines(t, reg, session, "help "+category.name)
+		if len(group) != 1 {
+			t.Fatalf("help %v returned %v lines, want 1", category.name, len(group))
+		}
+		var want []string
+		for _, cmd := range reg.commands {
+			if cmd.category == category.name {
+				want = append(want, cmd.name)
+			}
+		}
+		if len(want) == 0 {
+			t.Errorf("category %q has no commands", category.name)
+			continue
+		}
+		for _, name := range want {
+			if !strings.Contains(group[0], name) {
+				t.Errorf("help %v = %q, want it to list %q", category.name, group[0], name)
+			}
 		}
 	}
-	// The official bot's listing is sorted; matching it makes the bot feel
-	// familiar to a client that already knows Beleth.
-	sorted := append([]string(nil), names...)
-	for i := 1; i < len(sorted); i++ {
-		if sorted[i-1] > sorted[i] {
-			t.Errorf("help listing %q is not sorted", list)
-			break
+}
+
+// TestEveryCommandIsCategorized asserts the taxonomy and the registry agree:
+// every canonical command names a category that exists, every category holds at
+// least one command, and no taxonomy key is a name the registry does not offer.
+func TestEveryCommandIsCategorized(t *testing.T) {
+	t.Parallel()
+
+	reg, _, _ := commandFixture(t, nil)
+	known := make(map[string]bool, len(commandCategories))
+	for _, category := range commandCategories {
+		known[category.name] = true
+	}
+	counts := make(map[string]int, len(commandCategories))
+	for _, cmd := range reg.commands {
+		if !known[cmd.category] {
+			t.Errorf("command %q is filed under unknown category %q", cmd.name, cmd.category)
 		}
+		counts[cmd.category]++
+	}
+	for _, category := range commandCategories {
+		if counts[category.name] == 0 {
+			t.Errorf("category %q has no commands", category.name)
+		}
+	}
+	for name := range taxonomy {
+		if _, ok := reg.byName[name]; !ok {
+			t.Errorf("taxonomy names %q, which the registry does not offer", name)
+		}
+	}
+}
+
+// TestAliasesResolveToTheirCommand asserts every alias reaches the one command it
+// stands for, the introspection map agrees, and no alias shadows a canonical
+// name. Building the map from the taxonomy is what made the old hand-written map
+// safe: it had quietly left "med" out.
+func TestAliasesResolveToTheirCommand(t *testing.T) {
+	t.Parallel()
+
+	reg, _, _ := commandFixture(t, nil)
+	canonical := make(map[string]bool, len(reg.commands))
+	for _, cmd := range reg.commands {
+		canonical[cmd.name] = true
+	}
+	aliases := 0
+	for _, cmd := range reg.commands {
+		for _, alias := range cmd.aliases {
+			aliases++
+			if canonical[alias] {
+				t.Errorf("alias %q is also a canonical command name", alias)
+			}
+			got, ok := reg.byName[alias]
+			if !ok {
+				t.Fatalf("alias %q does not resolve", alias)
+			}
+			if got.name != cmd.name {
+				t.Errorf("alias %q resolves to %q, want %q", alias, got.name, cmd.name)
+			}
+			if reg.aliases[alias] != cmd.name {
+				t.Errorf("aliases[%q] = %q, want %q", alias, reg.aliases[alias], cmd.name)
+			}
+		}
+	}
+	if aliases != len(reg.aliases) {
+		t.Errorf("the registry resolves %v aliases, the taxonomy declares %v", len(reg.aliases), aliases)
 	}
 }
 
 // TestHelpForOneCommand asserts help <command> explains that command: the first
 // line is its purpose and usage, and the lines after it are its guidance. An
-// unknown name still gets one short line.
+// alias names the command it stands for, and an unknown name still gets one
+// short line.
 func TestHelpForOneCommand(t *testing.T) {
 	t.Parallel()
 
 	reg, session, _ := commandFixture(t, nil)
 
 	lines := runLines(t, reg, session, "help dn")
-	if len(lines) == 0 {
-		t.Fatalf("help dn returned nothing")
+	if len(lines) < 2 {
+		t.Fatalf("help dn returned %v lines, want the alias note and the command", lines)
 	}
-	if !strings.Contains(lines[0], "dnotice") || !strings.Contains(lines[0], "Usage") {
-		t.Errorf("help dn = %q, want the command's usage", lines[0])
+	if !strings.Contains(lines[0], "alias for dnotice") {
+		t.Errorf("help dn[0] = %q, want it to say dn aliases dnotice", lines[0])
 	}
-	if want := 1 + len(reg.byName["dn"].detail); len(lines) != want {
-		t.Errorf("help dn returned %v lines, want %v", len(lines), want)
+	if !strings.Contains(lines[1], "dnotice") || !strings.Contains(lines[1], "Usage") {
+		t.Errorf("help dn[1] = %q, want the command's usage", lines[1])
+	}
+
+	lines = runLines(t, reg, session, "help dnotice")
+	if len(lines) == 0 || !strings.Contains(lines[0], "dnotice") || !strings.Contains(lines[0], "Usage") {
+		t.Fatalf("help dnotice = %q, want the command's usage", lines)
+	}
+	if last := lines[len(lines)-1]; !strings.Contains(last, "Also reachable as: dn") {
+		t.Errorf("help dnotice = %q, want it to name the alias dn", lines)
 	}
 
 	lines = runLines(t, reg, session, "help bogus")
@@ -199,14 +285,14 @@ func TestUnknownCommandIsOneShortLine(t *testing.T) {
 }
 
 // TestBareAddressShowsHelp asserts addressing the bot with no command is not an
-// error: it answers with the command listing.
+// error: it answers with the category listing.
 func TestBareAddressShowsHelp(t *testing.T) {
 	t.Parallel()
 
 	reg, session, _ := commandFixture(t, nil)
 	lines := runLines(t, reg, session, "")
-	if len(lines) != 1 || !strings.HasPrefix(lines[0], "Commands: ") {
-		t.Errorf("a bare address returned %q, want the command listing", lines)
+	if len(lines) != 1 || !strings.HasPrefix(lines[0], "Categories: ") {
+		t.Errorf("a bare address returned %q, want the category listing", lines)
 	}
 }
 
@@ -674,14 +760,14 @@ func TestSeenReportsTheLastMessageFromAPeer(t *testing.T) {
 	}
 }
 
-// TestMembersReportsTheRoomMemberList asserts members answers from the hub's
-// member list in the official /who notice shape.
+// TestMembersReportsTheRoomMemberList asserts the members alias answers from the
+// hub's member list in the official /who notice shape.
 func TestMembersReportsTheRoomMemberList(t *testing.T) {
 	t.Parallel()
 
 	reg, session, fake := commandFixture(t, nil)
 	fake.setKnownPeer(hexString(peerHashFor(0x1a)), "Dave")
-	lines := runLines(t, reg, session, "members")
+	lines := runLines(t, reg, session, "members general")
 	if len(lines) != 1 {
 		t.Fatalf("members returned %v lines, want 1", len(lines))
 	}
@@ -710,7 +796,7 @@ func TestEchoedPeerTextIsStrippedOfEscapes(t *testing.T) {
 		Ts:   1700000000000,
 	}}
 
-	for _, line := range []string{"members", "seen " + hostileNick, "seen " + hexString(peer)} {
+	for _, line := range []string{"members general", "seen " + hostileNick, "seen " + hexString(peer)} {
 		for _, reply := range runLines(t, reg, session, line) {
 			if strings.ContainsAny(reply, "\x1b\x07") {
 				t.Errorf("%v = %q, which carries a terminal escape", line, reply)
@@ -723,7 +809,7 @@ func TestEchoedPeerTextIsStrippedOfEscapes(t *testing.T) {
 	if len(lines) != 1 || !strings.Contains(lines[0], "Evil") || !strings.Contains(lines[0], "look") {
 		t.Errorf("seen = %q, want the readable name and message", lines)
 	}
-	members := runLines(t, reg, session, "members")
+	members := runLines(t, reg, session, "members general")
 	if len(members) != 1 || !strings.Contains(members[0], "Evil") {
 		t.Errorf("members = %q, want the readable nick", members)
 	}
@@ -870,7 +956,7 @@ func TestMembersReplyIsNotProtocolTraffic(t *testing.T) {
 		name string
 		line string
 	}{
-		{name: "a room with members", line: "members"},
+		{name: "a room with members", line: "members general"},
 		{name: "a room with none reported", line: "members empty"},
 	}
 	for _, tt := range tests {
@@ -897,7 +983,7 @@ func TestMembersReplyIsNotProtocolTraffic(t *testing.T) {
 // — is answered for the room the bot joined rather than with a usage line. A
 // private "/msg gobot members" was answered "Usage: members [room]" live, which
 // asks the asker to name a room they never chose and the bot is usually alone in.
-func TestMembersWorksOnTheDirectRoute(t *testing.T) {
+func TestRoomsWorksOnTheDirectRoute(t *testing.T) {
 	t.Parallel()
 
 	reg, session, fake := commandFixture(t, nil)
@@ -909,8 +995,8 @@ func TestMembersWorksOnTheDirectRoute(t *testing.T) {
 
 	lines := reg.Run(&commandRequest{
 		Session: session,
-		Msg:     directMessageFrom("members", peerHashFor(0x11)),
-		Command: "members",
+		Msg:     directMessageFrom("rooms", peerHashFor(0x11)),
+		Command: "rooms",
 		Nick:    "gobot",
 		Now:     time.Now(),
 	})
@@ -918,10 +1004,21 @@ func TestMembersWorksOnTheDirectRoute(t *testing.T) {
 		t.Fatal("no answer at all")
 	}
 	if strings.HasPrefix(lines[0], "Usage:") {
-		t.Fatalf("answer = %q, want the member list for the joined room", lines[0])
+		t.Fatalf("answer = %q, want the joined-room list", lines[0])
 	}
-	if !strings.Contains(lines[0], "members of general:") {
-		t.Errorf("answer = %q, want it to name the room it answered for", lines[0])
+	if !strings.Contains(lines[0], "general") {
+		t.Errorf("answer = %q, want it to name the joined room", lines[0])
+	}
+
+	lines = reg.Run(&commandRequest{
+		Session: session,
+		Msg:     directMessageFrom("members general", peerHashFor(0x11)),
+		Command: "members general",
+		Nick:    "gobot",
+		Now:     time.Now(),
+	})
+	if len(lines) == 0 || !strings.Contains(lines[0], "members of general:") {
+		t.Errorf("members general = %q, want the room's members", lines)
 	}
 }
 

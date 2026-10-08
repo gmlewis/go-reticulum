@@ -11,12 +11,16 @@ import (
 )
 
 // helpLineCount is how many lines "help <name>" yields for one command under
-// cfg: the summary line, the detail lines, and the configuration hint when the
-// command's provider is unconfigured.
+// cfg: the summary line, the detail lines, the configuration hint when the
+// command's provider is unconfigured, and the alias note when the command has
+// another name.
 func helpLineCount(cmd *command, cfg *BotConfig) int {
 	n := 1 + len(cmd.detail)
 	if len(cmd.configHint) > 0 && cmd.configured != nil && cfg != nil && !cmd.configured(cfg) {
 		n += len(cmd.configHint)
+	}
+	if len(cmd.aliases) > 0 {
+		n++
 	}
 	return n
 }

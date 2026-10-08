@@ -178,12 +178,12 @@ func TestSplitNoticeTextMarksContinuations(t *testing.T) {
 // words, not through one. Every chunk arrives at a chat client as its own line,
 // so a chunk that ends in the middle of a word reads as corruption: the live
 // "help" listing was split as "... triage, unwatc …" followed by "h, uptime,
-// ...". The synthetic listing has the shape of that reply, and the real one is
-// the exact text that failed in the field.
+// ...". Grouping help by category keeps that listing inside one envelope, and
+// the splitter still has to break between words for every other long reply.
 func TestSplitNoticeTextBreaksBetweenWords(t *testing.T) {
 	t.Parallel()
 
-	t.Run("listing shaped like the help reply", func(t *testing.T) {
+	t.Run("listing shaped like the old help reply", func(t *testing.T) {
 		t.Parallel()
 		var names []string
 		for i := range 60 {
@@ -192,16 +192,22 @@ func TestSplitNoticeTextBreaksBetweenWords(t *testing.T) {
 		assertChunksBreakBetweenWords(t, "Commands: "+strings.Join(names, ", "))
 	})
 
-	t.Run("the real help listing", func(t *testing.T) {
+	t.Run("the real help listing fits one envelope", func(t *testing.T) {
 		t.Parallel()
 		cfg := defaultTestConfig()
 		cfg.MaxReplyLines = 12
 		reg, _, _ := commandFixture(t, cfg)
-		listing := reg.helpListing()
+		listing := reg.helpCategories()
 		if len(listing) != 1 {
-			t.Fatalf("helpListing = %v lines, want the single command line", len(listing))
+			t.Fatalf("helpCategories = %v lines, want the single category line", len(listing))
 		}
-		assertChunksBreakBetweenWords(t, listing[0])
+		fits, err := noticeFits(mustHex(replyOwnHash), "general", "gorrcbot", listing[0])
+		if err != nil {
+			t.Fatalf("noticeFits: %v", err)
+		}
+		if !fits {
+			t.Errorf("the help listing %q does not fit one notice, so the historical mid-word split returns", listing[0])
+		}
 	})
 }
 

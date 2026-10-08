@@ -565,16 +565,16 @@ func TestTowerBareForms(t *testing.T) {
 	}
 }
 
-// TestTowerIsRegisteredWithItsAliases asserts the command, its three aliases,
-// their shared handler, and the help text an operator sees.
-func TestTowerIsRegisteredWithItsAliases(t *testing.T) {
+// TestTowerIsRegisteredWithItsServiceViews asserts the command and its
+// service-specific views: tower answers over the whole catalog, repeater and
+// cell each narrow it to one service, and mast is an alias for cell. The
+// narrowing is what makes each name's summary a promise the handler keeps.
+func TestTowerIsRegisteredWithItsServiceViews(t *testing.T) {
 	t.Parallel()
 
 	reg, _, _ := commandFixture(t, towerConfig())
-	for _, alias := range []string{"repeater", "cell", "mast"} {
-		if got := reg.aliases[alias]; got != "tower" {
-			t.Errorf("aliases[%v] = %q, want tower", alias, got)
-		}
+	if got := reg.aliases["mast"]; got != "cell" {
+		t.Errorf("aliases[mast] = %q, want cell", got)
 	}
 	for _, name := range []string{"tower", "repeater", "cell", "mast"} {
 		cmd, ok := reg.byName[name]
@@ -592,17 +592,25 @@ func TestTowerIsRegisteredWithItsAliases(t *testing.T) {
 	reg2, session, _ := commandFixture(t, towerConfig())
 	for _, name := range []string{"tower", "repeater", "cell", "mast"} {
 		lines := runLines(t, reg2, session, "help "+name)
-		joined := strings.Join(lines, "\n")
-		if !strings.Contains(joined, towerUsage) {
+		if !strings.Contains(strings.Join(lines, "\n"), towerUsage) {
 			t.Errorf("help %v = %v, want the usage", name, lines)
 		}
 	}
 
-	// Each alias answers exactly as the primary command does.
-	for _, name := range []string{"repeater", "cell", "mast"} {
-		lines := runLines(t, reg2, session, name+" near 37.7553,-122.4527")
-		if !strings.Contains(strings.Join(lines, "\n"), "W6PW-2M") {
-			t.Errorf("%v near = %v, want the same answer as tower", name, lines)
+	// "tower" answers over the whole catalog, so a repeater and a cell mast both
+	// appear. The service views narrow it to one type each.
+	all := strings.Join(runLines(t, reg2, session, "tower near 37.7553,-122.4527"), "\n")
+	if !strings.Contains(all, "W6PW-2M") || !strings.Contains(all, "[CELL]") {
+		t.Errorf("tower near = %q, want both a repeater and a cell mast", all)
+	}
+	repeaters := strings.Join(runLines(t, reg2, session, "repeater near 37.7553,-122.4527"), "\n")
+	if !strings.Contains(repeaters, "W6PW-2M") || strings.Contains(repeaters, "[CELL]") {
+		t.Errorf("repeater near = %q, want repeaters only", repeaters)
+	}
+	for _, name := range []string{"cell", "mast"} {
+		masts := strings.Join(runLines(t, reg2, session, name+" near 37.7553,-122.4527"), "\n")
+		if !strings.Contains(masts, "[CELL]") || strings.Contains(masts, "W6PW-2M") {
+			t.Errorf("%v near = %q, want cell masts only", name, masts)
 		}
 	}
 }
