@@ -606,6 +606,35 @@ func (r *Router) handlePart(link *rns.Link, sess *Session, peerHash []byte, env 
 		r.hooks.FmtHash(peerHash), nickRepr(r.hooks.Sessions().NickOf(link)), nr, r.hooks.FmtLinkID(link))
 }
 
+// isForeignDirectNotice reports whether a message is a NOTICE addressed to some peer other
+// than the hub itself.
+//
+// Such a message is not addressed to the hub at all. The hub is carrying it from one client to
+// another, and must not read it as a command for itself — which is what the slash-command
+// interception above did, for any NOTICE whose text happened to start with a slash.
+//
+// The bot's own answer to a request it cannot fulfil is exactly that shape:
+//
+//	/whereami: no GNSS fix yet — acquiring; give a location to answer immediately (...)
+//
+// so asking a bot for a position while it has no fix produced nothing at all at the far end.
+// The hub logged "Slash command" and the asker waited out its full timeout in silence. The
+// private-command extension below makes this distinction for itself by requiring the
+// destination to be the hub's own identity; this gives the interception above it the same rule.
+//
+// A hub with no identity of its own cannot tell whom the notice names, so it keeps the old
+// behaviour rather than guessing.
+func isForeignDirectNotice(env *cbor.Map, msgType int64, idHash []byte) bool {
+	if msgType != TNotice || len(idHash) == 0 {
+		return false
+	}
+	dst, ok := EnvGetBytes(env, KDst)
+	if !ok || len(dst) == 0 {
+		return false
+	}
+	return !bytes.Equal(dst, idHash)
+}
+
 // handleMessage mirrors _handle_message: the slash-command interception
 // for MSG and NOTICE, the room and size gates, the direct-notice path,
 // room existence and moderation checks, the source/room/nick rewrites,
@@ -624,7 +653,7 @@ func (r *Router) handleMessage(link *rns.Link, sess *Session, peerHash []byte, e
 		bodyStr, bodyIsStr = s, true
 	}
 
-	if (t == TMsg || t == TNotice) && bodyIsStr {
+	if (t == TMsg || t == TNotice) && bodyIsStr && !isForeignDirectNotice(env, t, idHash) {
 		cmdline := strings.TrimFunc(bodyStr, isUnicodeSpace)
 		if strings.HasPrefix(cmdline, "/") {
 			if r.hooks.DebugEnabled() {

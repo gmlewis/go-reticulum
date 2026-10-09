@@ -864,6 +864,18 @@ func (tsi *TCPServerInterface) HashString() string {
 // literal such as "::" would become ":::port" and be rejected by net with
 // "too many colons in address".
 func hostPortAddr(host string, port int) string {
+	// A host that arrives already bracketed must not be bracketed a second time. "[::]" is how
+	// the standard IPv6 notation is written and how a config file naturally writes it, and
+	// bracketing it again yields "[[::]]:port" — which net rejects with "missing port in
+	// address", a message that names neither the bracket nor the file.
+	//
+	// This is not hypothetical. A fleet hub configured with listen_ip = [::] failed to bind,
+	// gornsd logged the error once, skipped the interface, and went on reporting itself
+	// healthy; every client in the fleet was refused for three days while the operator could
+	// see the service active and the config correct.
+	for strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		host = host[1 : len(host)-1]
+	}
 	if strings.Contains(host, ":") {
 		host = "[" + host + "]"
 	}

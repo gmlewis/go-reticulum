@@ -41,6 +41,20 @@ func TestHostPortAddrBracketsIPv6Literals(t *testing.T) {
 		{"ipv6 full", "2603:900b:3300:a::1be9", 4242, "[2603:900b:3300:a::1be9]:4242"},
 		{"ipv6 loopback", "::1", 4242, "[::1]:4242"},
 		{"ipv6 unspecified", "::", 0, "[::]:0"},
+		// A literal that arrives ALREADY bracketed is how the standard IPv6 notation is
+		// written, and how a config file naturally writes it. Bracketing it a second time
+		// produced "[[::]]:port", which net rejects with "missing port in address" — a message
+		// that names neither the bracket nor the file it came from.
+		//
+		// That one case cost a fleet its hub. A hub configured with listen_ip = [::] failed to
+		// bind, gornsd logged the error once and skipped the interface, and every client in the
+		// fleet was refused while the operator could see the service active and the config
+		// correct. The net.SplitHostPort check below is what catches it.
+		{"ipv6 unspecified already bracketed", "[::]", 4242, "[::]:4242"},
+		{"ipv6 loopback already bracketed", "[::1]", 4242, "[::1]:4242"},
+		{"ipv6 full already bracketed", "[2603:900b:3300:a::1be9]", 4242, "[2603:900b:3300:a::1be9]:4242"},
+		{"ipv6 doubly bracketed", "[[::]]", 4242, "[::]:4242"},
+		{"ipv4 already bracketed", "[192.168.1.207]", 4242, "192.168.1.207:4242"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -99,4 +113,57 @@ func TestTCPClientInterfaceConnectsToIPv6Literal(t *testing.T) {
 	t.Cleanup(func() { _ = client.Detach() })
 
 	waitForIfaceRunning(t, client, 2*time.Second)
+}
+
+// TestTCPServerInterfaceBindsAnAlreadyBracketedIPv6Literal is the guard that must never be
+// deleted, and it is deliberately behavioural rather than a formatting check.
+//
+// A config file writing the standard IPv6 notation — `listen_ip = [::]` — must produce a hub
+// that binds, listens and accepts. Bracketing that literal a second time yields "[[::]]:port",
+// which net refuses with "missing port in address", a message that names neither the bracket
+// nor the file. gornsd then logs the failure once, skips the interface, and goes on reporting
+// itself healthy, so the operator sees an active service and a correct-looking config while
+// every client in the fleet is refused. That is exactly what took a whole network down, and it
+// happened after an earlier repair had been made by editing the config instead of the code —
+// which is why this asserts on the code's own behaviour and never on what a config happens to
+// say today.
+func TestTCPServerInterfaceBindsAnAlreadyBracketedIPv6Literal(t *testing.T) {
+	t.Parallel()
+
+	// Reserve a free port on the IPv6 loopback.
+	probe, err := net.Listen("tcp", "[::1]:0")
+	if err != nil {
+		t.Skipf("IPv6 loopback unavailable: %v", err)
+	}
+	addr, ok := probe.Addr().(*net.TCPAddr)
+	if !ok {
+		_ = probe.Close()
+		t.Fatalf("unexpected listener addr type: %T", probe.Addr())
+	}
+	port := addr.Port
+	if err := probe.Close(); err != nil {
+		t.Fatalf("close probe listener: %v", err)
+	}
+
+	for _, bindIP := range []string{"[::1]", "::1"} {
+		// Deliberately NOT parallel: both cases bind the same reserved port, and the second
+		// would race the first for it.
+		t.Run(bindIP, func(t *testing.T) {
+			server, err := NewTCPServerInterface("bracketed-server", bindIP, port, func([]byte, Interface) {}, nil)
+			if err != nil {
+				t.Fatalf("a hub configured with listen_ip = %v could not bind: %v\n"+
+					"hostPortAddr(%q, %v) = %q; the fleet's hub wrote [::] and was refused for days",
+					bindIP, err, bindIP, port, hostPortAddr(bindIP, port))
+			}
+			defer func() { _ = server.Detach() }()
+
+			// Binding is not enough: the listener has to accept, or the hub is up on paper
+			// exactly as it was while the fleet was down.
+			conn, err := net.DialTimeout("tcp", hostPortAddr(bindIP, port), 2*time.Second)
+			if err != nil {
+				t.Fatalf("nothing accepted on the address derived from listen_ip = %v: %v", bindIP, err)
+			}
+			_ = conn.Close()
+		})
+	}
 }

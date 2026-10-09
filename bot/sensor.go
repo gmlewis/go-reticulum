@@ -284,6 +284,9 @@ func (s *sensorSocket) Read(p []byte) (int, error) {
 		return 0, nil
 	}
 	for {
+		if s.isClosed() {
+			return 0, io.EOF
+		}
 		conn, err := s.acquire()
 		if err == nil {
 			n, readErr := conn.Read(p)
@@ -329,19 +332,61 @@ func (s *sensorSocket) isClosed() bool {
 	}
 }
 
+// errSensorClosed reports that a connection was refused because the stream had been closed
+// while it was still being dialled.
+var errSensorClosed = errors.New("sensor stream is closed")
+
 // acquire returns the live connection, dialling one when there is none.
+// acquire returns the live connection, dialling one when there is none.
+//
+// The dial happens WITHOUT the lock, and the connection it produces is refused once the socket
+// has been closed. Both matter, and for the same reason: a reader must never end up blocked on
+// a connection that nothing will ever close.
+//
+// Holding the lock across the dial parks Close on that mutex for the operating system's whole
+// connect timeout whenever the peer is down, so the reader that owns the lock is the last thing
+// Close can reach.
+//
+// And a dial that finishes after Close has run is the worse case, because it is silent. Close
+// runs its body exactly once; a connection published after that body has finished is closed by
+// nobody, the read on it blocks forever, and the wait for the scan goroutine never returns. The
+// window is one instruction wide — retry reports true an instant before the close lands — which
+// is why it showed up as a test that hung for the package timeout under load and passed alone.
 func (s *sensorSocket) acquire() (net.Conn, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.conn != nil {
-		return s.conn, nil
+		conn := s.conn
+		s.mu.Unlock()
+		return conn, nil
 	}
-	conn, err := s.dial(s.endpoint.network, s.endpoint.address)
+	network, address := s.endpoint.network, s.endpoint.address
+	s.mu.Unlock()
+
+	conn, err := s.dial(network, address)
 	if err != nil {
 		return nil, err
 	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.isClosedLocked() {
+		_ = conn.Close()
+		return nil, errSensorClosed
+	}
+	if s.conn != nil {
+		// Another reader dialled while this one was connecting. Keep the connection
+		// that was published first and drop this one, rather than leaking it.
+		_ = conn.Close()
+		return s.conn, nil
+	}
 	s.conn = conn
 	return conn, nil
+}
+
+// isClosedLocked reports whether Close has run. It reads a closed channel, so it needs no lock,
+// but it is named for its use while the caller holds one.
+func (s *sensorSocket) isClosedLocked() bool {
+	return s.isClosed()
 }
 
 // discard closes a spent connection and forgets it.
