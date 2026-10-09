@@ -95,13 +95,17 @@ func (c *HubConfig) OverrideRawConfigValue(key string, v any) {
 }
 
 // DefaultHubConfig returns the exact default configuration of
-// HubRuntimeConfig.
+// HubRuntimeConfig, except for HubName: Python defaults the advertised name to
+// its own program name ("rrc"), and this port defaults it to "gorrcd". The
+// name is what a hub tells clients is running it, and clients render it beside
+// the version, so the Python default would advertise a Go hub as a program
+// that never had this version.
 func DefaultHubConfig() HubConfig {
 	return HubConfig{
 		DestName:                       HubDestName,
 		AnnounceOnStart:                true,
 		AnnouncePeriodS:                0.0,
-		HubName:                        "rrc",
+		HubName:                        "gorrcd",
 		RoomRegistryPruneAfterS:        2592000.0,
 		RoomRegistryPruneIntervalS:     3600.0,
 		RoomInviteTimeoutS:             900.0,

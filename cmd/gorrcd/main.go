@@ -48,9 +48,14 @@ import (
 	"os/signal"
 	"runtime/debug"
 	"syscall"
+	// The embedded time-zone database, which is what lets a zone name resolve on
+	// a device that keeps no zoneinfo files — an Android device keeps them packed
+	// in a format only bionic reads.
+	_ "time/tzdata"
 
 	"github.com/gmlewis/go-reticulum/rns"
 	"github.com/gmlewis/go-reticulum/rrc"
+	"github.com/gmlewis/go-reticulum/utils"
 )
 
 func main() {
@@ -58,6 +63,11 @@ func main() {
 	// logfile; these flags stamp the process-level lines captured into the
 	// /tmp service logs by the bootstrap script).
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
+
+	// Take the device's time zone before anything is logged. The hub stamps its
+	// own log lines through time.Now, so this is what decides whether the hub log
+	// reads in local time on a device that has no zoneinfo files.
+	utils.UseSystemZone()
 	// The RNS logger is created further down; keep the variable visible to
 	// the panic handler so it can flush the async queue before the crash.
 	var rnsLogger *rns.Logger

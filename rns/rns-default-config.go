@@ -5,6 +5,9 @@
 
 package rns
 
+// defaultRNSConfig is the configuration written on first run. It is Python's
+// __default_rns_config__ verbatim except for one line: the hint names this
+// port's own gornsd, because a Go install has no rnsd to run.
 const defaultRNSConfig = `# This is the default Reticulum config file.
 # You should probably edit it to include any additional,
 # interfaces and settings you might need.
@@ -12,7 +15,7 @@ const defaultRNSConfig = `# This is the default Reticulum config file.
 # Only the most basic options are included in this default
 # configuration. To see a more verbose, and much longer,
 # configuration example, you can run the command:
-# rnsd --exampleconfig
+# gornsd --exampleconfig
 
 
 [reticulum]

@@ -438,6 +438,70 @@ func TestWhereAmIFixQualityNames(t *testing.T) {
 	}
 }
 
+// TestWhereAmIFixStatusOmitsUnreportedQuality asserts the receiver line states
+// only what the receiver actually reported. A platform location API supplies a
+// position but no satellite count and no dilution of precision — that is the
+// Android appliance — and printing the zeros it never sent would report a fix
+// behind zero satellites as though that had been measured.
+func TestWhereAmIFixStatusOmitsUnreportedQuality(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		sats    int
+		hdop    float64
+		quality int
+		want    string
+	}{
+		{"both reported", 9, 0.8, 1, "3D Fix (9 satellites, HDOP 0.8)"},
+		{"sats only", 9, 0, 1, "3D Fix (9 satellites)"},
+		{"hdop only", 0, 0.8, 1, "3D Fix (HDOP 0.8)"},
+		{"neither reported", 0, 0, 1, "3D Fix"},
+		{"neither reported, DGPS", 0, 0, 2, "3D Fix (DGPS)"},
+		{"neither reported, RTK fixed", 0, 0, 4, "3D Fix (RTK fixed)"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			fix := sfFix()
+			fix.Satellites = tc.sats
+			fix.HDOP = tc.hdop
+			fix.FixQuality = tc.quality
+			built, err := buildWhereAmI(fix, LatLng{Lat: refLat, Lng: refLng}, whereamiSourceGNSS, time.Now())
+			if err != nil {
+				t.Fatalf("buildWhereAmI: %v", err)
+			}
+			if built.FixStatus != tc.want {
+				t.Errorf("FixStatus = %q, want %q", built.FixStatus, tc.want)
+			}
+		})
+	}
+}
+
+// TestWhereAmIFixStatusNeverInventsZeroQuality asserts the card a platform-fed
+// node answers with carries no zero behind it in any form.
+func TestWhereAmIFixStatusNeverInventsZeroQuality(t *testing.T) {
+	t.Parallel()
+
+	fix := sfFix()
+	fix.Satellites = 0
+	fix.HDOP = 0
+	built, err := buildWhereAmI(fix, LatLng{Lat: refLat, Lng: refLng}, whereamiSourceGNSS, time.Now())
+	if err != nil {
+		t.Fatalf("buildWhereAmI: %v", err)
+	}
+	card := strings.Join(renderWhereAmICard(built), "\n")
+	for _, invented := range []string{"0 satellites", "HDOP 0"} {
+		if strings.Contains(card, invented) {
+			t.Errorf("card = %v, want no invented %q", card, invented)
+		}
+	}
+	if !strings.Contains(card, "GNSS Fix Status   : 3D Fix") {
+		t.Errorf("card = %v, want the fix reported as a 3D fix", card)
+	}
+}
+
 // TestWhereAmIWithoutAMeasuredAltitude asserts a live fix that never carried an
 // altitude is not reported as sea level: a height nobody measured is unknown,
 // and saying otherwise would send a rescue party downhill.

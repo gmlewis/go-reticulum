@@ -99,7 +99,7 @@ func parseFlags(args []string, usageOutput io.Writer) (options, error) {
 
 	configShort := fs.String("c", "", "alternate Reticulum config directory")
 	rnsConfigLong := fs.String("rnsconfig", "", "alternate Reticulum config directory")
-	rnshConfigLong := fs.String("config", "", "alternate rnsh config directory")
+	rnshConfigLong := fs.String("config", "", "alternate gornsh config directory")
 	identityShort := fs.String("i", "", "specific identity file to use")
 	identityLong := fs.String("identity", "", "specific identity file to use")
 	serviceShort := fs.String("s", "", "service name for identity file when listening")
@@ -215,7 +215,7 @@ Usage:
 
 Options:
 		-c DIR --rnsconfig DIR       Alternate Reticulum config directory to use
-		--config DIR                 Alternate rnsh config directory to use (default ~/.config/rnsh or ~/.rnsh)
+		--config DIR                 Alternate gornsh config directory to use (default ~/.config/rnsh or ~/.rnsh)
 		-i FILE --identity FILE      Specific identity file to use
 		-s NAME --service NAME       Service name for identity file if not default
 		-p --print-identity          Print identity information and exit
@@ -223,7 +223,7 @@ Options:
 																	 be used as the command line when the initiator does not
 																	 provide one or when remote command is disabled. If
 																	 <program> is not supplied, the default shell of the
-																	 user rnsh is running under will be used.
+																	 user gornsh is running under will be used.
 		-b --announce PERIOD         Announce on startup and every PERIOD seconds
 																 Specify 0 for PERIOD to announce on startup only.
 		-a HASH --allowed HASH       Specify identities allowed to connect. Allowed identities

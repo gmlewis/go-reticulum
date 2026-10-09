@@ -343,7 +343,7 @@ func TestEmitSendFailureDebugTierCarriesCause(t *testing.T) {
 	// The message itself stays exactly Python's: link id and byte count, no
 	// error field, or it would drift from the parity-pinned text asserted by
 	// TestDrainOutgoingSendFailureLogging.
-	if !strings.Contains(text, "DEBUG:rrcd.hub:Send failed link_id=aabbccdd bytes=137\n") {
+	if !strings.Contains(text, "DEBUG:gorrcd.hub:Send failed link_id=aabbccdd bytes=137\n") {
 		t.Errorf("the debug-tier message changed: %q", text)
 	}
 	if strings.Contains(text, "err=interface") {

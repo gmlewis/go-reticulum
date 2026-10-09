@@ -116,8 +116,8 @@ func parseFlags(args []string, usageOutput io.Writer) (options, error) {
 	case subNode:
 		fs.BoolVar(&opts.printIdentity, "p", false, "print identity and destination info and exit")
 		fs.BoolVar(&opts.printIdentity, "print-identity", false, "print identity and destination info and exit")
-		fs.BoolVar(&opts.service, "s", false, "rngit is running as a service and should log to file")
-		fs.BoolVar(&opts.service, "service", false, "rngit is running as a service and should log to file")
+		fs.BoolVar(&opts.service, "s", false, "gorngit is running as a service and should log to file")
+		fs.BoolVar(&opts.service, "service", false, "gorngit is running as a service and should log to file")
 		fs.BoolVar(&opts.interactive, "i", false, "drop into interactive shell after initialisation")
 		fs.BoolVar(&opts.interactive, "interactive", false, "drop into interactive shell after initialisation")
 	case subCreate:

@@ -402,12 +402,26 @@ func sosGNSSContext(fix GPSFix) string {
 	if !fix.TimeUTC.IsZero() {
 		when = fix.TimeUTC.UTC().Format(time.RFC3339)
 	}
+	// Every figure here is stated only when it was measured. A rescue party
+	// reads this to judge how far the position may be from the truth, so a
+	// number the receiver never published must not be invented: satellites and
+	// dilution of precision cannot be zero in a real fix, which is how a zero is
+	// told from a measurement, and a height of zero at sea level is a
+	// measurement, which is why the altitude carries its own report flag.
+	satellites := "satellite count not reported"
+	if fix.Satellites > 0 {
+		satellites = fmt.Sprintf("%v satellites", fix.Satellites)
+	}
+	hdop := "HDOP not reported"
+	if fix.HDOP > 0 {
+		hdop = fmt.Sprintf("HDOP %v", fix.HDOP)
+	}
 	altitude := "altitude not reported"
-	if fix.AltitudeM != 0 {
+	if fix.HasAltitude {
 		altitude = fmt.Sprintf("%v m MSL", math.Round(fix.AltitudeM))
 	}
-	return fmt.Sprintf("3D fix, %v satellites, HDOP %v, %v, fix quality %v, %v",
-		fix.Satellites, fix.HDOP, altitude, fix.FixQuality, when)
+	return fmt.Sprintf("3D fix, %v, %v, %v, fix quality %v, %v",
+		satellites, hdop, altitude, fix.FixQuality, when)
 }
 
 // splitSOSRaise splits a raise request into its location, triage level, and

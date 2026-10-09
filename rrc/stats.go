@@ -166,7 +166,7 @@ func (s *StatsManager) FormatStats(cfg StatsConfig, snap StatsSnapshot) string {
 	s.mu.Unlock()
 
 	lines := []string{
-		"rrcd " + rns.VERSION + " stats",
+		"gorrcd " + rns.VERSION + " stats",
 		"uptime_s=" + fmtFloatDot1(uptimeS),
 		"clients_total=" + itoa(snap.SessionsTotal) +
 			" clients_identified=" + itoa(snap.SessionsIdentified) +

@@ -10,7 +10,6 @@ import (
 	"encoding/hex"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -19,11 +18,23 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-const goldenRoomsSHA256 = "79ea3400117e265b0513c2fc0f86059cf20a8a6d207f8325e5eed2a6023b633b"
-const goldenRoomsLen = 1081
+const goldenRoomsSHA256 = "c0e0f647f4acfa8f4f0e85e530c16509cde65829620a3c4790e4da2b532f9065"
+const goldenRoomsLen = 1087
+
+// normalizeGorrcdNames rewrites this port's own program name to the Python
+// original's so a template can be compared against a live Python capture. The
+// program is deliberately named for itself in the templates it ships, and the
+// advertised hub_name is the same divergence with a different Python spelling
+// ("rrc"), so it is rewritten first.
+func normalizeGorrcdNames(text string) string {
+	text = strings.ReplaceAll(text, `hub_name = "gorrcd"`, `hub_name = "rrc"`)
+	return strings.ReplaceAll(text, "gorrcd", "rrcd")
+}
 
 // TestRoomsTemplateGolden pins the first-run rooms.toml template to the
-// byte-captured Python output (1081 bytes ending "[rooms]\n", chmod 0o600).
+// byte-captured Python output with this port's own program name substituted
+// (ends "[rooms]\n", chmod 0o600). TestConfigTemplateRenderGolden proves the
+// substitution is the only difference from the live capture.
 func TestRoomsTemplateGolden(t *testing.T) {
 	t.Parallel()
 	rooms := defaultRoomsContent()
@@ -61,15 +72,33 @@ func TestConfigTemplateRenderGolden(t *testing.T) {
 	const testIdentityPath = "/home/test/.rrcd/hub_identity"
 	const testRegistryPath = "/home/test/.rrcd/rooms.toml"
 	wantCfg := defaultConfigContent(testIdentityPath, testRegistryPath)
-	if gotCfg != wantCfg {
-		t.Fatalf("rendered config template differs from live Python capture:\n--- Go (%v bytes) ---\n%v\n--- Python (%v bytes) ---\n%v",
+
+	// The templates name this port's own program where Python names its own.
+	// That is the one deliberate difference, so it is normalized away before the
+	// byte comparison; both sides are first checked to still carry their own
+	// spelling, so a change on either side is something to hear about rather
+	// than quietly absorb. The advertised hub_name is the same divergence
+	// spelled differently: Python defaults it to "rrc", and the Go hub
+	// advertises gorrcd so clients render this port beside the version.
+	const pythonHubName = "hub_name = \"rrc\"\n"
+	const gorrcdHubName = "hub_name = \"gorrcd\"\n"
+	if strings.Count(gotCfg, pythonHubName) != 1 {
+		t.Fatalf("live Python capture no longer defaults hub_name to \"rrc\"; found %v occurrences:\n%v",
+			strings.Count(gotCfg, pythonHubName), gotCfg)
+	}
+	if strings.Count(wantCfg, gorrcdHubName) != 1 {
+		t.Fatalf("Go template must default hub_name to \"gorrcd\"; found %v occurrences:\n%v",
+			strings.Count(wantCfg, gorrcdHubName), wantCfg)
+	}
+
+	if normalizeGorrcdNames(wantCfg) != gotCfg {
+		t.Fatalf("rendered config template differs from live Python capture beyond the program name:\n--- Go (%v bytes) ---\n%v\n--- Python (%v bytes) ---\n%v",
 			len(wantCfg), wantCfg, len(gotCfg), gotCfg)
 	}
-	if gotRooms != defaultRoomsContent() {
-		t.Fatalf("rooms template differs from live Python capture:\n--- Go ---\n%v\n--- Python ---\n%v",
+	if normalizeGorrcdNames(defaultRoomsContent()) != gotRooms {
+		t.Fatalf("rooms template differs from live Python capture beyond the program name:\n--- Go ---\n%v\n--- Python ---\n%v",
 			defaultRoomsContent(), gotRooms)
 	}
-	_ = filepath.Join // keep filepath imported for future assertions
 }
 
 // extractSection pulls one "---NAME---" delimited section from the capture
@@ -167,6 +196,22 @@ func TestPythonReprStringBothQuotes(t *testing.T) {
 		if got := pythonReprString(tt.in); got != tt.want {
 			t.Errorf("pythonReprString(%q) = %v, want %v", tt.in, got, tt.want)
 		}
+	}
+}
+
+// TestConfigTemplateAdvertisesGorrcd pins the one line of the first-run
+// template that is this port's own rather than Python's: the advertised hub
+// name. A hub sends it in the WELCOME, and clients render it beside the
+// version string, so a Go hub that defaulted it to Python's "rrc" would appear
+// on every client as the Python program at a version that program never had.
+func TestConfigTemplateAdvertisesGorrcd(t *testing.T) {
+	t.Parallel()
+	cfg := defaultConfigContent("/home/test/.rrcd/hub_identity", "/home/test/.rrcd/rooms.toml")
+	if !strings.Contains(cfg, "\nhub_name = \"gorrcd\"\n") {
+		t.Fatalf("first-run template must advertise gorrcd; template is:\n%v", cfg)
+	}
+	if strings.Contains(cfg, "\nhub_name = \"rrc\"\n") {
+		t.Fatal("first-run template must not advertise the Python name rrc")
 	}
 }
 

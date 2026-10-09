@@ -237,6 +237,12 @@ transmits and receives. Like `gornodeconf`, it requires exclusive access to
 the serial device — stop `gornsd`/`gonomadnet` (or anything else holding the
 port) first.
 
+## Go Port Tools and Services
+
+The Go port also ships a public service to test against, and three tools built on
+the stack: the `gorrcbot` bot client, the `grb` field appliance, and the `gobot`
+one-shot CLI.
+
 ### The gonomadnet Public Hub
 
 The Go port also runs a public node as a live test target for the stack:

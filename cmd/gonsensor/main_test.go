@@ -282,11 +282,44 @@ func TestGonsensorStatusReportsProgress(t *testing.T) {
 		`{"t":"2026-10-08T15:53:47Z","heading":47.5}` + "\n"
 
 	_, status := feedSensor(t, opts, input)
-	if !strings.Contains(status, "1 fixes, 1 headings, 1 dropped") {
+	if !strings.Contains(status, "1 fixes, 1 headings, 0 withheld, 1 dropped") {
 		t.Fatalf("status = %q, want one fix, one heading, and one dropped sample", status)
 	}
 	if !strings.HasPrefix(status, "gonsensor: ") {
 		t.Fatalf("status = %q, want a gonsensor prefix", status)
+	}
+}
+
+// TestGonsensorCountsAWithheldSampleAsWithheld asserts a sample the producer
+// sent with no measurement in it is reported as withheld rather than as a loss.
+//
+// The Android appliance withholds its heading while the reference axis is
+// ill-conditioned — a tablet lying flat, whose back points nearly straight
+// down — and says so once in its own log when the condition begins. What
+// reaches the converter is therefore fifty empty samples a second, and counting
+// those as dropped would show a perfectly healthy pipeline losing several
+// hundred thousand readings an hour, burying the one number that would mean a
+// fault. Withheld and dropped are different claims: one is about the producer's
+// decision, the other about this program's ability to read what it was sent.
+func TestGonsensorCountsAWithheldSampleAsWithheld(t *testing.T) {
+	t.Parallel()
+
+	opts := unfettered()
+	opts.statusInterval = 5
+
+	const withheld = `{"t":"2026-10-08T15:53:41Z"}`
+	input := locationSample + "\n" + headingSample + "\n" +
+		withheld + "\n" + withheld + "\n" +
+		`{"t":"2026-10-08T15:53:47Z"}` + "\n"
+
+	got, status := feedSensor(t, opts, input)
+	if !strings.Contains(status, "1 fixes, 1 headings, 3 withheld, 0 dropped") {
+		t.Fatalf("status = %q, want three withheld samples and no dropped ones", status)
+	}
+	// A withheld sample carries nothing to convert, so it adds no sentence: the
+	// fix's three and the heading's one are still all that reaches the reader.
+	if count := strings.Count(got, "\r\n"); count != 4 {
+		t.Fatalf("withheld samples produced sentences: %q", got)
 	}
 }
 
@@ -393,7 +426,7 @@ func TestGonsensorHeadingFrameIsHonoured(t *testing.T) {
 		t.Fatalf("explicitly magnetic output = %q, want a magnetic-heading sentence", named)
 	}
 
-	if _, ok := parseSample(`{"heading":47.5,"frame":"moon"}`); ok {
+	if _, outcome := parseSample(`{"heading":47.5,"frame":"moon"}`); outcome != lineRefused {
 		t.Fatalf("an unknown heading frame was accepted")
 	}
 }

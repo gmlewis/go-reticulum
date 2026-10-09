@@ -25,8 +25,13 @@ func TestDefaultHubConfig(t *testing.T) {
 	if !c.AnnounceOnStart || c.AnnouncePeriodS != 0.0 {
 		t.Errorf("announce defaults = %v, %v", c.AnnounceOnStart, c.AnnouncePeriodS)
 	}
-	if c.HubName != "rrc" {
-		t.Errorf("HubName = %v", c.HubName)
+	// The advertised hub name is where a hub states which program runs it, and
+	// clients render it beside the version ("~ gorrcd v0.138.0"). Python's
+	// default is "rrc", which would advertise a Go hub as the Python original
+	// at a version that program never had, so this one default deliberately
+	// diverges; every other field here is Python's.
+	if c.HubName != "gorrcd" {
+		t.Errorf("HubName = %v, want gorrcd", c.HubName)
 	}
 	if c.Greeting != nil {
 		t.Errorf("Greeting = %v, want nil", c.Greeting)
@@ -265,7 +270,7 @@ func TestDiffConfigSummary(t *testing.T) {
 	got := DiffConfigSummary(oldCfg, newCfg)
 	sorted := []string{
 		"greeting: (none) -> hello",
-		"hub_name: rrc -> other",
+		"hub_name: gorrcd -> other",
 		"max_nick_bytes: 32 -> 64",
 		"trusted_identities: len=0 -> len=1",
 	}

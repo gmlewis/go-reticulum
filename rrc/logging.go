@@ -56,6 +56,18 @@ type LogSetup struct {
 // blank (no threadName).
 const DefaultLogFormat = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 
+// The names this hub's own components log under, which the log format renders
+// as %(name)s on every line they write.
+//
+// Python's original names them "rrcd.hub" and "rrcd.router", and the hub's own
+// messages would read as that program's if a Go hub copied them: a log line
+// says which program is speaking, and the Go hub's version string is not a
+// version Python's rrcd ever had.
+const (
+	loggerHubName    = "gorrcd.hub"
+	loggerRouterName = "gorrcd.router"
+)
+
 // ParseLogLevel parses a Python logging level name or numeric string the
 // way logging_config._parse_level does, returning def for unknown values.
 func ParseLogLevel(value any, def slog.Level) slog.Level {
@@ -337,12 +349,12 @@ func (s *LogSetup) Writer() io.Writer {
 // growing an err= field it does not have in Python.
 func (s *LogSetup) EmitSendFailure(err error, linkID string, size int) {
 	if sendErrorIsOSError(err) {
-		s.Emit(slog.LevelWarn, "rrcd.hub", "Send failed link_id=%v bytes=%v err=%v", linkID, size, err)
+		s.Emit(slog.LevelWarn, loggerHubName, "Send failed link_id=%v bytes=%v err=%v", linkID, size, err)
 		return
 	}
-	s.Emit(slog.LevelDebug, "rrcd.hub", "Send failed link_id=%v bytes=%v", linkID, size)
+	s.Emit(slog.LevelDebug, loggerHubName, "Send failed link_id=%v bytes=%v", linkID, size)
 	if err != nil {
-		s.Emit(slog.LevelDebug, "rrcd.hub", "Send failure cause link_id=%v cause=%v", linkID, err)
+		s.Emit(slog.LevelDebug, loggerHubName, "Send failure cause link_id=%v cause=%v", linkID, err)
 	}
 }
 

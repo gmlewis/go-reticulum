@@ -129,9 +129,9 @@ func NewHubService(config HubConfig) *HubService {
 		}
 	}
 	// The hub's own messages go through the live level filter, format,
-	// and writer under the Python logger name rrcd.hub.
+	// and writer under this port's own hub logger name.
 	h.logf = func(format string, args ...any) {
-		h.logSetup.Emit(slog.LevelInfo, "rrcd.hub", format, args...)
+		h.logSetup.Emit(slog.LevelInfo, loggerHubName, format, args...)
 	}
 	h.startReticulum = h.startReticulumDefault
 
@@ -313,10 +313,10 @@ func NewHubService(config HubConfig) *HubService {
 			return h.logSetup.DebugEnabled()
 		},
 		Debugf: func(format string, args ...any) {
-			h.logSetup.Emit(slog.LevelDebug, "rrcd.router", format, args...)
+			h.logSetup.Emit(slog.LevelDebug, loggerRouterName, format, args...)
 		},
 		Infof: func(format string, args ...any) {
-			h.logSetup.Emit(slog.LevelInfo, "rrcd.router", format, args...)
+			h.logSetup.Emit(slog.LevelInfo, loggerRouterName, format, args...)
 		},
 		SendPacket:             h.safeSendPacket,
 		PersistRoomState:       rooms.PersistRoomState,

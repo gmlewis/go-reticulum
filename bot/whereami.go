@@ -223,9 +223,18 @@ func solarZone(lng float64) (*time.Location, string) {
 	return time.FixedZone(label, offset*3600), label
 }
 
-// whereamiFixStatus renders the receiver line: the fix kind, how many
-// satellites are behind it, the dilution of precision, and — for a solution
-// better than a plain fix — the quality word a receiver manual uses.
+// whereamiFixStatus renders the receiver line: the fix kind, and then only the
+// quality facts the receiver actually reported — how many satellites are behind
+// the fix, the dilution of precision, and, for a solution better than a plain
+// fix, the quality word a receiver manual uses.
+//
+// A zero is not a measurement here. A receiver reports at least four satellites
+// to produce a fix at all, and no real dilution of precision is zero, so a zero
+// in either field means the receiver said nothing about it — which is the
+// normal case for a platform location API, whose fix carries a position and
+// nothing else. Reporting those zeros would invent a measurement, so an
+// unreported field is left out and a fix that reported neither reads as what it
+// is: "3D Fix".
 func whereamiFixStatus(w whereAmI) string {
 	if w.Source != whereamiSourceGNSS {
 		return "manual position — no GNSS fix or altitude"
@@ -233,7 +242,10 @@ func whereamiFixStatus(w whereAmI) string {
 	if !w.Fix.Valid {
 		return "no fix — acquiring"
 	}
-	status := fmt.Sprintf("3D Fix (%v satellites, HDOP %v)", w.Fix.Satellites, w.Fix.HDOP)
+	status := "3D Fix"
+	if quality := whereamiFixQuality(w.Fix); quality != "" {
+		status += " (" + quality + ")"
+	}
 	switch w.Fix.FixQuality {
 	case 2:
 		return status + " (DGPS)"
@@ -243,6 +255,20 @@ func whereamiFixStatus(w whereAmI) string {
 		return status + " (RTK float)"
 	}
 	return status
+}
+
+// whereamiFixQuality describes the fix's accuracy in the two figures a receiver
+// publishes, separated by a comma, and is empty when the receiver published
+// neither.
+func whereamiFixQuality(fix GPSFix) string {
+	parts := make([]string, 0, 2)
+	if fix.Satellites > 0 {
+		parts = append(parts, fmt.Sprintf("%v satellites", fix.Satellites))
+	}
+	if fix.HDOP > 0 {
+		parts = append(parts, fmt.Sprintf("HDOP %v", fix.HDOP))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // whereamiHeadingText renders the orientation line: the heading the operator

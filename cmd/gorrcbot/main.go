@@ -51,9 +51,14 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	// The embedded time-zone database, which is what lets a zone name resolve on
+	// a device that keeps no zoneinfo files — an Android device keeps them packed
+	// in a format only bionic reads.
+	_ "time/tzdata"
 
 	"github.com/gmlewis/go-reticulum/bot"
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/utils"
 )
 
 // Exit codes. A clean exit is 0, an operational failure is 1, and a command
@@ -67,6 +72,13 @@ const (
 
 func main() {
 	log.SetFlags(0)
+
+	// Take the device's time zone before anything is logged. The bot stamps its own
+	// log lines through the rrc logger, which renders time.Now, so this is what
+	// decides whether its log reads in local time on a device with no zoneinfo
+	// files.
+	utils.UseSystemZone()
+
 	os.Exit(run(os.Args[1:], os.Stderr))
 }
 

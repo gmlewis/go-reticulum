@@ -133,8 +133,11 @@ func TestParity_ExampleConfig(t *testing.T) {
 		t.Fatalf("gornir --exampleconfig failed: %v\n%v", err, string(goOut))
 	}
 
-	pyTrimmed := strings.TrimSpace(string(pyOut))
-	goTrimmed := strings.TrimSpace(string(goOut))
+	// The example names this port's own sibling commands where Python names
+	// its own; that is the only deliberate difference, so the compare
+	// normalizes the names away.
+	pyTrimmed := testutils.NormalizePythonToolNames(strings.TrimSpace(string(pyOut)))
+	goTrimmed := testutils.NormalizePythonToolNames(strings.TrimSpace(string(goOut)))
 	if pyTrimmed != goTrimmed {
 		t.Errorf("exampleconfig output differs between Python and Go")
 	}

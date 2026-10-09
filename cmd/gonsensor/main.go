@@ -53,7 +53,13 @@
 // A malformed line is dropped in silence. A noisy stream is normal — a sensor
 // service restarts, a phone call arrives, a buffer is half flushed — and the
 // useful signal is the next good sample, not a log entry about the last bad one.
-// The only place a bad line is visible at all is the periodic count on stderr.
+// The periodic count on stderr is the only place a bad line is visible at all, and
+// it counts the two cases apart: "dropped" is a line this program could not read,
+// while "withheld" is a well-formed sample whose producer reported that it had
+// nothing to report. Only the first is a failure; the second is the producer
+// declining to state a number it does not believe, which is what the Android
+// appliance does when its heading reference axis is ill-conditioned. Keeping them
+// in one counter would make a deliberate silence look like lost data.
 //
 // # Output
 //
@@ -219,9 +225,11 @@ type sensorState struct {
 	lastHeadingAt time.Time
 	// lastStatusAt is when the last status line was written.
 	lastStatusAt time.Time
-	// fixes, headings, and dropped count what has arrived so far.
+	// fixes, headings, withheld, and dropped count what has arrived so far.
+	// withheld samples are not a loss: see lineWithheld.
 	fixes    int
 	headings int
+	withheld int
 	dropped  int
 }
 
@@ -231,10 +239,14 @@ func (s *sensorState) consume(line string, sentences, status io.Writer) error {
 	if text == "" {
 		return nil
 	}
-	sample, ok := parseSample(text)
-	at := s.sampleClock(sample, ok)
-	if !ok {
+	sample, outcome := parseSample(text)
+	at := s.sampleClock(sample)
+	switch outcome {
+	case lineRefused:
 		s.dropped++
+		return s.maybeStatus(at, status)
+	case lineWithheld:
+		s.withheld++
 		return s.maybeStatus(at, status)
 	}
 	if sample.isFix {
@@ -254,8 +266,8 @@ func (s *sensorState) consume(line string, sentences, status io.Writer) error {
 // when it carried one, and the process clock otherwise. Every rate limit and the
 // status interval are measured against it, so a producer's own sense of time
 // governs its stream even when the two processes' clocks disagree.
-func (s *sensorState) sampleClock(sample sample, ok bool) time.Time {
-	if ok && sample.HasTimestamp {
+func (s *sensorState) sampleClock(sample sample) time.Time {
+	if sample.HasTimestamp {
 		return sample.Timestamp
 	}
 	return s.now()
@@ -384,18 +396,44 @@ func (s *sensorState) maybeStatus(at time.Time, status io.Writer) error {
 		return nil
 	}
 	s.lastStatusAt = at
-	_, err := fmt.Fprintf(status, "gonsensor: %v fixes, %v headings, %v dropped\n",
-		s.fixes, s.headings, s.dropped)
+	_, err := fmt.Fprintf(status, "gonsensor: %v fixes, %v headings, %v withheld, %v dropped\n",
+		s.fixes, s.headings, s.withheld, s.dropped)
 	return err
 }
 
+// lineOutcome is what one input line turned out to be, which is the whole
+// difference between a reading that was lost and a reading that was never taken.
+type lineOutcome int
+
+const (
+	// lineRefused is a line this program could not read: it is not a JSON
+	// object, one of its values is outside its legal range, or nothing in it
+	// identifies it as a sample at all. It is counted as dropped, because a
+	// sample was sent and no reading came of it.
+	lineRefused lineOutcome = iota
+
+	// lineWithheld is a well-formed sample carrying no measurement: the producer
+	// reported, at that instant, that it had nothing to report. It is counted as
+	// withheld, which is a statement about the producer's decision rather than
+	// about this program's reading of the stream. A producer is expected to
+	// withhold deliberately — the Android appliance does when its heading
+	// reference axis is ill-conditioned — and to say why in its own log once,
+	// rather than to emit a number it does not believe.
+	lineWithheld
+
+	// lineMeasured is a sample carrying at least one measurement.
+	lineMeasured
+)
+
 // parseSample decodes one input line. A line that is not a JSON object, that
-// describes neither a fix nor a heading, or that carries a coordinate outside
-// the legal range, is refused: a wrong position is worse than no position.
-func parseSample(text string) (sample, bool) {
+// carries a value outside the legal range, or that describes neither a fix nor a
+// heading is refused unless it is a sample the producer deliberately sent empty:
+// a wrong position is worse than no position, but an announced absence of
+// readings is not a wrong reading.
+func parseSample(text string) (sample, lineOutcome) {
 	var raw rawSample
 	if err := json.Unmarshal([]byte(text), &raw); err != nil {
-		return sample{}, false
+		return sample{}, lineRefused
 	}
 
 	decoded := sample{Frame: frameMagnetic}
@@ -408,7 +446,7 @@ func parseSample(text string) (sample, bool) {
 	if raw.Frame != nil {
 		frame := headingFrame(strings.ToLower(strings.TrimSpace(*raw.Frame)))
 		if frame != frameMagnetic && frame != frameTrue {
-			return sample{}, false
+			return sample{}, lineRefused
 		}
 		decoded.Frame = frame
 	}
@@ -418,10 +456,10 @@ func parseSample(text string) (sample, bool) {
 	decoded.Sats = raw.Sats
 	decoded.Acc = raw.Acc
 	if !validCoordinate(raw.Lat, 90) || !validCoordinate(raw.Lng, 180) {
-		return sample{}, false
+		return sample{}, lineRefused
 	}
 	if (raw.Lat == nil) != (raw.Lng == nil) {
-		return sample{}, false
+		return sample{}, lineRefused
 	}
 	if raw.Lat != nil {
 		decoded.Lat, decoded.Lng = raw.Lat, raw.Lng
@@ -431,28 +469,28 @@ func parseSample(text string) (sample, bool) {
 	}
 	if raw.Alt != nil {
 		if !finite(*raw.Alt) {
-			return sample{}, false
+			return sample{}, lineRefused
 		}
 		decoded.Alt = raw.Alt
 		decoded.isFix = true
 	}
 	if raw.Speed != nil {
 		if !finite(*raw.Speed) {
-			return sample{}, false
+			return sample{}, lineRefused
 		}
 		decoded.Speed = raw.Speed
 		decoded.isFix = true
 	}
 	if raw.Course != nil {
 		if !finite(*raw.Course) {
-			return sample{}, false
+			return sample{}, lineRefused
 		}
 		decoded.Course = raw.Course
 		decoded.isFix = true
 	}
 	if raw.Heading != nil {
 		if !finite(*raw.Heading) {
-			return sample{}, false
+			return sample{}, lineRefused
 		}
 		decoded.Heading = raw.Heading
 		decoded.isHeading = true
@@ -461,9 +499,16 @@ func parseSample(text string) (sample, bool) {
 		decoded.isFix = true
 	}
 	if !decoded.isFix && !decoded.isHeading {
-		return sample{}, false
+		// Nothing measured. A timestamp is what separates a producer saying
+		// "nothing to report right now" from a line that is simply not a sample:
+		// every sample this format carries is dated, so a dated line with no
+		// readings is a reading that was deliberately not taken.
+		if decoded.HasTimestamp {
+			return decoded, lineWithheld
+		}
+		return sample{}, lineRefused
 	}
-	return decoded, true
+	return decoded, lineMeasured
 }
 
 // validCoordinate reports whether an optional coordinate is absent, or present

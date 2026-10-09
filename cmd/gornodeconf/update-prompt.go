@@ -14,7 +14,7 @@ import (
 )
 
 const useExtractedWarningText = `
-You have specified that rnodeconf should use a firmware extracted
+You have specified that gornodeconf should use a firmware extracted
 from another device. Please note that this *only* works if you are
 targeting a device of the same type that the firmware came from!
 

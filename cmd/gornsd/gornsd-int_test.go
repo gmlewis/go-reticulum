@@ -271,10 +271,10 @@ func TestGornsdExampleConfigParity(t *testing.T) {
 	if got.exitCode != want.exitCode {
 		t.Fatalf("exit code mismatch: got %v want %v", got.exitCode, want.exitCode)
 	}
-	if normalizeMultilineWhitespace(got.stderr) != normalizeMultilineWhitespace(want.stderr) {
+	if testutils.NormalizePythonToolNames(normalizeMultilineWhitespace(got.stderr)) != normalizeMultilineWhitespace(want.stderr) {
 		t.Fatalf("stderr mismatch:\n--- got ---\n%v--- want ---\n%v", got.stderr, want.stderr)
 	}
-	if normalizeMultilineWhitespace(got.stdout) != normalizeMultilineWhitespace(want.stdout) {
+	if testutils.NormalizePythonToolNames(normalizeMultilineWhitespace(got.stdout)) != normalizeMultilineWhitespace(want.stdout) {
 		t.Fatalf("stdout mismatch:\n--- got ---\n%v--- want ---\n%v", got.stdout, want.stdout)
 	}
 }

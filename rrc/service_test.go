@@ -636,7 +636,7 @@ func TestReloadConfigSuccess(t *testing.T) {
 	if !strings.Contains(body, "policy: max_nick_bytes=40") {
 		t.Errorf("success reload body lacks the policy line: %q", body)
 	}
-	if !strings.Contains(body, "config_changes:") || !strings.Contains(body, "hub_name: rrc -> ReloadedHub") {
+	if !strings.Contains(body, "config_changes:") || !strings.Contains(body, "hub_name: gorrcd -> ReloadedHub") {
 		t.Errorf("success reload body lacks the config changes: %q", body)
 	}
 	if !strings.Contains(body, "rooms_added=1: extra") {

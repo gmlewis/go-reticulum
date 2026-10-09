@@ -2212,30 +2212,30 @@ func (h *RRCHub) sendEnv(env map[any]any) {
 	}
 	data, err := EncodeEnvelope(env)
 	if err != nil {
-		log.Printf("rrc: dropping envelope send: encode failed: %v", err)
+		log.Printf("gorrcd: dropping envelope send: encode failed: %v", err)
 		return
 	}
 	h.lock.Lock()
 	link := h.link
 	h.lock.Unlock()
 	if link == nil {
-		log.Printf("rrc: dropping envelope send: hub link is down")
+		log.Printf("gorrcd: dropping envelope send: hub link is down")
 		return
 	}
 	p := rns.NewPacketWithTransport(link.GetTransport(), link, data)
 	if err := p.Pack(); err != nil {
-		log.Printf("rrc: dropping envelope send over link: %v", err)
+		log.Printf("gorrcd: dropping envelope send over link: %v", err)
 		return
 	}
 	if err := link.SendPacket(p); err != nil {
-		log.Printf("rrc: envelope send over link failed: %v", err)
+		log.Printf("gorrcd: envelope send over link failed: %v", err)
 	}
 }
 
 // HandleData decodes a CBOR-encoded RRC envelope and dispatches it
 // to the appropriate handler based on the message type.
 func (h *RRCHub) HandleData(data []byte) {
-	log.Printf("DEBUG rrc HandleData: %v bytes: %x", len(data), data[:min(len(data), 40)])
+	log.Printf("DEBUG gorrcd HandleData: %v bytes: %x", len(data), data[:min(len(data), 40)])
 	// Any inbound envelope is proof the hub link is alive; the hub-liveness
 	// watchdog (startHubLivenessLoop) reads this clock, and it also clears any
 	// outstanding probe: whatever the hub just said, it is answering.
@@ -2243,7 +2243,7 @@ func (h *RRCHub) HandleData(data []byte) {
 	h.livenessProbeSent.Store(0)
 	env, err := DecodeEnvelope(data)
 	if err != nil {
-		log.Printf("DEBUG rrc HandleData decode failed: %v", err)
+		log.Printf("DEBUG gorrcd HandleData decode failed: %v", err)
 		return
 	}
 

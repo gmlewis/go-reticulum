@@ -5,6 +5,10 @@
 
 package main
 
+// exampleRNSConfig is the verbose example printed by --exampleconfig. It is
+// Python's example configuration verbatim except where it names a sibling tool:
+// each name is this port's own (gornstatus, gornpath, gornid, gornprobe),
+// because a Go install has none of the Python commands to run.
 const exampleRNSConfig = `# This is an example Reticulum config file.
 # You should probably edit it to include any additional,
 # interfaces and settings you might need.
@@ -68,11 +72,11 @@ instance_name = default
 
 # It is possible to allow remote management of Reticulum
 # systems using the various built-in utilities, such as
-# rnstatus and rnpath. You will need to specify one or
+# gornstatus and gornpath. You will need to specify one or
 # more Reticulum Identity hashes for authenticating the
 # queries from client programs. For this purpose, you can
 # use existing identity files, or generate new ones with
-# the rnid utility.
+# the gornid utility.
 
 # enable_remote_management = yes
 # remote_management_allowed = 9fb6d773498fb3feda407ed8ef2c3229, 2d882c5586e548d79b5af27bca1776dc
@@ -138,7 +142,7 @@ instance_name = default
 
 # When Transport is enabled, it is possible to allow the
 # Transport Instance to respond to probe requests from
-# the rnprobe utility. This can be a useful tool to test
+# the gornprobe utility. This can be a useful tool to test
 # connectivity. When this option is enabled, the probe
 # destination will be generated from the Identity of the
 # Transport Instance, and printed to the log at startup.

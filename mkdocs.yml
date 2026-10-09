@@ -80,6 +80,7 @@ nav:
       - gorrcbot (Chat Bot): tools/gorrcbot.md
       - grb (Buddy Appliance): tools/grb.md
       - gobot (Bot CLI): tools/gobot.md
+      - gonsensor (Sensor Bridge): tools/gonsensor.md
       - golxmd (LXMF Propagation): tools/golxmd.md
       - gorrcd (Hub Daemon): tools/gorrcd.md
       - gornodeconf (RNode Manager): tools/gornodeconf.md

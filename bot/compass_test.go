@@ -10,6 +10,8 @@ import (
 	"context"
 	"io"
 	"math"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -475,5 +477,125 @@ func TestCompassReaderIsGoroutineClean(t *testing.T) {
 	}
 	if got := reader.LastHeading(); got.Valid {
 		t.Errorf("an unset static provider reports %+v, want no heading", got)
+	}
+}
+
+// TestCompassReaderAgesOutAHeadingThatStopsArriving asserts that a heading stops
+// being a heading once nothing has arrived for it.
+//
+// A heading is a measurement of where the device points *now*. One that is
+// minutes old is a memory, and a command that answers "you are facing 212° true"
+// from it is confidently wrong in the way that costs the most: the operator turns
+// the device, asks again, and is told the same angle. The tablet produced exactly
+// that, from a heading replayed out of a file that had stopped growing.
+func TestCompassReaderAgesOutAHeadingThatStopsArriving(t *testing.T) {
+	t.Parallel()
+
+	const window = 30 * time.Second
+	reader := NewCompassReader(strings.NewReader(hdtSentence))
+	reader.SetHeadingMaxAge(window)
+	at := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	reader.now = func() time.Time { return at }
+	if err := reader.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// The moment it arrives it is a heading, and it still is at the very edge of
+	// the window.
+	if got := reader.LastHeading(); !got.Valid || !got.HasTrue {
+		t.Fatalf("a heading that has just arrived = %+v, want a true heading", got)
+	}
+	at = at.Add(window)
+	if got := reader.LastHeading(); !got.Valid {
+		t.Errorf("a heading at the edge of the window = %+v, want it still reported", got)
+	}
+
+	// A second past the window it is nothing at all: not a stale angle, and not
+	// the cardinal sector of one, but the same zero value an absent compass gives.
+	at = at.Add(time.Second)
+	got := reader.LastHeading()
+	if got.Valid || got.HasTrue || got.HasMagnetic || got.MagneticDeg != 0 || got.Cardinal != "" {
+		t.Errorf("a heading past the window = %+v, want no heading at all", got)
+	}
+}
+
+// TestCompassReaderReportsAHeadingAgainOnceOneArrives asserts the window is not a
+// latch: the next heading that arrives is reported, however long the silence was.
+func TestCompassReaderReportsAHeadingAgainOnceOneArrives(t *testing.T) {
+	t.Parallel()
+
+	reader := NewCompassReader(nil)
+	reader.SetHeadingMaxAge(30 * time.Second)
+	at := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	reader.now = func() time.Time { return at }
+
+	reader.SetHeading(CompassHeading{HasTrue: true, TrueDeg: 114.2})
+	if got := reader.LastHeading(); !got.Valid {
+		t.Fatalf("a heading just set = %+v, want it reported", got)
+	}
+
+	at = at.Add(time.Hour)
+	if got := reader.LastHeading(); got.Valid {
+		t.Errorf("an hour-old heading = %+v, want none", got)
+	}
+
+	reader.SetHeading(CompassHeading{HasTrue: true, TrueDeg: 90})
+	got := reader.LastHeading()
+	if !got.Valid || got.TrueDeg != 90 {
+		t.Errorf("the heading after the silence = %+v, want 90 true", got)
+	}
+}
+
+// TestCompassReaderKeepsAHeadingWhenNoWindowIsSet asserts a reader that was never
+// given a window reports whatever it was last told, however long ago that was.
+//
+// That is what a configured compass_heading needs. It is a statement about where
+// the installation points, not a measurement that can go out of date, and it has
+// no arrivals for a window to be measured from.
+func TestCompassReaderKeepsAHeadingWhenNoWindowIsSet(t *testing.T) {
+	t.Parallel()
+
+	reader := NewCompassReader(nil)
+	at := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	reader.now = func() time.Time { return at }
+	reader.SetHeading(CompassHeading{HasMagnetic: true, MagneticDeg: 42})
+
+	at = at.Add(365 * 24 * time.Hour)
+	if got := reader.LastHeading(); !got.Valid || got.MagneticDeg != 42 {
+		t.Errorf("a heading with no window set = %+v, want it unchanged", got)
+	}
+}
+
+// TestOpenCompassAgesALiveFeedButNotAStaticBearing asserts which of the two
+// compasses the window is put on. The live feed is a measurement and has to be
+// aged; compass_heading is a statement about the installation and must not be.
+func TestOpenCompassAgesALiveFeedButNotAStaticBearing(t *testing.T) {
+	t.Parallel()
+
+	static, err := openCompass(&BotConfig{CompassHeading: "042"})
+	if err != nil {
+		t.Fatalf("openCompass(compass_heading): %v", err)
+	}
+	defer func() { _ = static.Close() }()
+	static.now = func() time.Time { return time.Date(2200, 1, 1, 0, 0, 0, 0, time.UTC) }
+	if got := static.LastHeading(); !got.Valid {
+		t.Errorf("a configured bearing = %+v, want it reported whatever the clock says", got)
+	}
+
+	// The live feed is read from a regular file rather than a pipe, which is all
+	// this test needs: the endpoint is opened by the same code either way, and the
+	// window is set on the reader rather than on the stream.
+	path := filepath.Join(tempDir(t), "compass.nmea")
+	if err := os.WriteFile(path, []byte(hdtSentence+"\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	live, err := openCompass(&BotConfig{CompassPort: path})
+	if err != nil {
+		t.Fatalf("openCompass(compass_port): %v", err)
+	}
+	defer func() { _ = live.Close() }()
+	if live.headingMaxAge != headingStaleAfter {
+		t.Errorf("the live compass window = %v, want %v; without it a heading that stops arriving is reported forever",
+			live.headingMaxAge, headingStaleAfter)
 	}
 }

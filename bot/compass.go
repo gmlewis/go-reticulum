@@ -86,6 +86,15 @@ func headingCardinal(h CompassHeading) string {
 	return ""
 }
 
+// headingStaleAfter is the age at which a live heading stops being a heading.
+//
+// It is the window the Nomad Network client applies to the same stream, so a
+// bot and a client reading one feed agree about when it has gone quiet. It is
+// generous against the feed rather than tight: headings arrive fifty times a
+// second while a magnetometer is delivering them, and the samples either side
+// of a second's worth of silence are the same orientation.
+const headingStaleAfter = 30 * time.Second
+
 // CompassReader is a thread-safe streaming reader over one NMEA compass source,
 // such as a magnetometer on a serial line, a multiplexed receiver feed, or a
 // file. It keeps the most recent heading its owner can act on.
@@ -110,6 +119,16 @@ type CompassReader struct {
 	mu sync.Mutex
 	// heading is the merged state every reader sees.
 	heading CompassHeading
+	// headingArrival is when that heading was stored, which is what the ageing
+	// window is measured from. It is the zero time on a reader that has never
+	// been given one, and a reader with a window set then reports no heading at
+	// all, which is what "nothing has arrived" means.
+	headingArrival time.Time
+	// headingMaxAge is how long a stored heading stays a heading. Zero disables
+	// ageing, which is right for a heading that was configured rather than
+	// measured: compass_heading states where the installation points, and it has
+	// no arrivals for a window to be measured from.
+	headingMaxAge time.Duration
 	// closed reports that Close has run, so a scanner error is no longer
 	// reported as a failure.
 	closed bool
@@ -136,28 +155,55 @@ func (c *CompassReader) SetLocationSource(fix func() (GPSFix, bool)) {
 	c.location = fix
 }
 
-// SetHeading replaces the whole heading. It is how a static compass bearing is
-// injected and how a test mocks one, and it is the only way a static provider
-// is ever populated.
+// SetHeading replaces the whole heading and stamps its arrival, so it counts as
+// a measurement taken now. It is how a static compass bearing is injected and how
+// a test mocks one, and it is the only way a static provider is ever populated.
 func (c *CompassReader) SetHeading(h CompassHeading) {
 	h.Valid = h.HasMagnetic || h.HasTrue
 	h.Cardinal = headingCardinal(h)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.heading = h
+	c.headingArrival = c.now()
+}
+
+// SetHeadingMaxAge bounds how old a stored heading may be before the reader stops
+// reporting one. It is set on a reader that a live source feeds, and it is what
+// keeps a heading that stops arriving from being reported forever: an operator
+// turns the device, asks again, and is answered from a measurement that is minutes
+// old, which is indistinguishable from one taken now.
+//
+// A duration of zero or less disables ageing, which is what a configured
+// compass_heading needs. It is a statement about where the installation points
+// rather than a measurement of it, and it has no arrivals to age from.
+func (c *CompassReader) SetHeadingMaxAge(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.headingMaxAge = d
 }
 
 // LastHeading returns the most recent heading, with the true heading filled in
 // from the World Magnetic Model when the sentence carried magnetic north only
 // and the device knows where it is. It is safe to call from any goroutine while
 // a scan is running.
+//
+// A heading that nothing has arrived for within the reader's window is not
+// reported at all: the zero value is returned, so a caller sees the same thing it
+// sees when there is no compass. Every caller of this method is about to state
+// where the device points now, and the last angle of a source that has gone quiet
+// is not an answer to that.
 func (c *CompassReader) LastHeading() CompassHeading {
 	c.mu.Lock()
 	heading := c.heading
+	arrival := c.headingArrival
+	maxAge := c.headingMaxAge
 	location := c.location
 	declination := c.declination
 	now := c.now
 	c.mu.Unlock()
+	if maxAge > 0 && (arrival.IsZero() || now().Sub(arrival) > maxAge) {
+		return CompassHeading{}
+	}
 	// A heading that already carries true north, and a heading with no position
 	// to correct it against, are both returned exactly as they stand.
 	if heading.HasTrue || heading.HasDeclination || !heading.HasMagnetic ||
@@ -348,12 +394,14 @@ func compassFrameIndicator(fields []string, frame string) bool {
 	return strings.EqualFold(strings.TrimSpace(fields[2]), frame)
 }
 
-// store records one heading, labeling it with its compass sector.
+// store records one heading, labeling it with its compass sector and stamping
+// when it arrived, which is what the ageing window is measured from.
 func (c *CompassReader) store(heading CompassHeading) {
 	heading.Cardinal = headingCardinal(heading)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.heading = heading
+	c.headingArrival = c.now()
 }
 
 // parseNMEAHeading reads a heading field, which is a decimal degree count from
@@ -411,6 +459,11 @@ func openCompass(cfg *BotConfig) (*CompassReader, error) {
 			return nil, fmt.Errorf("compass: could not open %v: %w", port, err)
 		}
 		reader := NewCompassReader(source)
+		// A live feed can go quiet: the device is put down, the sensor's
+		// orientation becomes ill-conditioned and it stops publishing a heading,
+		// or the process that feeds it is killed. A heading that stops arriving
+		// must stop being reported.
+		reader.SetHeadingMaxAge(headingStaleAfter)
 		reader.Start(context.Background())
 		return reader, nil
 	}

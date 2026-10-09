@@ -404,7 +404,7 @@ const (
 		"{PAGE_CONTENT}\n" +
 		"<\n" +
 		"-\n" +
-		"`a`F666`[Served by rngit {VERSION}`:/page/index.mu] - {GEN_TIME}`f"
+		"`a`F666`[Served by gorngit {VERSION}`:/page/index.mu] - {GEN_TIME}`f"
 
 	defaultFrontTemplate    = "> Groups\n\n{PAGE_CONTENT}"
 	defaultGroupTemplate    = "{PAGE_CONTENT}"

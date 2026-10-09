@@ -161,6 +161,105 @@ This differs from the `shell` domain, which is why the same code can run under
 - When a subprocess is unavoidable, use an absolute path, which skips
   `LookPath` and therefore the fatal call.
 
+### Test in the right place
+
+Run the daemons **from Termux or from the app**, and grep both the log and
+`logcat` for the string above.
+
+Do not test in `/data/local/tmp`. That directory runs as the `shell` uid, a
+different SELinux domain with a different seccomp policy, so it **does not
+reproduce Termux failures** — a binary that works there tells you nothing about a
+binary launched from an app.
+
+`gornsd`, `gorrcd` and `gorrcbot` all run under `untrusted_app` without `SIGSYS`,
+provided every subprocess is launched by absolute path. There is no other
+adjustment.
+
+---
+
+## Running a bundled binary from the app
+
+An Android app can ship a statically linked Go binary as a shared library and
+execute it. Put it in `jniLibs/<abi>/lib<name>.so` and it lands in the app's
+`nativeLibraryDir`, which is the one directory the platform both extracts and
+marks executable.
+
+**Execute it with `exec` directly.** On the tablet this project targets
+(`targetSdk 34`, API 36) that works, and the commonly suggested `linker64`
+fallback — invoking `/system/bin/linker64 <path>` — **does not**, because the
+kernel rejects a PIE executable that is not also a shared object:
+
+```
+linker64: unexpected e_type: 2
+```
+
+The practical consequences:
+
+- The binary's on-disk name is `lib<name>.so`; its `argv[0]` is not the name you
+  launched it by. A single-instance check that compares process names must
+  compare `argv[0]` against what you passed, not against a program name.
+- `nativeLibraryDir` is read-only and is replaced on every upgrade, so anything
+  the binary must persist belongs in `filesDir`, and must be passed to it.
+
+## One shared instance across two applications
+
+Reticulum can serve one instance to several local clients, and on Android those
+clients can be **different applications**. The mechanism is a TCP shared
+instance with `require_shared_instance = yes`, and it works across the app
+boundary: with the stack owned by one app, a client running in Termux attaches
+to it and both hold established connections:
+
+```
+tcp 127.0.0.1:37428 (LISTEN)          <- the owning app
+tcp 127.0.0.1:37428 (ESTABLISHED)    <- the owning app's own client
+tcp 127.0.0.1:37428 (ESTABLISHED)    <- a client in another app
+```
+
+Two details make this work:
+
+- Clients need their own configuration directory containing only
+  `require_shared_instance = yes` and the shared-instance port. Do **not** point a
+  client at the owner's configuration file, which carries the interfaces and the
+  transport role.
+- `/proc/net/tcp` is not readable from Termux, though it is from `adb shell`. To
+  test the port from inside the app, use bash's `/dev/tcp`.
+
+Choose a port that is not already taken. `37428` is Reticulum's shared instance and
+`37429` is its control port, so anything else an app needs must go elsewhere.
+
+## Sensors: JSON in, NMEA out
+
+Android hands a program Java objects, not bytes, so the clean seam is a converter.
+A small foreground service translates `LocationManager` and `SensorManager`
+readings into one JSON object per line, and `gonsensor` turns that into the
+NMEA-0183 sentences that a GNSS reader already parses:
+
+```
+LocationManager / SensorManager
+      -> JSON lines            (the Android side: platform objects in, JSON out)
+      -> gonsensor             (this repository: JSON in, NMEA out)
+      -> named pipe or socket
+      -> gorrcbot or gonomadnet
+```
+
+Three things that matter when you build one:
+
+- **Keep the bridge beside the parser.** `gonsensor` lives in the package that owns
+  the NMEA parser, so "parse what we emit and get the same fix back" is a test. A
+  bridge tested against a second, independently written parser only proves the two
+  parsers agree — not that either is right.
+- **Hold a named pipe open at both ends for the life of the service.** A reader that
+  opens a FIFO `O_RDONLY` **blocks forever** when no process holds the write end, and
+  there is no error and no timeout: the bot simply never starts. Open it `O_RDWR` and
+  hold it. An `O_RDWR` holder counts as both ends, which is what makes a reader
+  restart safe.
+- **Use sockets, not pipes, across applications.** A FIFO in the owner's private
+  storage cannot be reached by a client in Termux; a loopback socket can.
+
+Sensors on Android generally do **not** keep the device awake, so sampling at a
+useful rate needs a foreground service plus a partial wake lock. Otherwise the
+readings stop when the screen does, and they stop quietly.
+
 ---
 
 ## Verifying a deployment

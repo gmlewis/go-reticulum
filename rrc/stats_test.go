@@ -75,7 +75,7 @@ func TestFormatStatsGolden(t *testing.T) {
 	}
 	got := s.FormatStats(cfg, snap)
 	want := strings.Join([]string{
-		"rrcd " + rns.VERSION + " stats",
+		"gorrcd " + rns.VERSION + " stats",
 		"uptime_s=100.0",
 		"clients_total=2 clients_identified=1 clients_welcomed=2",
 		"rooms=1 memberships=2",
@@ -115,7 +115,7 @@ func TestFormatStatsEmptyCounters(t *testing.T) {
 	snap := StatsSnapshot{}
 	got := s.FormatStats(cfg, snap)
 	want := strings.Join([]string{
-		"rrcd " + rns.VERSION + " stats",
+		"gorrcd " + rns.VERSION + " stats",
 		"uptime_s=0.0",
 		"clients_total=0 clients_identified=0 clients_welcomed=0",
 		"rooms=0 memberships=0",

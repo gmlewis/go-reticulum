@@ -607,10 +607,10 @@ func processInitiatorTTYInputChunk(data []byte, state *initiatorTTYInputState) (
 func writeInitiatorEscapeHelp(w io.Writer) {
 	_, _ = w.Write([]byte(`
 
-Supported rnsh escape sequences:")
-  ~~  Send the escape character by typing it twice")
-  ~.  Terminate session and exit immediately")
-  ~L  Toggle line-interactive mode")
+Supported gornsh escape sequences:
+  ~~  Send the escape character by typing it twice
+  ~.  Terminate session and exit immediately
+  ~L  Toggle line-interactive mode
   ~?  Display this quick reference
 (Escape sequences are only recognized immediately after newline)
 `))

@@ -3,9 +3,10 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-// This file holds the byte-exact first-run templates the daemon writes when
-// its state files are missing. The template text is copied verbatim from the
-// Python rrcd CLI bootstrap; the two path lines are emitted by interpolating
+// This file holds the first-run templates the daemon writes when its state
+// files are missing. The template text is Python's, copied verbatim, with one
+// exception: wherever it names the program it names this port's own gorrcd
+// rather than rrcd. The two path lines are emitted by interpolating
 // Python-repr-quoted paths.
 
 package main
@@ -23,11 +24,19 @@ import (
 
 // defaultConfigTemplate is the first-run rrcd.toml template. The markers
 // "{{identity_path}}" and "{{room_registry_path}}" are replaced with the
-// Python-repr-quoted paths at render time; every other byte is fixed.
-const defaultConfigTemplate = `# rrcd configuration (TOML)
+// Python-repr-quoted paths at render time; every other byte is Python's except
+// the program's own name.
+//
+// Two values in it are this port's own rather than Python's, and both are the
+// program naming itself. hub_name is the advertised name clients show beside
+// the hub's version: Python writes its own program name there, and a Go hub that
+// copied it would appear on every client as the Python program at a version that
+// program never had. The prose that tells the operator how to run the daemon
+// likewise says gorrcd, because a Go install has no rrcd to run.
+const defaultConfigTemplate = `# gorrcd configuration (TOML)
 #
 # This file was created on first run.
-# Edit it, then start rrcd again.
+# Edit it, then start gorrcd again.
 
 [hub]
 
@@ -35,11 +44,11 @@ const defaultConfigTemplate = `# rrcd configuration (TOML)
 # If left unset, Reticulum will choose its default (usually ~/.reticulum).
 configdir = ""
 
-# Where rrcd stores its persistent identity (Reticulum Identity file).
+# Where gorrcd stores its persistent identity (Reticulum Identity file).
 identity_path = {{identity_path}}
 
 # Separate room registry file (registered rooms, topics, modes, bans, etc).
-# This file is maintained by rrcd. You can edit it manually, but keep it valid TOML.
+# This file is maintained by gorrcd. You can edit it manually, but keep it valid TOML.
 # A running hub can reload both rrcd.toml and rooms.toml with the /reload command.
 room_registry_path = {{room_registry_path}}
 
@@ -57,7 +66,7 @@ announce_on_start = true
 announce_period_s = 0.0
 
 # Hub identity fields.
-hub_name = "rrc"
+hub_name = "gorrcd"
 greeting = ""
 
 # Note: The hub 'greeting' is the MOTD (message of the day) delivered after WELCOME.
@@ -103,7 +112,7 @@ ping_timeout_s = 0.0
 
 # Large payload transfer via RNS.Resource
 #
-# When a message exceeds the link MTU, rrcd can use RNS.Resource for reliable
+# When a message exceeds the link MTU, gorrcd can use RNS.Resource for reliable
 # transfer instead of manual chunking. A small RESOURCE_ENVELOPE is sent first,
 # followed by the payload as an RNS.Resource.
 #
@@ -118,7 +127,7 @@ resource_expectation_ttl_s = 30.0
 
 [logging]
 
-# Log level for rrcd itself.
+# Log level for gorrcd itself.
 level = "INFO"
 
 # Log level for Reticulum/RNS Python logging (if used by your install).
@@ -135,11 +144,14 @@ format = "%(asctime)s %(levelname)s %(name)s[%(threadName)s]: %(message)s"
 datefmt = ""
 `
 
-// defaultRoomsTemplate is the first-run rooms.toml template, byte-identical to the Python original (sha256 79ea3400117e265b0513c2fc0f86059cf20a8a6d207f8325e5eed2a6023b633b, 1081 bytes).
-const defaultRoomsTemplate = `# rrcd room registry (TOML)
+// defaultRoomsTemplate is the first-run rooms.toml template. Every byte is
+// Python's (sha256 79ea3400117e265b0513c2fc0f86059cf20a8a6d207f8325e5eed2a6023b633b,
+// 1081 bytes) except the program's own name in the prose, which is this port's
+// gorrcd rather than rrcd.
+const defaultRoomsTemplate = `# gorrcd room registry (TOML)
 #
 # This file stores registered rooms and their moderation state.
-# It is maintained by rrcd and may be updated while rrcd is running.
+# It is maintained by gorrcd and may be updated while gorrcd is running.
 #
 # Schema
 # ------

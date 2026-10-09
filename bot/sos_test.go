@@ -57,6 +57,62 @@ func directTexts(fake *fakeHub) []string {
 	return append([]string(nil), fake.direct...)
 }
 
+// TestSOSGNSSContextOmitsUnreportedQuality asserts the receiver note attached
+// to a beacon states only what the receiver published. A rescue party reading
+// "0 satellites" would take it for a measurement, and a platform location API
+// supplies no such count at all.
+func TestSOSGNSSContextOmitsUnreportedQuality(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		fix  GPSFix
+		want []string
+		gone []string
+	}{
+		{
+			name: "both reported",
+			fix:  GPSFix{Valid: true, Satellites: 9, HDOP: 0.8, FixQuality: 1},
+			want: []string{"9 satellites", "HDOP 0.8"},
+		},
+		{
+			name: "neither reported",
+			fix:  GPSFix{Valid: true, FixQuality: 1},
+			want: []string{"satellite count not reported", "HDOP not reported"},
+			gone: []string{"0 satellites", "HDOP 0"},
+		},
+		{
+			name: "sats reported only",
+			fix:  GPSFix{Valid: true, Satellites: 5, FixQuality: 1},
+			want: []string{"5 satellites", "HDOP not reported"},
+			gone: []string{"HDOP 0"},
+		},
+		{
+			name: "a measured sea-level altitude is not missing",
+			fix:  GPSFix{Valid: true, AltitudeM: 0, HasAltitude: true, FixQuality: 1},
+			want: []string{"0 m MSL"},
+			gone: []string{"altitude not reported"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := sosGNSSContext(tc.fix)
+			for _, want := range tc.want {
+				if !strings.Contains(got, want) {
+					t.Errorf("sosGNSSContext = %q, want it to state %q", got, want)
+				}
+			}
+			for _, gone := range tc.gone {
+				if strings.Contains(got, gone) {
+					t.Errorf("sosGNSSContext = %q, want no invented %q", got, gone)
+				}
+			}
+		})
+	}
+}
+
 // TestSOSStoreRoundTripsThroughDisk asserts a beacon survives a restart: a new
 // store over the same directory finds it, with the same id and details.
 func TestSOSStoreRoundTripsThroughDisk(t *testing.T) {
