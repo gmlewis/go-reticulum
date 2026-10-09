@@ -63,13 +63,31 @@ func (r *Reticulum) startRPCListener() error {
 // identity. The recovery watcher can start the RPC listener on an instance that
 // is already running (takeOverSharedInstance), so the key is written under the
 // instance mutex that its readers take.
+//
+// The identity is the *persistent* transport identity (Python
+// Reticulum.py:355-356 derives the key from Transport.internal_identity()), not
+// the operative one. A process that does not own the transport replaces its
+// operative identity with an ephemeral one of its own (Transport.py:234-237), so
+// a client that keyed off that value would present a key the instance never
+// published and every RPC would come back "unauthorized" — which is what every
+// attached client saw: interface stats, path tables and the rest of the RPC
+// surface were unreachable from the very clients they exist for.
 func (r *Reticulum) ensureRPCKey() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if len(r.rpcKey) > 0 || r.transport == nil || r.transport.Identity() == nil {
+	if len(r.rpcKey) > 0 || r.transport == nil {
 		return
 	}
-	r.rpcKey = FullHash(r.transport.Identity().GetPrivateKey())
+	identity := r.transport.Identity()
+	if getter, ok := r.transport.(interface{ PersistentIdentity() *Identity }); ok {
+		if persistent := getter.PersistentIdentity(); persistent != nil {
+			identity = persistent
+		}
+	}
+	if identity == nil {
+		return
+	}
+	r.rpcKey = FullHash(identity.GetPrivateKey())
 }
 
 // rpcAuthKey returns the shared-instance RPC key. The key is published once and
