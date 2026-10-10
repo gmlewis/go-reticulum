@@ -45,10 +45,21 @@ func setupTwoRouterTCPNetwork(t *testing.T) (routerA, routerB *Router, destA, de
 	port := l.Addr().(*net.TCPAddr).Port
 	_ = l.Close()
 
-	// B is the TCP server.
+	// B is the TCP server. Its accepted client must be registered with the
+	// transport as it is accepted, exactly as production does it (rns.go's
+	// TCPServerInterface onConnect calls Transport.RegisterInterface for every
+	// spawned client, mirroring TCPInterface.py:648). That registered client is
+	// the interface that actually transmits: a listening server does not send
+	// (TCPInterface.py:647, process_outgoing is `pass`).
+	//
+	// Registering only the server leaves B with no way to send anything to A at
+	// all, and every announce B emits is dropped at the listener — which is how
+	// this fixture failed once the server's duplicate fan-out was removed.
 	serverB, err := interfaces.NewTCPServerInterface("server-b", "127.0.0.1", port, func(data []byte, iface interfaces.Interface) {
 		tsB.Inbound(data, iface)
-	}, nil)
+	}, func(iface interfaces.Interface) {
+		tsB.RegisterInterface(iface)
+	})
 	if err != nil {
 		t.Fatalf("NewTCPServerInterface B: %v", err)
 	}
