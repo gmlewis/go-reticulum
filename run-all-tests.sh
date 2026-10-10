@@ -109,6 +109,24 @@ PY
 # ---------------------------------------------------------------------------
 
 echo "Running errcheck..."
+# The version is asserted, not assumed. errcheck's checks are not stable across
+# releases: v1.30.0 added a check for discarding the value received from an
+# error-typed channel, and that single upgrade turned five lines which had been
+# green since August into failures — none of them touched by the change being
+# tested, and invisible on a machine still running v1.20.0. A gate whose verdict
+# depends on which errcheck happens to be on PATH is not a gate; it is a coin toss
+# that costs an hour to understand when it lands.
+#
+# This repository has no errcheck job in CI (.github/workflows/build.yml runs only
+# the two test jobs), so there is no counterpart to keep in step — unlike
+# go-nomadnet, whose build.yml installs the same version this pins.
+ERRCHECK_PIN="v1.30.0"
+ERRCHECK_HAVE="$(errcheck -version 2>/dev/null | awk '{print $2}' || true)"
+if [ "${ERRCHECK_HAVE}" != "${ERRCHECK_PIN}" ]; then
+    echo "FAIL: errcheck ${ERRCHECK_HAVE:-<not installed>} is on PATH, want ${ERRCHECK_PIN}" >&2
+    echo "      install it with: go install github.com/kisielk/errcheck@${ERRCHECK_PIN}" >&2
+    exit 1
+fi
 ERRCHECK_LOG="${REPO_ROOT}/errcheck.log"
 if ! errcheck ./... >"${ERRCHECK_LOG}" 2>&1; then
     echo "FAIL: errcheck reported unchecked errors (see ${ERRCHECK_LOG}):" >&2
