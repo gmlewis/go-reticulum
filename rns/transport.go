@@ -3408,6 +3408,31 @@ func (ts *TransportSystem) cullStaleTransportTables(now time.Time) {
 						ts.markPathUnresponsiveLocked(entry.DestinationHash)
 					}
 				}
+			} else if !pathRequestThrottle {
+				// The remaining arrival at a dead link request: it went out along
+				// a path of more than one hop and was never answered. Python's
+				// four conditions (Transport.py:709-757) do not cover this case,
+				// and it is the one the operator hit on 2026-10-10 — a link
+				// request over a 2-hop path got no answer for its full 18 s
+				// establishment window while a fresh client fetched the same
+				// page over a 2-hop path in 529 ms and validated a link over a
+				// 4-hop path in 43 ms. The hop count was never the problem: the
+				// next hop could no longer deliver, nothing invalidated the
+				// path, and the only way to find out was to time out.
+				//
+				// Leaving it unhandled meant the path stayed in the table
+				// marked responsive, so the retry picked the same dead next hop
+				// and paid the whole window again. Marking it unresponsive is
+				// what lets a later announce take over the entry (the
+				// unresponsive-replacement path above), and requesting the path
+				// starts that lookup now rather than at the next announce.
+				ts.logger.Pathing("Trying to rediscover path for %x since an attempted link over a %v-hop path was never established", entry.DestinationHash, pathEntry.Hops)
+				pathRequestConditions = true
+				if ts.enabled {
+					if entry.ReceivedInterface == nil || entry.ReceivedInterface.Mode() != interfaces.ModeBoundary {
+						ts.markPathUnresponsiveLocked(entry.DestinationHash)
+					}
+				}
 			}
 
 			if pathRequestConditions {

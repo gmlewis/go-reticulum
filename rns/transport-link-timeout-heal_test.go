@@ -268,3 +268,80 @@ func TestUnvalidatedLinkTableTimeoutMarksUnresponsiveAndRequestsPath(t *testing.
 		t.Errorf("path request for %x was not initiated, want rediscovery requested", dest.Hash)
 	}
 }
+
+// TestMultiHopLinkTimeoutMarksUnresponsiveAndRequestsPath pins the case the
+// operator actually hit: a link request sent along a path of MORE THAN ONE hop
+// that is never answered.
+//
+// The recovery block recognised four arrivals at a timed-out link request — the
+// path is now missing; the link was originated by a local client (hops 0); the
+// destination was previously one hop away; the link initiator is one hop away —
+// and a multi-hop timeout matches none of them. The link entry was culled, and
+// then nothing: the path stayed in the table, still marked responsive, so the
+// next attempt selected the same next hop and paid another full establishment
+// window. Observed on 2026-10-10 as a link request over a 2-hop path that got
+// no answer for its whole 18 s timeout, while a fresh client fetched the same
+// page over a 2-hop path in 529 ms and validated a link over a 4-hop path in
+// 43 ms. Hop count was never the problem — the path was simply never
+// invalidated, and the client could only find out by timing out.
+//
+// Python has the same four conditions (Transport.py:709-757) and its own
+// comment admits the shape is a known dead end ("This might result in the path
+// re-resolution only being able to happen once … Is this problematic, or does
+// it actually not matter?"). It does matter: it is one full link-establishment
+// timeout, every time, for a destination that is perfectly reachable by
+// another route.
+func TestMultiHopLinkTimeoutMarksUnresponsiveAndRequestsPath(t *testing.T) {
+	t.Parallel()
+	ts := NewTransportSystem(nil)
+	ts.identity = mustTestNewIdentity(t, true)
+	ts.SetEnabled(true)
+
+	iface := newAFI("Local TCP Hub", interfaces.ModeFull)
+	id := mustTestNewIdentity(t, true)
+	dest, err := NewDestination(nil, id, DestinationIn, DestinationSingle, "hub-multihop")
+	if err != nil {
+		t.Fatalf("NewDestination: %v", err)
+	}
+
+	ts.mu.Lock()
+	ts.pathTable[string(dest.Hash)] = &PathEntry{
+		Hops:         2,
+		Interface:    iface,
+		Expires:      time.Now().Add(time.Hour),
+		Timestamp:    time.Now(),
+		Unresponsive: false,
+	}
+
+	linkID := bytes.Repeat([]byte{0x55}, 16)
+	ts.linkTable[string(linkID)] = &LinkEntry{
+		DestinationHash: dest.Hash,
+		Hops:            2,
+		RemainingHops:   2,
+		Validated:       false,
+		ProofTimeout:    time.Now().Add(-1 * time.Second), // Timed out
+		Timestamp:       time.Now().Add(-10 * time.Second),
+	}
+	ts.mu.Unlock()
+
+	ts.cullStaleTransportTables(time.Now())
+
+	ts.mu.Lock()
+	_, inLinkTable := ts.linkTable[string(linkID)]
+	entry, hasPath := ts.pathTable[string(dest.Hash)]
+	_, hasPR := ts.pathRequests[string(dest.Hash)]
+	ts.mu.Unlock()
+
+	if inLinkTable {
+		t.Errorf("link %x still in linkTable, want culled", linkID)
+	}
+	if !hasPath {
+		t.Fatal("pathTable entry was deleted; transport node should mark unresponsive")
+	}
+	if !entry.Unresponsive {
+		t.Errorf("path for %x over a %v-hop route timed out and was left responsive, so the next attempt reuses it", dest.Hash, entry.Hops)
+	}
+	if !hasPR {
+		t.Errorf("path request for %x was not initiated, want rediscovery requested", dest.Hash)
+	}
+}

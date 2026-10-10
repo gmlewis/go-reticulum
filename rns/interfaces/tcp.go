@@ -791,30 +791,31 @@ func (tsi *TCPServerInterface) handleConnection(conn net.Conn) {
 	}
 }
 
-// Send forwards the payload to each active spawned client connection.
+// Send carries nothing, because a listening server does not transmit.
+//
+// Every client a server accepts is registered with the transport in its own
+// right: rns.go's onConnect calls Transport.RegisterInterface for each spawned
+// client, mirroring Python's accept path, which calls
+// RNS.Transport.add_interface(spawned_interface) (TCPInterface.py:648). That
+// accepted client is the interface that transmits, while the listener's own
+// process_outgoing is `pass` (TCPInterface.py:647-648). Python therefore has
+// exactly one delivery path to an accepted client, and it is the client's own.
+//
+// Go had two. This method fanned the payload out to each spawned client while
+// the transport's broadcast fallback also wrote to every registered interface,
+// each spawned client among them, so every frame sent to a hub's client
+// arrived twice: at a raw TCP socket, 20 frames read and 10 distinct, and
+// 43.9% of the operator's client's inbound packets were exact immediate
+// duplicates. Every duplicated announce doubled a hub's rebroadcast work,
+// which is what showed up as path-table churn, and then as link requests sent
+// into a hole that timed out for their whole establishment window.
+//
+// The transport still calls this for the listener, because its fan-out does
+// not know which interfaces are listeners. It must therefore succeed rather
+// than fail: the delivery has already happened, on the client's own registered
+// interface, and a non-nil error here would be read as a failed transmission
+// and would invalidate paths through a listener that was working.
 func (tsi *TCPServerInterface) Send(data []byte) error {
-	// Snapshot the live spawned clients under the lock, then send to each
-	// WITHOUT holding tsi.mu. Holding the lock across the sends serialized
-	// the clients (one stalled peer blocked every other) and also blocked
-	// acceptLoop's handleConnection, which needs the same lock to register
-	// a new client. data is read-only here: each TCPClientInterface.Send
-	// builds its own framed copy, so it is safe to share across goroutines.
-	tsi.mu.Lock()
-	clients := make([]*TCPClientInterface, 0, len(tsi.spawnedInterfaces))
-	for _, ci := range tsi.spawnedInterfaces {
-		if ci != nil && ci.Status() {
-			clients = append(clients, ci)
-		}
-	}
-	tsi.mu.Unlock()
-
-	for _, ci := range clients {
-		go func(ci *TCPClientInterface) {
-			if err := ci.Send(data); err != nil {
-				log.Printf("Failed to send to spawned client %v: %v", ci.name, err)
-			}
-		}(ci)
-	}
 	return nil
 }
 
