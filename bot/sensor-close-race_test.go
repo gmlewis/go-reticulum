@@ -40,7 +40,14 @@ type blockingDial struct {
 
 func newBlockingDial(conn net.Conn) *blockingDial {
 	return &blockingDial{
-		entered: make(chan struct{}),
+		// Buffered, because the signal must survive being sent before it is waited
+		// for. The dial parks below whatever happens, so the reader reaching it first
+		// is not a lost handshake — but on an unbuffered channel the send would fall
+		// through to the default arm and be dropped, and the test would then wait out
+		// its whole bound and report a reader that never reached the dial. That is a
+		// scheduling race in the test, not in the code it is guarding, and it is what
+		// made this test fail only under load.
+		entered: make(chan struct{}, 1),
 		release: make(chan struct{}),
 		conn:    conn,
 	}
