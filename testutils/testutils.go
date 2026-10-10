@@ -10,6 +10,7 @@ package testutils
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"net"
 	"os"
@@ -101,12 +102,37 @@ func newTempDir(prefix string) (string, error) {
 // cleanTempDir removes a directory created by newTempDir, retiring it from the
 // interruption registry only once it is actually gone.
 func cleanTempDir(dir string) error {
+	// The Go module cache leaves everything it downloads read-only — 0555
+	// directories holding 0444 files — and a scratch GOPATH that a test built is
+	// exactly that. A read-only directory cannot give up the entries inside it, so
+	// the tree is made writable before it is removed. Without this a test whose
+	// module graph has any requirement at all fails in cleanup rather than in what
+	// it was testing, which is how the first dependency this module took broke a
+	// test that never mentions it.
+	makeTreeWritable(dir)
 	err := removeAllWithRetry(dir)
 	if err == nil {
 		unregisterTempDir(dir)
 	}
 
 	return err
+}
+
+// makeTreeWritable gives the owner write permission to path and everything under
+// it, best effort: whatever cannot be reached is left to the removal below, which
+// reports what is still there.
+func makeTreeWritable(path string) {
+	_ = filepath.WalkDir(path, func(entry string, info fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		mode := os.FileMode(0o600)
+		if info.IsDir() {
+			mode = 0o700
+		}
+		_ = os.Chmod(entry, mode)
+		return nil
+	})
 }
 
 func removeAllWithRetry(path string) error {
@@ -121,6 +147,9 @@ func removeAllWithRetry(path string) error {
 		if !isRetriableRemoveAllError(err) {
 			return err
 		}
+		// A tree something else is still writing to is retried from a clean slate:
+		// whatever appeared since the last attempt is read-only like the rest of it.
+		makeTreeWritable(path)
 		time.Sleep(retryDelay)
 	}
 

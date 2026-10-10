@@ -93,6 +93,7 @@ prefixes=(
   gogit-clone- gogit-remote-rns- gogit-seed- gogit-reclone-
   golxmd-test- golxmd-filter
   pluginstore- prettysize-parity- prettyspeed-parity- testutils-signal-cleanup-
+  readonly-cleanup-
   rns-test-
   rns-discovery- rns-kd- rns-payload-sizes rns-local-client-hops
   rns-shared-serving rns-both-clients rns-ratchet-test-
