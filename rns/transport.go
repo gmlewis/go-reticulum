@@ -2609,6 +2609,44 @@ func (ts *TransportSystem) reframeAnnounceForTransport(raw []byte, what string) 
 	return rebuilt
 }
 
+// controlSendAttempts is how many times one control frame — a path response, a
+// forwarded path request, a rebroadcast — is put on the wire before the send is
+// treated as lost.
+//
+// Python sends every one of these once and forgets. On a flapping uplink, where
+// a TCP peer's connection is replaced under the write, that single failure loses
+// a request, a response or an announce permanently with nothing but a log line:
+// the requestor never learns the path and has to time out and ask again. The
+// frames are small and idempotent, so one more attempt recovers the common
+// transient case. What stops the attempts is not this count but the interface's
+// own status: a peer that is genuinely down reports down, and the caller then
+// takes the same one-per-transition path invalidation it always did.
+const controlSendAttempts = 2
+
+// sendControlFrame puts one already-framed control frame on iface, retrying a
+// transient failure once, and reports the down transition when every attempt
+// fails. It is the single place where a control-frame write failure becomes a
+// transport-level action, so no caller can silently drop the frame.
+func (ts *TransportSystem) sendControlFrame(iface interfaces.Interface, raw []byte, what string) error {
+	wasUp := iface.Status()
+	var err error
+	for range controlSendAttempts {
+		if err = iface.Send(raw); err == nil {
+			return nil
+		}
+		if !iface.Status() {
+			// The interface reports itself down: there is nothing left to
+			// retry on.
+			break
+		}
+	}
+	if wasUp && ts.claimDownNotify(iface) {
+		ts.logger.Error("Failed %v on %v: %v", what, iface.Name(), err)
+		ts.InvalidatePathsViaInterface(iface)
+	}
+	return err
+}
+
 // dispatchForwardSend sends one forwarded/rebroadcast frame to a single
 // outbound interface, applying IFAC egress and invalidating paths on a real
 // failure. It is meant to run in its own goroutine so a stalled peer — one
@@ -2631,13 +2669,10 @@ func (ts *TransportSystem) dispatchForwardSend(iface interfaces.Interface, raw [
 		raw = processed
 	}
 
-	wasUp := iface.Status()
-	if err := iface.Send(raw); err != nil {
-		if wasUp && ts.claimDownNotify(iface) {
-			ts.logger.Error("Failed %v on %v: %v", what, iface.Name(), err)
-			ts.InvalidatePathsViaInterface(iface)
-		}
-	}
+	// sendControlFrame logs a real failure and invalidates the paths for a
+	// down transition; this goroutine has no caller to report to, so the
+	// returned error needs no further handling here.
+	_ = ts.sendControlFrame(iface, raw, what)
 }
 
 // WaitOutboundSends blocks until every outbound send dispatched on its own
@@ -3201,13 +3236,18 @@ func (ts *TransportSystem) forwardPathResponseToRequesters(packet *Packet, sourc
 		}
 		jobs = append(jobs, sendJob{iface: requesterIface, raw: raw})
 	}
+	if len(jobs) == 0 {
+		// Nothing could be served: every requestor had gone down, or was the
+		// source itself. Keep the pending entry. It is the only record of who
+		// asked, and deleting it here forgets the requestor for good — the late
+		// response it is still waiting for then has nowhere to go. The cull at
+		// pendingPathRequestTTL already bounds how long the entry is kept.
+		ts.mu.Unlock()
+		return false
+	}
 	delete(ts.pendingPathRequests, destinationKey)
 	delete(ts.pendingPathRequestAt, destinationKey)
 	ts.mu.Unlock()
-
-	if len(jobs) == 0 {
-		return false
-	}
 
 	// The response MUST be re-framed as Header2 with this node's transport
 	// identity before egress, mirroring Python: a path request answered
@@ -3568,8 +3608,11 @@ func (ts *TransportSystem) handlePathRequest(data []byte, packet *Packet) bool {
 				raw = processed
 			}
 
-			if err := packet.ReceivingInterface.Send(raw); err != nil {
-				ts.logger.Error("Failed to send path response announce on %v: %v", packet.ReceivingInterface.Name(), err)
+			if err := ts.sendControlFrame(packet.ReceivingInterface, raw, "path response announce"); err != nil {
+				// The answer could not be delivered even after a retry. The
+				// request is still consumed — Python's elif chain answered it
+				// here too — but the requestor is told nothing, so the loss is
+				// at least reported rather than left as a bare log line.
 				return true
 			}
 			return true
@@ -3643,8 +3686,12 @@ func (ts *TransportSystem) handlePathRequest(data []byte, packet *Packet) bool {
 			}
 			raw = processed
 		}
-		if err := packet.ReceivingInterface.Send(raw); err != nil {
-			ts.logger.Error("Failed to send cached path response announce on %v: %v", packet.ReceivingInterface.Name(), err)
+		if err := ts.sendControlFrame(packet.ReceivingInterface, raw, "cached path response announce"); err != nil {
+			// Answered from cache but not deliverable, even after a retry. The
+			// request is consumed here, so nothing else will answer it; the
+			// failure is reported by sendControlFrame and the requestor's own
+			// retry is what recovers it.
+			return true
 		}
 		return true
 	}

@@ -33,6 +33,7 @@ func TestSendNoticeEnvelopeShape(t *testing.T) {
 	_, hub := newHookTestHub(t)
 	var got []map[any]any
 	hub.onSend = func(env map[any]any) { got = append(got, env) }
+	hub.transmit = func([]byte) error { return nil }
 	hub.lock.Lock()
 	hub.Rooms["general"] = true
 	hub.lock.Unlock()
@@ -84,6 +85,7 @@ func TestSendNoticeRecordsLocally(t *testing.T) {
 
 	_, hub := newHookTestHub(t)
 	hub.onSend = func(map[any]any) {}
+	hub.transmit = func([]byte) error { return nil }
 	hub.lock.Lock()
 	hub.Rooms["general"] = true
 	hub.lock.Unlock()
@@ -118,6 +120,7 @@ func TestSendNoticeCollapsesItsOwnFanoutEcho(t *testing.T) {
 	_, hub := newHookTestHub(t)
 	var echo map[any]any
 	hub.onSend = func(env map[any]any) { echo = env }
+	hub.transmit = func([]byte) error { return nil }
 	hub.lock.Lock()
 	hub.Rooms["general"] = true
 	hub.lock.Unlock()
@@ -158,6 +161,7 @@ func TestSendNoticeRejectsBadInput(t *testing.T) {
 		_, hub := newHookTestHub(t)
 		var sent int
 		hub.onSend = func(map[any]any) { sent++ }
+		hub.transmit = func([]byte) error { return nil }
 		_, err := hub.SendNotice("", "hi")
 		if !errors.Is(err, ErrNoticeRoomRequired) {
 			t.Fatalf("error = %v, want ErrNoticeRoomRequired", err)
@@ -172,6 +176,7 @@ func TestSendNoticeRejectsBadInput(t *testing.T) {
 		_, hub := newHookTestHub(t)
 		var sent int
 		hub.onSend = func(map[any]any) { sent++ }
+		hub.transmit = func([]byte) error { return nil }
 		_, err := hub.SendNotice("general", "   ")
 		if !errors.Is(err, ErrNoticeBodyEmpty) {
 			t.Fatalf("error = %v, want ErrNoticeBodyEmpty", err)
@@ -186,6 +191,7 @@ func TestSendNoticeRejectsBadInput(t *testing.T) {
 		_, hub := newHookTestHub(t)
 		var sent int
 		hub.onSend = func(map[any]any) { sent++ }
+		hub.transmit = func([]byte) error { return nil }
 		_, err := hub.SendNotice("general", strings.Repeat("x", rns.MDU*2))
 		if err == nil {
 			t.Fatal("oversized SendNotice = nil error, want an error")
@@ -202,6 +208,7 @@ func TestSendNoticeRejectsBadInput(t *testing.T) {
 		t.Parallel()
 		_, hub := newHookTestHub(t)
 		hub.onSend = func(map[any]any) {}
+		hub.transmit = func([]byte) error { return nil }
 		hub.lock.Lock()
 		hub.Rooms["general"] = true
 		hub.lock.Unlock()

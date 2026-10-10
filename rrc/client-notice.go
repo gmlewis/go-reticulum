@@ -73,7 +73,11 @@ func (h *RRCHub) SendNotice(room, text string) (string, error) {
 	// The body is remembered BEFORE the send so a fanout echo that races back
 	// ahead of the local record is still collapsed (see collapseSelfEcho).
 	h.rememberSentBody("notice", room, text, ts)
-	h.sendEnv(env)
+	// The notice is recorded as this client's own whether or not it reached the
+	// hub — that is what the local row means — but the drop is returned, so a
+	// caller that can act on it (the bot contract) is not left believing the
+	// room saw it.
+	sendErr := h.sendEnv(env)
 
 	h.recordNotice(&RRCMessage{
 		Kind: "notice",
@@ -84,5 +88,5 @@ func (h *RRCHub) SendNotice(room, text string) (string, error) {
 		Ts:   ts,
 	})
 
-	return hexString(mid), nil
+	return hexString(mid), sendErr
 }

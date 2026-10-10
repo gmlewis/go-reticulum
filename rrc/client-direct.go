@@ -114,8 +114,9 @@ func (h *RRCHub) SendDirectNotice(peerHash []byte, text string) error {
 			payload, rns.MDU)
 	}
 
-	h.sendEnv(env)
-	return nil
+	// The drop is returned rather than only logged: the /msg path reports it
+	// instead of echoing a notice the peer never received.
+	return h.sendEnv(env)
 }
 
 // cborEncodedLen returns the encoded envelope length without building a packet.

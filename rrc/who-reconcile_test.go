@@ -37,6 +37,7 @@ func reconcileFixture(t *testing.T) (*RRCManager, *RRCHub, *[]string) {
 	hub.AddRoom("test4")
 	sent := &[]string{}
 	hub.onSend = func(env map[any]any) {
+		hub.transmit = func([]byte) error { return nil }
 		switch body := env[KeyBody].(type) {
 		case []byte:
 			*sent = append(*sent, string(body))

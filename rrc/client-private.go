@@ -81,6 +81,7 @@ func (h *RRCHub) SendPrivateCommand(text string) error {
 			payload, rns.MDU)
 	}
 
-	h.sendEnv(env)
-	return nil
+	// The drop is returned rather than only logged: the composer reports a
+	// private command the hub never received.
+	return h.sendEnv(env)
 }

@@ -37,6 +37,7 @@ func pingFixture(t *testing.T) (*RRCManager, *RRCHub, *[]map[any]any) {
 	hub.AddRoom("general")
 	sent := &[]map[any]any{}
 	hub.onSend = func(env map[any]any) {
+		hub.transmit = func([]byte) error { return nil }
 		*sent = append(*sent, env)
 	}
 	return mgr, hub, sent
@@ -128,7 +129,9 @@ func TestSendPingEnvelopeAndPendingTable(t *testing.T) {
 
 	_, hub, sent := pingFixture(t)
 
-	hub.SendPing("general")
+	if err := hub.SendPing("general"); err != nil {
+		t.Fatalf("SendPing: %v", err)
+	}
 
 	pings := filterByType(*sent, TypePing)
 	if len(pings) != 1 {
@@ -163,7 +166,9 @@ func TestPongClearsPendingPing(t *testing.T) {
 
 	_, hub, _ := pingFixture(t)
 
-	hub.SendPing("general")
+	if err := hub.SendPing("general"); err != nil {
+		t.Fatalf("SendPing: %v", err)
+	}
 	hub.lock.Lock()
 	if got := len(hub.pendingPings); got != 1 {
 		hub.lock.Unlock()
@@ -195,7 +200,9 @@ func TestPendingPingsExpireAfter15s(t *testing.T) {
 	hub.pendingPings["staleping"] = pendingPing{sentMs: NowMs() - pingExpiryMs - 1, room: "general"}
 	hub.lock.Unlock()
 
-	hub.SendPing("general")
+	if err := hub.SendPing("general"); err != nil {
+		t.Fatalf("SendPing: %v", err)
+	}
 
 	hub.lock.Lock()
 	defer hub.lock.Unlock()
@@ -223,7 +230,9 @@ func TestPingPongFlowNeverRenders(t *testing.T) {
 	hub.HandleData(pongEnvelope(t, []byte{1, 2, 3, 4, 5, 6, 7, 8}))
 
 	// The client's own ping, answered by a matching PONG: one system row.
-	hub.SendPing("general")
+	if err := hub.SendPing("general"); err != nil {
+		t.Fatalf("SendPing: %v", err)
+	}
 	hub.lock.Lock()
 	var body string
 	for key := range hub.pendingPings {

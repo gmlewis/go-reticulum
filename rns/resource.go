@@ -338,6 +338,25 @@ func Accept(packet *Packet, callback func(*Resource), startedCallback func(*Reso
 		return nil, fmt.Errorf("packet destination is not a link")
 	}
 
+	// A repeat advertisement for a transfer this link is already receiving is
+	// not a new transfer. The resource hash covers the payload together with the
+	// transfer's random hash, so an equal hash is the same data from the same
+	// sender: registering a second receiver for it gains nothing and costs a
+	// great deal. Every delivered part makes every registered receiver ask for
+	// more parts, so the copies multiply the request and part traffic instead of
+	// converging, and both stall. A sender re-advertises whenever it believes the
+	// transfer has not started — its advertisement watchdog fires, or the
+	// receiver's first request is lost on a multi-hop path — so this is
+	// reachable in normal operation, not only from a broken peer.
+	l.mu.Lock()
+	for _, existing := range l.incomingResources {
+		if existing != nil && bytes.Equal(existing.hash, adv.H) {
+			l.mu.Unlock()
+			return existing, nil
+		}
+	}
+	l.mu.Unlock()
+
 	r := &Resource{
 		link:              l,
 		initiator:         false,
@@ -962,6 +981,10 @@ func (r *Resource) requestNextLockedAt(now time.Time) error {
 		return err
 	}
 
+	// Python request_next records how many parts it just asked for (Resource.py:942
+	// resets outstanding_parts, :955 increments it per wanted hash). ReceivePart's
+	// gate reads it to send one request per round instead of one per part.
+	r.outstandingParts = requestedParts
 	r.lastActivity = now
 	return nil
 }
@@ -978,6 +1001,25 @@ func (r *Resource) Request(requestData []byte) error {
 	if len(requestData) < 1 {
 		return fmt.Errorf("invalid resource request packet")
 	}
+
+	// Mirror Python Resource.request (Resource.py:994-998): the first request
+	// for an advertised resource moves the sender to TRANSFERRING, and every
+	// request restarts the retry budget.
+	//
+	// Staying in ADVERTISED is not cosmetic. The advertisement watchdog keeps
+	// re-sending the advertisement on its own timer while the resource is
+	// ADVERTISED, and a receiver that sees the same advertisement again accepts
+	// it a second time — neither Python's Link.receive (Link.py:1048) nor this
+	// port dedups by resource hash — so one transfer becomes several. Each copy
+	// requests parts independently and every delivered part makes each copy
+	// request again, so the request/part traffic multiplies instead of
+	// converging and the link stalls with the transfer unfinished. Resetting
+	// the retry budget is the other half: a peer that is actively asking for
+	// parts must not have its sender give up mid-transfer.
+	if r.status != ResourceStatusTransferring {
+		r.status = ResourceStatusTransferring
+	}
+	r.retriesLeft = r.maxRetries
 
 	offset := 1
 	if requestData[0] == 0xFF {
@@ -1009,6 +1051,12 @@ func (r *Resource) Request(requestData []byte) error {
 				part.Sent = true
 				r.sentParts++
 			}
+			// Python stamps last_part_sent on every part it puts on the wire
+			// (Resource.py:1024). The AWAITING_PROOF watchdog measures its
+			// deadline from it, so a sender that never stamps it computes a
+			// deadline in the past and cancels a transfer whose parts are
+			// still going out.
+			r.lastPartSent = time.Now()
 			break
 		}
 	}
@@ -1128,6 +1176,7 @@ func (r *Resource) ReceivePart(packet *Packet) error {
 	partData := packet.Data
 	partHash := r.getMapHash(partData)
 	matched := false
+	newlyFilled := false
 	var progressCB func(*Resource)
 
 	// Check if part matches any in our hashmap
@@ -1137,6 +1186,14 @@ func (r *Resource) ReceivePart(packet *Packet) error {
 			if r.parts[i] != nil && r.parts[i].ReceivedData == nil {
 				r.parts[i].ReceivedData = partData
 				r.receivedCount++
+				// A part that was actually outstanding has arrived, so one
+				// fewer request is in flight. Python does the same subtraction
+				// in receive_part (Resource.py:880) and it is what makes the
+				// request gate below fire exactly once per round.
+				if r.outstandingParts > 0 {
+					r.outstandingParts--
+				}
+				newlyFilled = true
 				progressCB = r.progressCallback
 			}
 			break
@@ -1151,6 +1208,24 @@ func (r *Resource) ReceivePart(packet *Packet) error {
 		r.assemblyLock = true
 		shouldAssemble = true
 	}
+	// Python Resource.receive_part (Resource.py:903-909) asks for the next
+	// parts only when no request is already outstanding, and lets the window
+	// grow on each such round. Requesting after every single received part, as
+	// this port did, multiplies the request traffic by the number of parts in
+	// flight, and every extra request makes the sender re-send parts it has
+	// already sent: the link fills with duplicates, the watchdog shrinks the
+	// window to its floor to recover, and with nothing to grow it back the
+	// transfer then advances at two parts per backoff round — a page that
+	// should cross a two-hop path in a fraction of a second measured 138
+	// seconds. Progress is a part that was actually missing; a duplicate
+	// changes nothing here.
+	shouldRequest := !shouldAssemble && newlyFilled && r.outstandingParts <= 0
+	if shouldRequest && r.window < r.windowMax {
+		r.window++
+		if (r.window - r.windowMin) > (r.windowFlexibility - 1) {
+			r.windowMin++
+		}
+	}
 	r.mu.Unlock()
 
 	if progressCB != nil {
@@ -1164,7 +1239,7 @@ func (r *Resource) ReceivePart(packet *Packet) error {
 	if shouldAssemble {
 		r.link.logger.Debug("Received all %v resource parts for %x; assembling", r.totalParts, r.hash)
 		go r.Assemble()
-	} else {
+	} else if shouldRequest {
 		go func() {
 			if err := r.RequestNext(); err != nil {
 				r.link.logger.Debug("Failed to request next resource parts: %v", err)

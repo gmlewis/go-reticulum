@@ -74,6 +74,7 @@ func TestSendHelloTruncatesOverLongNick(t *testing.T) {
 
 	captured := &[]map[any]any{}
 	hub.onSend = func(env map[any]any) { *captured = append(*captured, env) }
+	hub.transmit = func([]byte) error { return nil }
 
 	hub.sendHello(nil)
 
@@ -106,6 +107,7 @@ func TestWelcomeLimitTruncatesNickToReceivedValue(t *testing.T) {
 
 	captured := &[]map[any]any{}
 	hub.onSend = func(env map[any]any) { *captured = append(*captured, env) }
+	hub.transmit = func([]byte) error { return nil }
 
 	hub.SendMessage("general", "hello")
 
@@ -132,6 +134,7 @@ func TestOverLongNickWireEnvelope(t *testing.T) {
 
 	captured := &[]map[any]any{}
 	hub.onSend = func(env map[any]any) { *captured = append(*captured, env) }
+	hub.transmit = func([]byte) error { return nil }
 
 	hub.JoinRoom("general", false)
 
@@ -158,6 +161,7 @@ func TestSendCommandTruncatesNick(t *testing.T) {
 
 	captured := &[]map[any]any{}
 	hub.onSend = func(env map[any]any) { *captured = append(*captured, env) }
+	hub.transmit = func([]byte) error { return nil }
 
 	if err := hub.SendCommand("/who general", "general"); err != nil {
 		t.Fatalf("SendCommand: %v", err)
@@ -183,6 +187,7 @@ func TestSendActionTruncatesNick(t *testing.T) {
 
 	captured := &[]map[any]any{}
 	hub.onSend = func(env map[any]any) { *captured = append(*captured, env) }
+	hub.transmit = func([]byte) error { return nil }
 
 	hub.SendAction("general", "waves")
 

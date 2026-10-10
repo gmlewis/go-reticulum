@@ -372,6 +372,7 @@ func TestHubSendCommand(t *testing.T) {
 
 	var captured map[any]any
 	hub.onSend = func(env map[any]any) { captured = env }
+	hub.transmit = func([]byte) error { return nil }
 
 	if err := hub.SendCommand("/list", "General"); err != nil {
 		t.Fatalf("SendCommand: %v", err)
@@ -419,6 +420,7 @@ func TestHubSendCommandRejectsNonCommand(t *testing.T) {
 
 	sent := false
 	hub.onSend = func(env map[any]any) { sent = true }
+	hub.transmit = func([]byte) error { return nil }
 
 	if err := hub.SendCommand("hello", "general"); err == nil {
 		t.Error("SendCommand(hello) returned nil error, want error for non-/ text")

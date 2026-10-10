@@ -20,6 +20,7 @@ func privateCapHub(t *testing.T, hubIdentity []byte) (*RRCHub, *[]map[any]any) {
 	_, hub := newHookTestHub(t)
 	sent := &[]map[any]any{}
 	hub.onSend = func(env map[any]any) { *sent = append(*sent, env) }
+	hub.transmit = func([]byte) error { return nil }
 
 	feedWelcome(t, hub, hubIdentity, true)
 	// A WELCOME makes the client answer on the link, so start from empty.
@@ -69,6 +70,7 @@ func TestSendPrivateCommandRequiresTheCapability(t *testing.T) {
 	_, hub := newHookTestHub(t)
 	sent := &[]map[any]any{}
 	hub.onSend = func(env map[any]any) { *sent = append(*sent, env) }
+	hub.transmit = func([]byte) error { return nil }
 	feedWelcome(t, hub, peerHash(0x70), false)
 	*sent = (*sent)[:0]
 
@@ -89,6 +91,7 @@ func TestSendPrivateCommandRequiresTheHubIdentity(t *testing.T) {
 	_, hub := newHookTestHub(t)
 	sent := &[]map[any]any{}
 	hub.onSend = func(env map[any]any) { *sent = append(*sent, env) }
+	hub.transmit = func([]byte) error { return nil }
 	hub.lock.Lock()
 	hub.HubCaps = map[any]any{int64(CapPrivateCommand): true}
 	hub.lock.Unlock()
@@ -149,6 +152,7 @@ func TestAddLocalSelfMessageKeepsTheTypedEcho(t *testing.T) {
 	_, hub := newHookTestHub(t)
 	sent := &[]map[any]any{}
 	hub.onSend = func(env map[any]any) { *sent = append(*sent, env) }
+	hub.transmit = func([]byte) error { return nil }
 
 	const line = "/msg gorrcbot help"
 	hub.AddLocalSelfMessage("general", "glenn", line)

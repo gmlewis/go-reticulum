@@ -155,6 +155,15 @@ type RRCHub struct {
 	// normal operation.
 	onSend func(env map[any]any)
 
+	// transmit, when set, replaces sendEnv's whole transmission tail — the
+	// link lookup, the packet construction and the write. It is the
+	// substitution half of the same seam onSend is the observation half: a
+	// unit-test hub has no RNS link, and without it every send would stop at
+	// the down-link guard and no test could exercise the behaviour that follows
+	// a successful send. It is nil in normal operation, where the envelope goes
+	// out over the hub link.
+	transmit func(data []byte) error
+
 	// lastHistoryClean/cleanLastRemoved are accessed atomically because
 	// cleanHistory runs concurrently from the inbound link-callback path
 	// (HandleData→recordMessage) and from SendMessage→recordMessage. Python
@@ -562,7 +571,7 @@ func (h *RRCHub) sendLivenessProbe() {
 		srcHash = h.Manager.identityHash()
 	}
 	h.livenessProbeSent.Store(time.Now().UnixNano())
-	h.sendEnv(MakeClientEnvelope(TypePing, srcHash, nil, nil, []byte("rrc-liveness"), MsgID(), NowMs()))
+	h.logSendDrop("liveness probe", h.sendEnv(MakeClientEnvelope(TypePing, srcHash, nil, nil, []byte("rrc-liveness"), MsgID(), NowMs())))
 }
 
 // startHubLivenessLoop arms the per-establishment watchdog goroutine.
@@ -1125,7 +1134,7 @@ func (h *RRCHub) sendHello(_ *rns.Link) {
 		env[KeyNick] = nick
 	}
 
-	h.sendEnv(env)
+	h.logSendDrop("hello", h.sendEnv(env))
 }
 
 // helloLoop mirrors Python's hello_loop (RRC.py:421-441): the hello repeats
@@ -1838,7 +1847,7 @@ func (h *RRCHub) JoinRoomWithKey(room string, silent bool, key string) {
 		joinBody = []byte(key)
 	}
 	env := MakeClientEnvelope(TypeJoin, src, []byte(room), nick, joinBody, mid, ts)
-	h.sendEnv(env)
+	h.logSendDrop("join for "+room, h.sendEnv(env))
 }
 
 // HasRoom reports whether the room is joined (Python's `room in hub.rooms`).
@@ -1868,7 +1877,7 @@ func (h *RRCHub) PartRoom(room string) {
 		src = h.Manager.identityHash()
 	}
 	env := MakeClientEnvelope(TypePart, src, []byte(room), nil, nil, mid, ts)
-	h.sendEnv(env)
+	h.logSendDrop("part for "+room, h.sendEnv(env))
 
 	// Python part_room (RRC.py:613-616): rooms.discard + manager.save +
 	// _notify_change, regardless of the send's outcome.
@@ -1911,7 +1920,7 @@ func (h *RRCHub) SendMessage(room, text string) string {
 	// back ahead of the local record is still collapsed (see
 	// collapseSelfEcho).
 	h.rememberSentBody("msg", room, text, ts)
-	h.sendEnv(env)
+	sendErr := h.sendEnv(env)
 
 	msg := &RRCMessage{
 		Kind: "msg",
@@ -1922,6 +1931,10 @@ func (h *RRCHub) SendMessage(room, text string) string {
 		Ts:   ts,
 	}
 	h.recordMessage(msg, true)
+	// The local echo above keeps the operator's line visible; the notice below
+	// explains a drop that the echo would otherwise disguise as a successful
+	// send.
+	h.surfaceSendFailure(room, sendErr)
 
 	return hexString(mid)
 }
@@ -1940,7 +1953,7 @@ func (h *RRCHub) SendAction(room, text string) string {
 	env := MakeClientEnvelope(TypeAction, srcHash, []byte(room), []byte(nick), text, mid, ts)
 	h.rememberSentID(hexString(mid))
 	h.rememberSentBody("action", room, text, ts)
-	h.sendEnv(env)
+	sendErr := h.sendEnv(env)
 
 	msg := &RRCMessage{
 		Kind: "action",
@@ -1951,6 +1964,7 @@ func (h *RRCHub) SendAction(room, text string) string {
 		Ts:   ts,
 	}
 	h.recordMessage(msg, true)
+	h.surfaceSendFailure(room, sendErr)
 
 	return hexString(mid)
 }
@@ -1997,7 +2011,11 @@ func (h *RRCHub) sendCommand(text, room string) (string, error) {
 	// The body is remembered BEFORE the send (like SendMessage) so a fanout
 	// echo that races back is still collapsed by collapseSelfEcho.
 	h.rememberSentBody("msg", strings.ToLower(room), text, ts)
-	h.sendEnv(env)
+	// The command is operator-visible text like a chat line, so the drop is
+	// returned rather than only logged: the composer reports it in the room.
+	if err := h.sendEnv(env); err != nil {
+		return hexString(mid), err
+	}
 	return hexString(mid), nil
 }
 
@@ -2063,7 +2081,11 @@ const pingExpiryMs = 15000
 // 8-byte random body keys the pending-pings table, and pings older than 15 s
 // expire at each send. The ping itself renders nothing; its ANSWERED pong
 // records the round trip as a system row (RRC.py:878).
-func (h *RRCHub) SendPing(room string) {
+//
+// It returns an error when the ping never left the client, so the composer can
+// report a failed /ping instead of claiming "Ping sent" for a hub that never
+// heard it.
+func (h *RRCHub) SendPing(room string) error {
 	room = strings.ToLower(room)
 	mid := MsgID()
 	ts := NowMs()
@@ -2093,7 +2115,7 @@ func (h *RRCHub) SendPing(room string) {
 	// Python's send_ping omits the room field (RRC.py:594): the envelope
 	// carries only the source, the body, and the id.
 	env := MakeClientEnvelope(TypePing, srcHash, nil, nil, body, mid, ts)
-	h.sendEnv(env)
+	return h.sendEnv(env)
 }
 
 // GetEffectiveNick returns the override nick or the manager's nick.
@@ -2206,30 +2228,78 @@ func (h *RRCHub) MaxMsgBodyLimit() int {
 	return DefaultMaxMsgBytes
 }
 
-func (h *RRCHub) sendEnv(env map[any]any) {
+// sendEnv encodes and transmits one outbound RRC envelope. It returns an error
+// when the envelope never reached the hub link — an encode failure, a missing
+// link (the hub is down), or a link write failure — so a caller carrying
+// operator-visible text can surface the drop instead of leaving the user
+// watching a locally-echoed row the hub never received. Python's send_env is
+// fire-and-forget and swallows the same failures; the Go port keeps them
+// observable.
+func (h *RRCHub) sendEnv(env map[any]any) error {
 	if h.onSend != nil {
 		h.onSend(env)
 	}
 	data, err := EncodeEnvelope(env)
 	if err != nil {
-		log.Printf("gorrcd: dropping envelope send: encode failed: %v", err)
-		return
+		h.logSendDrop("envelope, encode failed", err)
+		return fmt.Errorf("encode envelope: %w", err)
+	}
+	if h.transmit != nil {
+		return h.transmit(data)
 	}
 	h.lock.Lock()
 	link := h.link
 	h.lock.Unlock()
 	if link == nil {
-		log.Printf("gorrcd: dropping envelope send: hub link is down")
-		return
+		err := errors.New("hub link is down")
+		h.logSendDrop("envelope", err)
+		return err
 	}
 	p := rns.NewPacketWithTransport(link.GetTransport(), link, data)
 	if err := p.Pack(); err != nil {
-		log.Printf("gorrcd: dropping envelope send over link: %v", err)
-		return
+		h.logSendDrop("envelope, pack failed", err)
+		return fmt.Errorf("pack envelope: %w", err)
 	}
 	if err := link.SendPacket(p); err != nil {
-		log.Printf("gorrcd: envelope send over link failed: %v", err)
+		h.logSendDrop("envelope over link", err)
+		return fmt.Errorf("send envelope: %w", err)
 	}
+	return nil
+}
+
+// surfaceSendFailure records a local error notice in the room when an outbound
+// message could not be sent, so an operator whose text never left the client
+// sees why instead of watching a locally-echoed row the hub never received.
+// The notice rides the existing AddLocalMessage hook (no new subsystem).
+//
+// It fires only when the hub still believes it is connected: a composer send
+// on a hub already known to be down is gated in the UI (draft kept, explicit
+// notice), so the one drop the operator cannot otherwise see is the surprising
+// link loss behind a connected status.
+func (h *RRCHub) surfaceSendFailure(room string, err error) {
+	if err == nil || room == "" {
+		return
+	}
+	if h.GetHubStatus() != StatusConnected {
+		return
+	}
+	h.AddLocalMessage("error", room, "Message not sent: "+err.Error())
+}
+
+// logSendDrop records an envelope that never left the process on a send path
+// with no caller able to react to it.
+//
+// Protocol traffic — the hello handshake, the liveness probe, ping and pong,
+// the JOIN/PART envelopes, and the server side's own WELCOME/JOINED/PARTED and
+// echo — is driven by loops that resend on their own schedule, so a drop has
+// nowhere to be returned to. It still must not vanish silently: a link that is
+// down while the hub reports connected is exactly the state that would
+// otherwise look like a working session.
+func (h *RRCHub) logSendDrop(what string, err error) {
+	if err == nil {
+		return
+	}
+	log.Printf("[RRC %v] dropped %v: %v", h.Name, what, err)
 }
 
 // HandleData decodes a CBOR-encoded RRC envelope and dispatches it
@@ -2424,7 +2494,7 @@ func (h *RRCHub) HandleData(data []byte) {
 		}
 		// A hub ping is ordinary inbound traffic for the liveness watchdog:
 		// it is stamped in HandleData before the message is dispatched.
-		h.sendEnv(MakeClientEnvelope(TypePong, srcHash, nil, nil, body, MsgID(), NowMs()))
+		h.logSendDrop("pong", h.sendEnv(MakeClientEnvelope(TypePong, srcHash, nil, nil, body, MsgID(), NowMs())))
 
 	case TypeError:
 		var textStr string
@@ -2995,7 +3065,7 @@ func (h *RRCHub) handleHello(src, nick []byte, _ any) {
 	mid := MsgID()
 	ts := NowMs()
 	env := MakeClientEnvelope(TypeWelcome, nil, nil, nil, welcomeBody, mid, ts)
-	h.sendEnv(env)
+	h.logSendDrop("WELCOME for "+h.Name, h.sendEnv(env))
 }
 
 // handleJoin processes a JOIN envelope. On the server side, it adds the
@@ -3024,7 +3094,7 @@ func (h *RRCHub) handleJoin(src, nick, room []byte, _ any) {
 	mid := MsgID()
 	ts := NowMs()
 	env := MakeClientEnvelope(TypeJoined, src, []byte(roomStr), nick, []any{src}, mid, ts)
-	h.sendEnv(env)
+	h.logSendDrop("JOINED for "+roomStr, h.sendEnv(env))
 }
 
 // handleJoinedNotification processes a JOINED fanout on the client side,
@@ -3229,7 +3299,7 @@ func (h *RRCHub) handlePart(src, nick, room []byte, _ any) {
 	mid := MsgID()
 	ts := NowMs()
 	env := MakeClientEnvelope(TypeParted, src, []byte(roomStr), nickBytes, []any{src}, mid, ts)
-	h.sendEnv(env)
+	h.logSendDrop("PARTED for "+roomStr, h.sendEnv(env))
 }
 
 // echoMessage echoes a received MSG envelope back on the link.
@@ -3238,7 +3308,7 @@ func (h *RRCHub) handlePart(src, nick, room []byte, _ any) {
 // and body so that other clients can display it.
 func (h *RRCHub) echoMessage(src, room, nick []byte, body any, mid []byte, ts int64) {
 	env := MakeClientEnvelope(TypeMsg, src, room, nick, body, mid, ts)
-	h.sendEnv(env)
+	h.logSendDrop("message echo for "+string(room), h.sendEnv(env))
 }
 
 func (h *RRCHub) recordMessage(msg *RRCMessage, local bool) {

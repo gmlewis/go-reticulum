@@ -32,6 +32,9 @@ func fanoutFixture(t *testing.T) (*RRCManager, *RRCHub) {
 	mgr.SetNickname("OwnNick")
 	hub := mgr.AddHub([]byte("hubhash"), "rrc.chat", "TestHub")
 	hub.AddRoom("test")
+	// The fixture hub has no RNS link; substitute the transmit step so a send
+	// under test succeeds instead of stopping at the down-link guard.
+	hub.transmit = func([]byte) error { return nil }
 	return mgr, hub
 }
 

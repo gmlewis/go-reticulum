@@ -31,6 +31,7 @@ func directCapHub(t *testing.T) (*RRCHub, []byte) {
 	t.Helper()
 	_, hub := newHookTestHub(t)
 	hub.onSend = func(map[any]any) {}
+	hub.transmit = func([]byte) error { return nil }
 	hub.lock.Lock()
 	hub.HubCaps = map[any]any{int64(CapAction): true, int64(CapDirectNotice): true}
 	hub.lock.Unlock()
@@ -272,6 +273,7 @@ func TestSendDirectNoticeRejectsBadTargets(t *testing.T) {
 		hub, _ := directCapHub(t)
 		var sent int
 		hub.onSend = func(map[any]any) { sent++ }
+		hub.transmit = func([]byte) error { return nil }
 		err := hub.SendDirectNotice(nil, "hi")
 		if err == nil {
 			t.Fatal("SendDirectNotice(nil) = nil error, want an error")
@@ -289,6 +291,7 @@ func TestSendDirectNoticeRejectsBadTargets(t *testing.T) {
 		hub, _ := directCapHub(t)
 		var sent int
 		hub.onSend = func(map[any]any) { sent++ }
+		hub.transmit = func([]byte) error { return nil }
 		err := hub.SendDirectNotice(make([]byte, 10), "hi")
 		if err == nil {
 			t.Fatal("SendDirectNotice(10 bytes) = nil error, want an error")
@@ -309,6 +312,7 @@ func TestSendDirectNoticeRejectsBadTargets(t *testing.T) {
 		hub.lock.Unlock()
 		var sent int
 		hub.onSend = func(map[any]any) { sent++ }
+		hub.transmit = func([]byte) error { return nil }
 		err := hub.SendDirectNotice(peer, "hi")
 		if !errors.Is(err, ErrDirectNoticesUnsupported) {
 			t.Fatalf("error = %v, want ErrDirectNoticesUnsupported", err)
@@ -323,6 +327,7 @@ func TestSendDirectNoticeRejectsBadTargets(t *testing.T) {
 		hub, _ := directCapHub(t)
 		var sent int
 		hub.onSend = func(map[any]any) { sent++ }
+		hub.transmit = func([]byte) error { return nil }
 		err := hub.SendDirectNotice(peerHash(0x7f), "hi")
 		if !errors.Is(err, ErrDestinationNotConnected) {
 			t.Fatalf("error = %v, want ErrDestinationNotConnected", err)
@@ -337,6 +342,7 @@ func TestSendDirectNoticeRejectsBadTargets(t *testing.T) {
 		hub, peer := directCapHub(t)
 		var sent int
 		hub.onSend = func(map[any]any) { sent++ }
+		hub.transmit = func([]byte) error { return nil }
 		err := hub.SendDirectNotice(peer, strings.Repeat("x", rns.MDU*2))
 		if err == nil {
 			t.Fatal("oversized SendDirectNotice = nil error, want an error")
@@ -358,6 +364,7 @@ func TestSendDirectNoticeBuildsOneAddressedEnvelope(t *testing.T) {
 	hub, peer := directCapHub(t)
 	var sent []map[any]any
 	hub.onSend = func(env map[any]any) { sent = append(sent, env) }
+	hub.transmit = func([]byte) error { return nil }
 
 	if err := hub.SendDirectNotice(peer, "pong"); err != nil {
 		t.Fatalf("SendDirectNotice: %v", err)
