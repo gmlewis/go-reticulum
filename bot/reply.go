@@ -17,8 +17,9 @@
 // it: a standard rrcd hub advertises its own capabilities in WELCOME and never
 // publishes the capabilities another client announced in HELLO, so no bot can
 // learn whether a requester could display a private answer. Two guards keep an
-// always-on bot from becoming a nuisance: a per-requester cooldown, and a
-// duplicate-envelope window so a redelivered message is never answered twice.
+// always-on bot from becoming a nuisance: a per-requester cooldown, which answers
+// a repeat once but never a new question, and a duplicate-envelope window so a
+// redelivered message is never answered twice.
 
 package bot
 
@@ -44,6 +45,12 @@ const (
 	staleAfter = 30 * time.Second
 	// staleReply is the single line sent for a message that is too old.
 	staleReply = "too old, ask again"
+	// privateCooldown is the cooldown a private request is held under, keyed by
+	// the asker's identity alone. It is short enough that a person reading one
+	// answer and asking the next question is never held up, and long enough that
+	// an automated client cannot turn a private channel into a flood: at most one
+	// private reply per second per identity, whatever questions it cycles.
+	privateCooldown = time.Second
 )
 
 // Guard sizes. Both tables are bounded so a busy hub cannot grow the bot's
@@ -92,7 +99,9 @@ type responder struct {
 	// tested without waiting on real time.
 	now func() time.Time
 
-	mu        sync.Mutex
+	mu sync.Mutex
+	// cooldown is the last time each key was answered, so a repeat can be told
+	// from a new question. The key is built by cooldownFor.
 	cooldown  map[string]time.Time
 	seenIDs   map[string]struct{}
 	seenOrder []string
@@ -146,28 +155,27 @@ func (r *responder) handle(s *hubSession, msg *rrc.RRCMessage) {
 	logf("request from %v in %q (age %v): %q", requester, room, msgAge(msg, now),
 		trig.Command)
 
-	// "more" and "next" are page turns, not new questions: the page before them
-	// invited exactly one of them, and every page they can produce is an offline
-	// catalog page the asker already searched for. They are therefore exempt
-	// from the per-identity cooldown, which would otherwise make a walk through
-	// a paged list cost cooldown_s per page. They cannot be used as a general
-	// flood channel: with nothing cached the answer is one short line, and the
-	// cache is bounded and expires.
-	pagerCommand := isPagerCommand(trig.Command)
+	// The cooldown's key and window depend on how the request arrived, and a page
+	// turn is not held at all: the page before it invited exactly one of them,
+	// every page it can produce is an offline catalog page the asker already
+	// searched for, and a paged walk would otherwise cost one cooldown per page.
+	// It cannot become a flood channel either: with nothing cached the answer is
+	// one short line, and the cache is bounded and expires.
+	key, window := r.cooldownFor(requester, trig)
 
 	if r.isStale(msg, now) {
-		if !r.admit(requester, now) {
-			logf("suppressed the request from %v: the %vs cooldown is still running", requester, r.cfg.CooldownSecs)
+		if !r.admit(key, window, now) {
+			logf("suppressed the request from %v: the cooldown is still running", requester)
 			return
 		}
 		r.send(s, room, msg, r.directRoute(s, msg, trig.Direct), r.replyLinesFor(trig.Command), []string{staleReply})
 		return
 	}
 
-	if !pagerCommand && !r.admit(requester, now) {
+	if !r.admit(key, window, now) {
 		// Without this line a suppressed request looks exactly like a bot that
 		// ignored the asker: the request line above is the only other trace.
-		logf("suppressed the request from %v: the %vs cooldown is still running", requester, r.cfg.CooldownSecs)
+		logf("suppressed the request from %v: the cooldown is still running", requester)
 		return
 	}
 
@@ -234,20 +242,53 @@ func (r *responder) markSeen(id string) bool {
 	return true
 }
 
-// admit applies the per-requester cooldown and records the reply. It returns
-// false when the requester asked again inside the cooldown window.
-func (r *responder) admit(requester string, now time.Time) bool {
-	if requester == "" {
+// cooldownFor reports the key and window one request is held under, or an empty
+// key and no window when it is not held at all. A page turn is never held. A room
+// request is held under the operator's cooldown, keyed by the asker's identity
+// *and* the exact question they asked, so a repeated question is suppressed while
+// that person's next, different question is answered: a walk through the help
+// tree or a run of field commands is a sequence of new questions, not a repeat.
+// The identity alone would answer only one question per window however different
+// the questions were, which reads as a bot that ignores most of what it is asked.
+//
+// A private request is held under the identity alone, for the much shorter
+// privateCooldown: short enough that a person reading one answer and asking the
+// next is never held up, and long enough that an automated client cannot turn a
+// private channel into a flood. It is deliberately not keyed by the question —
+// bounding the rate is the whole point, and a client that cycles through
+// questions is exactly what that bound is for.
+func (r *responder) cooldownFor(requester string, trig trigger) (string, time.Duration) {
+	room := r.roomCooldown()
+	if requester == "" || room <= 0 || isPagerCommand(trig.Command) {
+		return "", 0
+	}
+	if trig.Direct {
+		return requester, privateCooldown
+	}
+	return requester + "\x00" + strings.ToLower(strings.TrimSpace(trig.Command)), room
+}
+
+// roomCooldown is the operator's configured cooldown as a duration. A setting of
+// zero or less turns the cooldown off entirely, private requests included.
+func (r *responder) roomCooldown() time.Duration {
+	return time.Duration(r.cfg.CooldownSecs * float64(time.Second))
+}
+
+// admit applies the cooldown and records the reply. It returns false when key is
+// still inside window, and true when the request is not held at all.
+func (r *responder) admit(key string, window time.Duration, now time.Time) bool {
+	if key == "" || window <= 0 {
 		return true
 	}
-	cooldown := time.Duration(r.cfg.CooldownSecs * float64(time.Second))
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if last, ok := r.cooldown[requester]; ok && now.Sub(last) < cooldown {
+	if last, ok := r.cooldown[key]; ok && now.Sub(last) < window {
 		return false
 	}
-	r.gcCooldownLocked(now, cooldown)
-	r.cooldown[requester] = now
+	// Entries are collected against the longest window any key can carry, so a
+	// short-window entry is never dropped while it is still in force.
+	r.gcCooldownLocked(now, max(window, r.roomCooldown()))
+	r.cooldown[key] = now
 	return true
 }
 

@@ -163,6 +163,36 @@ func TestHelpIsGeneratedFromTheRegistry(t *testing.T) {
 	}
 }
 
+// TestBareHelpStatesTheCooldown asserts the listing says the reply cooldown out
+// loud, with the operator's own value, and says nothing about a cooldown that is
+// switched off. A user who repeats a question and hears nothing has no other way
+// to tell a bot that is rate-limiting them from a bot that is down.
+func TestBareHelpStatesTheCooldown(t *testing.T) {
+	t.Parallel()
+
+	cfg := defaultTestConfig()
+	cfg.CooldownSecs = 8
+	reg, session, _ := commandFixture(t, cfg)
+	got := runLines(t, reg, session, "")
+	if len(got) != 1 {
+		t.Fatalf("help returned %v lines, want 1", len(got))
+	}
+	if !strings.Contains(got[0], "inside 8s is not answered again") {
+		t.Errorf("help = %q, want it to state the 8s cooldown", got[0])
+	}
+
+	off := defaultTestConfig()
+	off.CooldownSecs = 0
+	reg, session, _ = commandFixture(t, off)
+	got = runLines(t, reg, session, "")
+	if len(got) != 1 {
+		t.Fatalf("help returned %v lines, want 1", len(got))
+	}
+	if strings.Contains(strings.ToLower(got[0]), "cooldown") || strings.Contains(got[0], "answered again") {
+		t.Errorf("help = %q, want no cooldown claim while the cooldown is off", got[0])
+	}
+}
+
 // TestEveryCommandIsCategorized asserts the taxonomy and the registry agree:
 // every canonical command names a category that exists, every category holds at
 // least one command, and no taxonomy key is a name the registry does not offer.
@@ -295,6 +325,51 @@ func TestBareAddressShowsHelp(t *testing.T) {
 	lines := runLines(t, reg, session, "")
 	if len(lines) != 1 || !strings.HasPrefix(lines[0], "Categories: ") {
 		t.Errorf("a bare address returned %q, want the category listing", lines)
+	}
+}
+
+// TestHelpResolvesNamesByPrefix asserts "help <word>" forgives an abbreviated
+// name: a prefix of exactly one category, command or alias answers that one, a
+// prefix that could mean several says which ones instead of guessing, and an
+// exact name is never displaced by a prefix that it also begins. Silence is
+// never an answer: a word that matches nothing still gets the one short line.
+func TestHelpResolvesNamesByPrefix(t *testing.T) {
+	t.Parallel()
+
+	reg, session, _ := commandFixture(t, nil)
+
+	// A unique category prefix answers that category's listing.
+	got := runLines(t, reg, session, "help env")
+	want := []string{"environment (7): alerts, buoy, metar, river, spacewx, tide, weather — " +
+		"forecasts, warnings, and environmental telemetry"}
+	if len(got) != 1 || got[0] != want[0] {
+		t.Errorf("help env = %q, want %q", got, want)
+	}
+
+	// A unique command prefix explains that command, usage line and all.
+	got = runLines(t, reg, session, "help where")
+	if len(got) == 0 || !strings.Contains(got[0], "whereami") || !strings.Contains(got[0], "Usage") {
+		t.Errorf("help where = %q, want the whereami explanation", got)
+	}
+
+	// An exact command name outranks the category that begins with it.
+	got = runLines(t, reg, session, "help net")
+	if len(got) == 0 || !strings.Contains(got[0], "net — ") {
+		t.Errorf("help net = %q, want the net command, not the network category", got)
+	}
+
+	// A prefix that could mean more than one name lists them rather than
+	// guessing, and still names the way to drill in.
+	got = runLines(t, reg, session, "help spa")
+	if len(got) != 1 || !strings.Contains(got[0], "space") || !strings.Contains(got[0], "spacewx") {
+		t.Errorf("help spa = %q, want it to name both space and spacewx", got)
+	}
+
+	// Nothing matching still answers, so the bot is never indistinguishable
+	// from one that is down.
+	got = runLines(t, reg, session, "help zzz")
+	if len(got) != 1 || !strings.Contains(got[0], "unknown command") {
+		t.Errorf("help zzz = %q, want the unknown-command line", got)
 	}
 }
 

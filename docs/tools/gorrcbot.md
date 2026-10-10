@@ -17,7 +17,7 @@
   airtime.
 - **Single Identity Everywhere**: `gorrcbot` generates one 64-byte Reticulum private identity (`bot_identity`) and uses it across all connected hubs. Its identity hash is identical on all hubs, allowing users to reach it using consistent address prefixes.
 - **Strict Addressing Contract**: The bot is completely silent unless addressed directly. It will never spam channels, and it completely ignores chat traffic not directed at it.
-- **Rate-Limiting & Cooldowns**: Built-in per-identity cooldown prevents abuse or channel flooding over low-bandwidth LoRa links.
+- **Rate-Limiting & Cooldowns**: A built-in per-identity cooldown answers a *repeated* question once inside its window, so a client that repeats a request cannot flood a room over a low-bandwidth LoRa link. A different question is always answered, a private request is held to a much shorter one-reply-per-second floor, and the `help` listing states the rule.
 - **Offline First**: The vast majority of tactical and field assistant commands (Plus Codes, geodesy, dead reckoning, sun/moon ephemeris, wilderness medicine cards, Morse code, unit conversions, and the cell/repeater finder with its built-in WGS-84 ↔ GCJ-02 conversion) compute entirely in-process with **zero internet connection required**. The marine, aviation, navigation, and communications-site catalogs are embedded too, so `search`, `near`, and `list` find a station id before any provider is configured and while a provider is unreachable.
 - **Low-Bandwidth by Design**: Long answers are paginated to the operator's `max_reply_lines` budget, every page carries the exact command that asks for the next one, and `more` / `next` continue a walk through a catalog without retyping the query.
 - **Graceful Telemetry Degradation**: For commands that query external live telemetry (weather, marine tides, buoys, river gauges, flight tracking, space weather), providers are queried through sanitized HTTP/HTTPS templates. If an endpoint is unconfigured or unreachable, the bot reports honest failure without guessing or hallucinating.
@@ -77,7 +77,10 @@ nick = "gobot"
 #   "room"   - all replies are posted to the room
 reply = "auto"
 
-# Minimum seconds between replies to the same user identity
+# Minimum seconds between replies to the same user identity for the same
+# request. A repeated request inside the window is not answered again; a
+# different question is. A private request has its own one-second floor, and a
+# page turn is never held.
 cooldown_s = 8.0
 
 # Introduce itself when joining rooms
@@ -468,7 +471,10 @@ answers the page after the one just sent, with no need to retype the query:
   `no more pages or search expired`.
 - `more` and `next` are exempt from the per-identity cooldown, because a page
   turn answers a page the asker was just told to ask for and can only produce
-  offline catalog rows. Every other command keeps its cooldown.
+  offline catalog rows. A private request is held to a one-second floor instead
+  of the room cooldown, which never holds a person up but bounds an automated
+  client. A repeated question inside the window is still answered only once; a
+  different question is always answered.
 
 ### Clickable Micron Links (`micron_links`)
 
@@ -1000,7 +1006,7 @@ and says that no room could be alerted.
 
 | Command | Syntax | Description & Example |
 |---------|--------|-----------------------|
-| `help` | `@gobot help [category\|command]` | Lists the command categories, lists one category's commands, or provides comprehensive help for a specific command (e.g. `@gobot help loc`, `@gobot help messaging`). |
+| `help` | `@gobot help [category\|command]` | Lists the command categories, lists one category's commands, or provides comprehensive help for a specific command (e.g. `@gobot help loc`, `@gobot help messaging`). An abbreviated name works when it begins exactly one category, command or alias (`@gobot help env` is the `environment` group, `@gobot help where` is `whereami`); a name that could mean several lists them, and a name that means none still answers with the one-line hint rather than nothing. |
 | `ping` | `@gobot ping` | Responds `pong` to verify link liveness and latency. |
 | `uptime` | `@gobot uptime` | Reports bot uptime, hub connection duration, and hub identity hash. |
 | `whoami` | `@gobot whoami` | Displays your nickname and full 32-character identity hash as seen by the current hub. |

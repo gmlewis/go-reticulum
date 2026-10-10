@@ -559,6 +559,105 @@ func TestResponderStaleDirectNoticeIsAlsoRejected(t *testing.T) {
 	}
 }
 
+// TestResponderCooldownAnswersDistinctQuestions reproduces the operator's
+// reported transcript: eleven different help questions asked inside a couple of
+// minutes on the fleet's public hub, of which four were answered with nothing at
+// all. The cooldown exists to suppress a client that repeats a request, so a run
+// of different questions must be answered — silence there is indistinguishable
+// from a bot that is down, which is what the operator saw.
+func TestResponderCooldownAnswersDistinctQuestions(t *testing.T) {
+	t.Parallel()
+
+	cfg := defaultTestConfig()
+	cfg.CooldownSecs = 8
+	session, fake := newReplySession(t, cfg)
+	base := time.Unix(1700000000, 0)
+	now := base
+	ran := make([]string, 0, 12)
+	r := newResponder(cfg, mustHex(replyOwnHash), func(req *commandRequest) []string {
+		ran = append(ran, req.Command)
+		return []string{"answer to " + req.Command}
+	})
+	r.now = func() time.Time { return now }
+
+	// Every entry is a question the operator really asked, with the number of
+	// seconds after the first one that it was asked.
+	asked := []struct {
+		at      int
+		command string
+	}{
+		{0, "help"}, {6, "help core"}, {41, "help history"}, {50, "help messaging"},
+		{56, "help network"}, {64, "help navigation"}, {69, "help sky"}, {75, "help emergency"},
+		{83, "help environment"}, {89, "help space"}, {95, "help sites"}, {106, "help reference"},
+	}
+	requester := peerHashFor(0x51)
+	for _, ask := range asked {
+		now = base.Add(time.Duration(ask.at) * time.Second)
+		r.handle(session, addressedMessageFrom("general", "@gorrcbot "+ask.command, requester))
+	}
+
+	if len(ran) != len(asked) {
+		t.Errorf("answered %v of %v distinct questions: %v", len(ran), len(asked), ran)
+	}
+	if got := len(fake.noticeList()); got != len(asked) {
+		t.Errorf("sent %v notices for %v distinct questions, want one each", got, len(asked))
+	}
+}
+
+// TestResponderPrivateRequestsGetAShortCooldown asserts the private floor: a
+// private request is held for one second under the asker's identity, so a person
+// reading one answer and asking the next is never held up, while a client that
+// cycles questions cannot exceed one private reply per second. A room ask keeps
+// the operator's full cooldown.
+func TestResponderPrivateRequestsGetAShortCooldown(t *testing.T) {
+	t.Parallel()
+
+	cfg := defaultTestConfig()
+	cfg.CooldownSecs = 8
+	reg, session, fake := commandFixture(t, cfg)
+	now := time.Unix(1700000000, 0)
+	r := newResponder(cfg, mustHex(replyOwnHash), reg.Run)
+	r.now = func() time.Time { return now }
+
+	requester := peerHashFor(0x71)
+	fake.setCapability(rrc.CapDirectNotice, true)
+	fake.setKnownPeer(hexString(requester), "Alice")
+
+	// The same private question a second apart is answered every time: the floor
+	// is one per second, and a person cannot type faster than that.
+	for range 3 {
+		r.handle(session, directMessageFrom("help", requester))
+		now = now.Add(time.Second)
+	}
+	if got := len(fake.directList()); got != 3 {
+		t.Errorf("answered %v of 3 private questions a second apart, want 3", got)
+	}
+
+	// Two private questions inside the same second are bounded to one: the floor
+	// keys on the identity alone, so cycling the question does not evade it.
+	r.handle(session, directMessageFrom("help core", requester))
+	now = now.Add(500 * time.Millisecond)
+	r.handle(session, directMessageFrom("help network", requester))
+	if got := len(fake.directList()); got != 4 {
+		t.Errorf("answered %v private questions, want the second inside one second held", got)
+	}
+	now = now.Add(500 * time.Millisecond)
+	r.handle(session, directMessageFrom("help network", requester))
+	if got := len(fake.directList()); got != 5 {
+		t.Errorf("answered %v private questions, want the one at the second boundary answered", got)
+	}
+
+	// The same repeat in a room keeps the operator's full cooldown.
+	roomer := peerHashFor(0x72)
+	for range 3 {
+		r.handle(session, addressedMessageFrom("general", "@gorrcbot help", roomer))
+		now = now.Add(time.Second)
+	}
+	if got := len(fake.noticeList()); got != 1 {
+		t.Errorf("sent %v room notices for a repeated question, want 1", got)
+	}
+}
+
 // TestResponderCooldownSuppressesBursts asserts a repeating requester cannot
 // make the bot flood a room, and the cooldown expires.
 func TestResponderCooldownSuppressesBursts(t *testing.T) {
@@ -598,9 +697,10 @@ func TestResponderCooldownSuppressesBursts(t *testing.T) {
 }
 
 // TestResponderAnswersPageTurnsInsideTheCooldown asserts "more" and "next" are
-// exempt from the per-identity cooldown: a paged walk would otherwise cost the
+// exempt from the per-requester cooldown: a paged walk would otherwise cost the
 // cooldown per page, and a page turn can only answer a page the asker already
-// asked for. Any other command is still suppressed.
+// asked for. The walk must not refresh the cooldown on the question that started
+// it, so repeating that question inside the window is still suppressed.
 func TestResponderAnswersPageTurnsInsideTheCooldown(t *testing.T) {
 	t.Parallel()
 
@@ -628,12 +728,17 @@ func TestResponderAnswersPageTurnsInsideTheCooldown(t *testing.T) {
 		t.Errorf("sent %v notices, want one per page turn", got)
 	}
 
-	// The page turn must not refresh the cooldown either: a new question from
-	// the same identity inside the window is still suppressed.
+	// The page turns must not refresh the question's own cooldown: asking it
+	// again inside the window is still suppressed. A different question, though,
+	// is a new question and is answered.
 	now = now.Add(time.Second)
-	r.handle(session, addressedMessageFrom("general", "@gorrcbot ping", requester))
+	r.handle(session, addressedMessageFrom("general", "@gorrcbot tide list CA", requester))
 	if len(ran) != 3 {
-		t.Errorf("ran %v, want the ping suppressed by the cooldown", ran)
+		t.Errorf("ran %v, want the repeated question suppressed by the cooldown", ran)
+	}
+	r.handle(session, addressedMessageFrom("general", "@gorrcbot ping", requester))
+	if len(ran) != 4 || ran[3] != "ping" {
+		t.Errorf("ran %v, want the different question answered", ran)
 	}
 }
 

@@ -796,6 +796,44 @@ func identityFromID(t *testing.T, notices []string) string {
 	return ""
 }
 
+// TestIntegrationCooldownAnswersDistinctQuestions reproduces the operator's
+// reported transcript over the real wire: one client asking several *different*
+// questions inside a single cooldown window. The cooldown suppresses a repeated
+// request; a person's next question is a new question and must be answered, or
+// the bot reads as one that ignores most of what it is asked.
+func TestIntegrationCooldownAnswersDistinctQuestions(t *testing.T) {
+	rig := newIntegrationRigWith(t, 1, ReplyRoom, func(cfg *BotConfig) {
+		cfg.CooldownSecs = 30
+	})
+	asker := rig.hubs[0].asker
+
+	if !waitForCondition(integrationGreetWait, func() bool { return rig.greetings(t, 0) >= 1 }) {
+		rig.failf(t, "the bot never introduced itself; notices so far: %v", rig.notices(t, 0))
+	}
+	before := len(rig.notices(t, 0))
+
+	// Three different local questions, back to back, well inside one window.
+	for _, command := range []string{"ping", "uptime", "whoami"} {
+		asker.SendMessage("general", "@"+DefaultNick+" "+command)
+	}
+
+	answered := func() int {
+		count := 0
+		for _, notice := range rig.notices(t, 0)[before:] {
+			switch {
+			case notice == "pong", strings.HasPrefix(notice, "Uptime:"),
+				strings.HasPrefix(notice, "You are "):
+				count++
+			}
+		}
+		return count
+	}
+	if !waitForCondition(integrationWait, func() bool { return answered() == 3 }) {
+		rig.failf(t, "answered %v of 3 distinct questions inside one cooldown window: %v",
+			answered(), rig.notices(t, 0)[before:])
+	}
+}
+
 // TestIntegrationCooldownSuppressesARepeatedRequest asserts the anti-spam rule
 // over the wire: a client that repeats the same request inside the cooldown
 // window gets one answer, not two, and a different client is still served.

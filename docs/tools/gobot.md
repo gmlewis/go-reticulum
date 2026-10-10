@@ -77,8 +77,7 @@ already in `PATH`.
    If that file is missing, run any Reticulum tool once (for example
    `gornstatus`) and try again, or point `--identity` at an existing key file.
    Generating a fresh identity on the fly would change `gobot`'s identity hash
-   on every run, which is exactly what the bot's per-identity cooldown and
-   reply routing key on.
+   on every run, which is exactly what the bot's reply routing keys on.
 
 2. **A path to the hub.** The default destination is the official gonomadnet
    Public RRC Hub. Reticulum learns and maintains that path itself; a working

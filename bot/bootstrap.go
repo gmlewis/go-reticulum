@@ -103,8 +103,10 @@ nick = "gobot"
 #   room   - always an in-room NOTICE
 reply = "auto"
 
-# Minimum seconds between replies to the same identity. Suppresses reply storms
-# from a client that repeats a request.
+# Minimum seconds between replies to the same identity for the same request.
+# A client that repeats a request inside the window is not answered again; a
+# different question is. A private request has its own one-second floor, and a
+# page turn is never held. Set to 0 to turn the cooldown off entirely.
 cooldown_s = 8.0
 
 # Post one short self-introduction NOTICE in each room, once per session. OFF by

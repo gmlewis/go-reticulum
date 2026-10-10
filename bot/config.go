@@ -45,7 +45,8 @@ const (
 	// DefaultTriggerNick is the last-resort trigger nick, used when neither
 	// the config nor a per-hub/per-room override names one.
 	DefaultTriggerNick = "gorrcbot"
-	// DefaultCooldownSecs is the minimum gap between replies to one identity.
+	// DefaultCooldownSecs is the minimum gap between a repeat of one request
+	// from one identity and its answer.
 	DefaultCooldownSecs = 8.0
 	// DefaultMaxReplyLines bounds how many NOTICE lines one reply may produce.
 	DefaultMaxReplyLines = 12
@@ -68,7 +69,10 @@ type BotConfig struct {
 	Nick string
 	// Reply is one of ReplyAuto, ReplyDirect, or ReplyRoom.
 	Reply string
-	// CooldownSecs is the per-identity reply cooldown.
+	// CooldownSecs is the reply cooldown: how long one identity must wait before
+	// repeating the same room request. A different question is answered at once,
+	// a private request is held to a fixed one-second floor instead, and zero
+	// turns the cooldown off entirely.
 	CooldownSecs float64
 	// AnnounceOnJoin posts one self-introduction NOTICE per room per session.
 	// It is OFF by default: an always-on bot reconnects often, and each

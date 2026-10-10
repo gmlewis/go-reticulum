@@ -439,9 +439,9 @@ func (c *commandContext) runMore() []string {
 }
 
 // isPagerCommand reports whether an addressed line is one of the page-turn
-// shortcuts, which are the only commands the reply policy exempts from the
-// per-identity cooldown: a page turn is solicited by the page before it, and it
-// can only answer a page the asker already asked for.
+// shortcuts, which the reply policy never holds under a cooldown: a page turn is
+// solicited by the page before it, and it can only answer a page the asker
+// already asked for. A private request is held, but under a much shorter floor.
 func isPagerCommand(line string) bool {
 	name, _ := splitCommandLine(line)
 	return name == "more" || name == "next"

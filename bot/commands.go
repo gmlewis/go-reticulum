@@ -499,14 +499,38 @@ func (r *registry) Run(req *commandRequest) []string {
 // helpCategories renders the one-line group listing a bare "help" answers with.
 // The listing stays inside one NOTICE even though the bot offers dozens of
 // commands, and a reader names the group they want next instead of scanning a
-// wall of names.
+// wall of names. It also states the reply cooldown, because a user who repeats a
+// question and hears nothing cannot otherwise tell a bot that is rate-limiting
+// them from one that is down.
 func (r *registry) helpCategories() []string {
 	names := make([]string, 0, len(commandCategories))
 	for _, category := range commandCategories {
 		names = append(names, category.name)
 	}
-	return []string{"Categories: " + strings.Join(names, ", ") +
-		` — "help <category>" lists one, "help <command>" explains one.`}
+	line := "Categories: " + strings.Join(names, ", ") +
+		` — "help <category>" lists one, "help <command>" explains one.`
+	if note := r.cooldownNote(); note != "" {
+		line += " " + note
+	}
+	return []string{line}
+}
+
+// cooldownNote is the clause the listing adds while a reply cooldown is in force:
+// the rule that a repeated question inside the window is not answered again while
+// a new one is, and the far shorter floor a private request gets. It is omitted
+// when the cooldown is off, so the listing never claims a limit the operator has
+// not set. A page turn is never held, which is why the clause speaks of repeating
+// a question rather than of asking twice.
+func (r *registry) cooldownNote() string {
+	secs := DefaultCooldownSecs
+	if cfg := r.config(); cfg != nil {
+		secs = cfg.CooldownSecs
+	}
+	if secs <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("A repeated question inside %vs is not answered again, but a new one is."+
+		" Private asks answer at most once per second.", secs)
 }
 
 // helpCategory renders one group: its canonical commands in registry order, with
@@ -1256,23 +1280,45 @@ func (r *registry) build() []command {
 }
 
 // runHelp lists the categories, lists one category's commands, or explains one
-// command. An explanation is the summary line followed by the command's own
-// detail, with {nick} replaced by the nick this bot really answers to, so the
-// examples are usable as written. Asking about an alias answers with the command
-// it stands for and says so, instead of leaving the reader with a duplicate.
+// command. An exact name — a command, an alias, or a category — is answered
+// as itself; only a word the bot does not know exactly is read as an
+// abbreviation, so a full name is never displaced by a prefix of it. A word that
+// begins exactly one name answers that one, and a word that could mean several
+// names them instead of guessing. Every path answers something: a help request
+// that produced no reply at all would be indistinguishable from a bot that is
+// down.
 func (c *commandContext) runHelp() []string {
 	if c.Args == "" {
 		return c.reg.helpCategories()
 	}
 	name, _ := splitCommandLine(c.Args)
-	cmd, ok := c.reg.byName[name]
-	if !ok {
-		// A category name is the other thing "help <word>" can name.
-		if lines := c.reg.helpCategory(name); lines != nil {
-			return lines
-		}
-		return []string{unknownCommandLine(c.effectiveTriggerNick())}
+	if cmd, ok := c.reg.byName[name]; ok {
+		return c.explainCommand(cmd, name)
 	}
+	// A category name is the other thing "help <word>" can name.
+	if lines := c.reg.helpCategory(name); lines != nil {
+		return lines
+	}
+	switch matches := c.reg.helpMatches(name); len(matches) {
+	case 0:
+		return []string{unknownCommandLine(c.effectiveTriggerNick())}
+	case 1:
+		if cmd, ok := c.reg.byName[matches[0]]; ok {
+			return c.explainCommand(cmd, matches[0])
+		}
+		return c.reg.helpCategory(matches[0])
+	default:
+		return []string{helpSuggestions(name, matches)}
+	}
+}
+
+// explainCommand renders "help <command>": the summary line with its usage
+// followed by the command's own detail, with {nick} replaced by the nick this
+// bot really answers to, so the examples are usable as written. Asking about an
+// alias answers with the command it stands for and says so, instead of leaving
+// the reader with a duplicate. name is the word the asker used, which the alias
+// note needs.
+func (c *commandContext) explainCommand(cmd *command, name string) []string {
 	var lines []string
 	if name != cmd.name {
 		lines = append(lines, fmt.Sprintf("%v is an alias for %v.", name, cmd.name))
@@ -1300,6 +1346,50 @@ func (c *commandContext) runHelp() []string {
 		lines = append(lines, "Also reachable as: "+strings.Join(cmd.aliases, ", ")+".")
 	}
 	return lines
+}
+
+// helpMatches returns every category, command and alias name that begins with
+// word, sorted, so an abbreviated "help <word>" can be resolved. A name equal to
+// word is left out: an exact match is answered before this is consulted, and
+// listing it here would make an unambiguous word look ambiguous.
+func (r *registry) helpMatches(word string) []string {
+	if word == "" {
+		return nil
+	}
+	seen := make(map[string]bool, len(r.commands)+len(commandCategories))
+	matches := make([]string, 0, len(commandCategories))
+	add := func(name string) {
+		if name == word || seen[name] || !strings.HasPrefix(name, word) {
+			return
+		}
+		seen[name] = true
+		matches = append(matches, name)
+	}
+	for _, category := range commandCategories {
+		add(category.name)
+	}
+	for _, cmd := range r.commands {
+		add(cmd.name)
+		for _, alias := range cmd.aliases {
+			add(alias)
+		}
+	}
+	sort.Strings(matches)
+	return matches
+}
+
+// helpSuggestions renders the answer to an abbreviation that could name more
+// than one thing: the names it could mean, and the way to drill into one. The
+// list is bounded, because a one-letter prefix begins most of the tree and a
+// wall of names is not an answer; the count says how many were left out, so the
+// reader knows the list is not the whole of it.
+func helpSuggestions(word string, matches []string) string {
+	const shown = 8
+	if len(matches) <= shown {
+		return fmt.Sprintf("%q matches %v — try help <name>.", word, strings.Join(matches, ", "))
+	}
+	return fmt.Sprintf("%q matches %v names, beginning with %v — try help <name>.",
+		word, len(matches), strings.Join(matches[:shown], ", "))
 }
 
 // runPing answers pong, the official bot's wording.
