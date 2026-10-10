@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -27,21 +28,48 @@ import (
 // link is therefore an incoming link whose replies must travel back through
 // the shared instance, which is the path the incident report suspected.
 
+// A port the kernel assigns by listening on 127.0.0.1:0 is free again the moment
+// that listener closes, and this package's rigs allocate dozens of them in
+// parallel: two rigs can be handed the same number, and whichever binds it second
+// fails with "address already in use". That is what CI reported from
+// TestFleetTwoInstancesDeliverWelcome — not an address genuinely in use, just bad
+// luck, of a kind that a randomised allocator cannot be asked to avoid and a map
+// can.
+//
+// Nothing is ever given back: the ports are bound by a rig that outlives the
+// allocation, so a port this run has handed out is a port a rig may be holding.
+var (
+	loopbackPortsMu    sync.Mutex
+	loopbackPortsTaken = map[int]bool{}
+)
+
 // freeLoopbackPort reserves a free loopback TCP port for a test. The listener
 // is closed before returning; the shared-instance rig needs distinct ports so
 // a test cannot attach to another test's instance (or to the developer's live
-// shared instance on the default port).
+// shared instance on the default port). It is also never the same port as any
+// other allocation in this run.
 func freeLoopbackPort(t *testing.T) int {
 	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("Listen: %v", err)
+	loopbackPortsMu.Lock()
+	defer loopbackPortsMu.Unlock()
+	// A bounded search: the kernel has tens of thousands of ports to choose from,
+	// so running out means something is very wrong and says so rather than looping.
+	for range 1000 {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("Listen: %v", err)
+		}
+		port := ln.Addr().(*net.TCPAddr).Port
+		if err := ln.Close(); err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+		if !loopbackPortsTaken[port] {
+			loopbackPortsTaken[port] = true
+			return port
+		}
 	}
-	port := ln.Addr().(*net.TCPAddr).Port
-	if err := ln.Close(); err != nil {
-		t.Fatalf("Close: %v", err)
-	}
-	return port
+	t.Fatal("no loopback port left that this run has not already handed out")
+	return 0
 }
 
 // instanceConfig renders a per-test RNS configuration. share decides whether

@@ -470,11 +470,16 @@ func (r *RNodeInterface) readLoopOnce() error {
 		// the far end going away is reported as EIO exactly once, and only to a reader
 		// that is already parked in the read when it happens — a read started after
 		// the close cannot tell it apart from the line's own idle timer and reports
-		// io.EOF forever. The pause below is therefore a window in which a close is
-		// simply not reported to this loop at all, and VMIN=0/VTIME=1 already makes
-		// the read itself wait out the 100ms timer, so a zero-byte read can be
-		// retried at once instead of after a pause without spinning.
+		// io.EOF forever. That is why the port is asked as well: a zero-byte read is
+		// the idle timer expiring unless the line has hung up, and no read can say
+		// which, but poll(2) can.
 		if errors.Is(err, syscall.EINTR) || errors.Is(err, syscall.EAGAIN) || errors.Is(err, io.EOF) {
+			if portHungUp(conn) {
+				return fmt.Errorf("serial port hung up on %v", r.Name())
+			}
+			// VMIN=0/VTIME=1 already makes the read itself wait out the 100ms
+			// timer, so the pause here is not what keeps this loop from spinning;
+			// it is a window in which a close is not reported to the loop at all.
 			time.Sleep(20 * time.Millisecond)
 			return nil
 		}

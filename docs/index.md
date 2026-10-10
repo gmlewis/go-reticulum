@@ -49,7 +49,7 @@ With Reticulum:
 
 The Go port provides a modern, high-performance, single-binary implementation of Reticulum with strict architectural principles:
 
-- **Standard Library Only**: The root module has **zero external Go dependencies** and **zero Cgo**. All cryptographic primitives (Ed25519, X25519, AES-128, Fernet, SHA-256/512, HKDF) and protocol codecs are implemented natively.
+- **Standard Library, Plus One Module**: The root module's only external Go dependency is `golang.org/x/sys`, for the `poll(2)` check that detects a serial port which has hung up, and it uses **zero Cgo**. All cryptographic primitives (Ed25519, X25519, AES-128, Fernet, SHA-256/512, HKDF) and protocol codecs are implemented natively.
 - **High Concurrency & Low Footprint**: Built with Go's lightweight goroutines and channels, providing exceptional throughput and minimal RAM/CPU consumption on low-power devices.
 - **Drop-In Interoperability**: Fully wire-compatible with Python Reticulum, LXMF, and RRC hubs and clients.
 - **Field-Ready Autonomous Agents**: Includes `gorrcbot`, an autonomous RRC client and field assistant equipped with offline geodesy, Plus Codes, ephemeris, marine telemetry, wilderness medicine cards, emergency signaling, and an offline cell/repeater finder with built-in WGS-84 ↔ GCJ-02 coordinate conversion for China. Its marine, aviation, navigation, and communications-site catalogs are embedded, so `search`, `near`, and `list` find an opaque station id with no network at all, and long answers are paginated to the reply budget with `more` / `next`.

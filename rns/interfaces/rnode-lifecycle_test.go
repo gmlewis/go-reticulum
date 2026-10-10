@@ -167,6 +167,19 @@ func splitFEND(p []byte) [][]byte {
 // lifecycle delays and runs configureDevice synchronously.
 func newRNodeForTest(t *testing.T, conn rnodeConn, freq, bw, tx, sf, cr int, handler InboundHandler) *RNodeInterface {
 	t.Helper()
+	r := newBareRNodeForTest(t, conn, freq, bw, tx, sf, cr, handler)
+	if err := r.configureDevice(); err != nil {
+		t.Fatalf("configureDevice: %v", err)
+	}
+	return r
+}
+
+// newBareRNodeForTest builds the same interface without configuring it, for a test
+// whose conn is a real port rather than a mock radio: a pseudo-terminal with no
+// radio behind it has nothing to detect, and the tests that read one are about
+// what the read loop does with the line, not about the handshake.
+func newBareRNodeForTest(t *testing.T, conn rnodeConn, freq, bw, tx, sf, cr int, handler InboundHandler) *RNodeInterface {
+	t.Helper()
 	r := &RNodeInterface{
 		BaseInterface:       NewBaseInterface("test-rnode", ModeFull, 115200),
 		port:                "mock",
@@ -188,9 +201,6 @@ func newRNodeForTest(t *testing.T, conn rnodeConn, freq, bw, tx, sf, cr int, han
 	r.connMu.Lock()
 	r.conn = conn
 	r.connMu.Unlock()
-	if err := r.configureDevice(); err != nil {
-		t.Fatalf("configureDevice: %v", err)
-	}
 	return r
 }
 

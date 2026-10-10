@@ -30,7 +30,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -117,15 +116,13 @@ func startPythonMiniHub(t *testing.T, port int) (string, string, func()) {
 	return hubHash, logPath, killAndWait
 }
 
+// freePortRRC is freeLoopbackPort for the cross-implementation and idle-link
+// rigs: a port this run has already handed out is never handed out again, so two
+// rigs cannot be given the same number and then race each other for it. See
+// freeLoopbackPort.
 func freePortRRC(t *testing.T) int {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("free port: %v", err)
-	}
-	port := l.Addr().(*net.TCPAddr).Port
-	_ = l.Close()
-	return port
+	return freeLoopbackPort(t)
 }
 
 func readMiniHubEvents(t *testing.T, logPath string) []miniHubEvent {
