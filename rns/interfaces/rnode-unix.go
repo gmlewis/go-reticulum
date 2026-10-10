@@ -454,13 +454,38 @@ func (r *RNodeInterface) readLoopOnce() error {
 	buf := make([]byte, 512)
 	n, err := conn.Read(buf)
 	if err != nil {
-		if errors.Is(err, syscall.EINTR) || errors.Is(err, syscall.EAGAIN) || errors.Is(err, syscall.EIO) {
+		// A read that was interrupted, or that had nothing to give, has not ended:
+		// the line is still there and the next read may carry a frame.
+		//
+		// "Nothing to give" includes io.EOF, and that is not a quirk of any one
+		// platform. configureTermios sets VMIN=0 and VTIME=1, so an idle line hands
+		// back a zero-byte read every time its timer expires, and Go reports a
+		// zero-byte read on an *os.File as io.EOF (poll.FD.ZeroReadIsEOF, which
+		// os.newFile sets for every file it opens). Measured on the appliance
+		// itself with a pseudo-terminal: an idle port reads `n=0 err=io.EOF` once
+		// per 100ms for as long as nobody is talking. Taking that for the end of
+		// the link would take a healthy radio offline ten times a second.
+		if errors.Is(err, syscall.EINTR) || errors.Is(err, syscall.EAGAIN) || errors.Is(err, io.EOF) {
 			time.Sleep(20 * time.Millisecond)
 			return nil
 		}
-		if errors.Is(err, io.EOF) || errors.Is(err, os.ErrClosed) {
+		// A port this process closed itself is not the link ending either: the
+		// caller that closed it has already decided what state the interface is
+		// in.
+		if errors.Is(err, os.ErrClosed) {
 			return nil
 		}
+		// What is left is the link ending, and it must end the loop and take the
+		// interface offline — which is what Python's readLoop does when pyserial
+		// raises and its `except` sets `online = False` before reconnecting.
+		//
+		// The port has to be believed here, because nothing else can tell: the
+		// bridge that owns the radio closes the pseudo-terminal when the radio is
+		// unplugged, and on this platform that close arrives as EIO exactly once,
+		// at the moment it happens — every read after it goes back to the idle
+		// io.EOF above. A reader that counted EIO as "nothing to read" (which this
+		// one did) reports a radio that has been gone for hours as connected,
+		// because the condition it is waiting on never changes.
 		return err
 	}
 	var delivered [][]byte

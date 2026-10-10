@@ -32,6 +32,19 @@ type mockRNode struct {
 	fwMin     byte
 	platform  byte
 	driftFreq int // if non-zero, reported frequency is shifted by this (mismatch)
+
+	// failAfter, once set, is what every Read reports: the serial link ending
+	// underneath a reader is what the radio going away looks like from here.
+	failAfter error
+}
+
+// fail makes every subsequent Read report err and wakes a reader already
+// waiting on one, standing in for the link that ended while nobody was writing.
+func (m *mockRNode) fail(err error) {
+	m.mu.Lock()
+	m.failAfter = err
+	m.cond.Broadcast()
+	m.mu.Unlock()
 }
 
 func newMockRNode() *mockRNode {
@@ -49,8 +62,13 @@ func (m *mockRNode) queue(frame []byte) {
 
 func (m *mockRNode) Read(p []byte) (int, error) {
 	m.mu.Lock()
-	for len(m.buf) == 0 && !m.closed {
+	for len(m.buf) == 0 && !m.closed && m.failAfter == nil {
 		m.cond.Wait()
+	}
+	if m.failAfter != nil && len(m.buf) == 0 {
+		err := m.failAfter
+		m.mu.Unlock()
+		return 0, err
 	}
 	if m.closed && len(m.buf) == 0 {
 		m.mu.Unlock()
