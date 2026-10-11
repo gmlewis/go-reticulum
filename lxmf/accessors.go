@@ -230,3 +230,56 @@ func (p *Peer) PropagationStampCostFlexibility() *int {
 	defer p.mu.Unlock()
 	return cloneOptionalInt(p.propagationStampCostFlexibility)
 }
+
+// PendingOutboundSnapshot is a copy of the live state of one LXMF message still
+// in the router's outbound queue. It carries exactly the fields nomadnet's
+// conversation view reads from a matching app.message_router.pending_outbound
+// entry to render a live transfer progress row (Conversations.py:2711-2725):
+// the message hash (to match the conversation message), the transfer progress,
+// the current lifecycle state, and the transport representation.
+type PendingOutboundSnapshot struct {
+	// Hash is the LXMF message hash (Message.Hash) used to match a pending
+	// message against the conversation message being displayed.
+	Hash []byte
+	// Progress is the outbound transfer progress in the range 0.0-1.0.
+	Progress float64
+	// State is the raw LXMF lifecycle state (Message.State, e.g. StateSending
+	// 0x02, StateSent 0x04, StateFailed 0xFF).
+	State int
+	// Representation is the raw LXMF transport representation
+	// (Message.Representation, e.g. RepresentationResource 0x02).
+	Representation int
+}
+
+// PendingOutbound returns a defensive snapshot of the router's pending outbound
+// queue. It mirrors reading Python's app.message_router.pending_outbound
+// (LXMRouter.pending_outbound), which nomadnet's LXMessageWidget scans to find
+// the live transfer for a message in transit (Conversations.py:2711-2720). Each
+// entry is a copy, so callers never touch router- or message-internal state; the
+// slice order follows the queue order and is not otherwise specified. A nil
+// router returns nil.
+func (r *Router) PendingOutbound() []PendingOutboundSnapshot {
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]PendingOutboundSnapshot, 0, len(r.pendingOutbound))
+	for _, m := range r.pendingOutbound {
+		if m == nil {
+			continue
+		}
+		// Representation is written under r.mu by the router's dispatch path
+		// (sendMessageLocked and friends), so reading it here is consistent.
+		// Progress and State go through their own persist-mutex accessors; the
+		// r.mu -> persistMu ordering is the same one the router itself uses
+		// when packing a queued message.
+		out = append(out, PendingOutboundSnapshot{
+			Hash:           cloneBytes(m.Hash),
+			Progress:       m.Progress(),
+			State:          m.State(),
+			Representation: m.Representation,
+		})
+	}
+	return out
+}
