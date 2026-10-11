@@ -62,3 +62,23 @@ func openUnopenedPTY(t *testing.T) (master *os.File, slavePath string) {
 
 	return master, string(name[:n])
 }
+
+// setWaitingRead switches the port's read from the idle-timed form (VMIN=0/VTIME=1)
+// to one that waits for a byte (VMIN=1/VTIME=0), so a reader parked in it cannot
+// return on its own. Darwin never reaches the assertion that uses it — it reports a
+// close as a zero-byte read, not EIO, so the close test skips — but the helper must
+// exist on both platforms for the shared test to compile.
+func setWaitingRead(fd uintptr) error {
+	termios := &syscall.Termios{}
+	if _, _, errno := syscall.Syscall6(syscall.SYS_IOCTL, fd,
+		uintptr(syscall.TIOCGETA), uintptr(unsafe.Pointer(termios)), 0, 0, 0); errno != 0 {
+		return errno
+	}
+	termios.Cc[syscall.VMIN] = 1
+	termios.Cc[syscall.VTIME] = 0
+	if _, _, errno := syscall.Syscall6(syscall.SYS_IOCTL, fd,
+		uintptr(syscall.TIOCSETA), uintptr(unsafe.Pointer(termios)), 0, 0, 0); errno != 0 {
+		return errno
+	}
+	return nil
+}

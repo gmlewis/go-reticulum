@@ -73,14 +73,37 @@ func TestRNodePortReportsAnIdleLineAsNothingAndACloseAsEIO(t *testing.T) {
 		}
 	}
 
-	// The other end going away is reported as EIO, once. That is the kernel's
-	// behaviour on Linux, which is what the appliance runs and what CI runs; on
-	// Darwin the same close arrives as another zero-byte read, indistinguishable
-	// from the line being idle, so there is nothing here to distinguish and
-	// nothing to assert.
+	// The other end going away is reported as EIO, once, and ONLY to a read that
+	// is already parked when it happens: a read started after the close hands back
+	// a zero-byte read (io.EOF) for ever, indistinguishable from the line being
+	// idle. So the close has to land on a parked read — and with the idle timer
+	// above, "parked" is only a tenth-of-a-second window, which a loaded machine
+	// misses about one run in ten (this test failed that often on CI, reading
+	// io.EOF three million times in the two-second budget). Switching the port to
+	// a read that waits for a byte removes the window: a read with no idle timeout
+	// cannot return on its own, so once the reader is parked it stays parked until
+	// the close reaches it.
 	if runtime.GOOS == "darwin" {
 		t.Skip("this kernel reports a close as a zero-byte read, not EIO: nothing to distinguish")
 	}
+	if err := setWaitingRead(slave.Fd()); err != nil {
+		t.Fatalf("switching the port to a waiting read: %v", err)
+	}
+	// Wait out the timed read that was in flight when the switch was made — it
+	// returns within VTIME=1, a tenth of a second — so the reader is parked in a
+	// waiting read. Silence is the signal, and it is a sound one: a waiting read
+	// never returns, so a reader that has reported nothing for well over the idle
+	// timeout can only be parked in one.
+	const quiet = 250 * time.Millisecond
+	for parked := false; !parked; {
+		select {
+		case readErr := <-results:
+			_ = readErr // still the tail of the timed read; wait again
+		case <-time.After(quiet):
+			parked = true
+		}
+	}
+
 	if err := master.Close(); err != nil {
 		t.Fatalf("closing the port's other end: %v", err)
 	}

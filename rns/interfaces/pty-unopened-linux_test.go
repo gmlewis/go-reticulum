@@ -52,3 +52,25 @@ func openUnopenedPTY(t *testing.T) (master *os.File, slavePath string) {
 
 	return master, fmt.Sprintf("/dev/pts/%v", number)
 }
+
+// setWaitingRead switches the port's read from the idle-timed form (VMIN=0/VTIME=1,
+// which hands back a zero-byte read after a tenth of a second) to one that waits
+// for a byte (VMIN=1/VTIME=0). A read with no idle timeout cannot return on its
+// own, so once a reader is parked in one it stays parked until the far end closes
+// — and the kernel reports the hang-up as EIO only to a read that is already
+// parked. That is what makes the EIO assertion deterministic instead of a race
+// against the idle timer.
+func setWaitingRead(fd uintptr) error {
+	termios := &syscall.Termios{}
+	if _, _, errno := syscall.Syscall6(syscall.SYS_IOCTL, fd,
+		uintptr(syscall.TCGETS), uintptr(unsafe.Pointer(termios)), 0, 0, 0); errno != 0 {
+		return errno
+	}
+	termios.Cc[syscall.VMIN] = 1
+	termios.Cc[syscall.VTIME] = 0
+	if _, _, errno := syscall.Syscall6(syscall.SYS_IOCTL, fd,
+		uintptr(syscall.TCSETS), uintptr(unsafe.Pointer(termios)), 0, 0, 0); errno != 0 {
+		return errno
+	}
+	return nil
+}
