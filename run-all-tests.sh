@@ -218,6 +218,20 @@ NESTED_TEST_LOG="${REPO_ROOT}/nested-test-failures.log"
 for modfile in cmd/*/go.mod; do
     if [ -f "${modfile}" ]; then
         moddir=$(dirname "${modfile}")
+        # The nested modules resolve their own dependency graph, and the release
+        # build resolves them with GOWORK=off, so each go.sum has to carry every
+        # module its own packages reach. A dependency added to the root module and
+        # tidied only there is the one that is missed: nothing local notices,
+        # because the workspace answers from go.work.sum, and the failure arrives
+        # as "missing go.sum entry" from a published release build instead. -diff
+        # reports the difference without writing it, so a gate run never edits the
+        # tree it is checking.
+        if ! (cd "${moddir}" && GOWORK=off go mod tidy -diff >/dev/null 2>&1); then
+            echo "FAIL: ${moddir} is not tidy; run:" >&2
+            echo "          (cd ${moddir} && GOWORK=off go mod tidy)" >&2
+            (cd "${moddir}" && GOWORK=off go mod tidy -diff 2>&1 | head -20) >&2
+            exit 1
+        fi
         if ! (cd "${moddir}" && run_with_timeout go test -race -count=1 ./...) >>"${NESTED_TEST_LOG}" 2>&1; then
             echo "FAIL: nested module tests failed in ${moddir} (see ${NESTED_TEST_LOG}):" >&2
             cat "${NESTED_TEST_LOG}" >&2
@@ -232,7 +246,16 @@ for modfile in cmd/*/go.mod; do
         fi
     fi
 done
+# The root module is the one CI checks out alone, with no go.work, so it is held to
+# the same rule as the nested ones.
+if ! GOWORK=off go mod tidy -diff >/dev/null 2>&1; then
+    echo "FAIL: the root module is not tidy; run:" >&2
+    echo "          GOWORK=off go mod tidy" >&2
+    GOWORK=off go mod tidy -diff 2>&1 | head -20 >&2
+    exit 1
+fi
 echo "nested module tests: clean (default and -tags=wago)"
+echo "go mod tidy: clean in the root module and every nested module"
 
 # ---------------------------------------------------------------------------
 # Integration tests: the -short suite always (fast); the full suite only in
