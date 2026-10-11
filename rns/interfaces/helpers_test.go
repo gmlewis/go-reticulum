@@ -6,7 +6,9 @@
 package interfaces
 
 import (
+	"errors"
 	"net"
+	"syscall"
 	"testing"
 	"time"
 
@@ -47,6 +49,52 @@ func reserveTCPPort(t *testing.T) int {
 	port := addr.Port
 	HoldPendingTCPListener(port, l)
 	t.Cleanup(func() { ReleasePendingTCPListener(port) })
+	return port
+}
+
+// reserveHeldIPv6TCPPort returns an IPv6 loopback TCP port for a test and keeps
+// its listener bound until the code under test adopts it, the IPv6 counterpart
+// of reserveTCPPort (see pendingTCPListeners). An interface that has to perform
+// its own bind cannot use it — reserveIPv6LoopbackTCPPort leaves the port free
+// for that, and its callers retry instead.
+func reserveHeldIPv6TCPPort(t *testing.T) int {
+	t.Helper()
+	l, err := net.Listen("tcp", "[::1]:0")
+	if err != nil {
+		t.Skipf("IPv6 loopback unavailable: %v", err)
+	}
+	addr, ok := l.Addr().(*net.TCPAddr)
+	if !ok {
+		_ = l.Close()
+		t.Fatalf("reserveHeldIPv6TCPPort unexpected addr type: %T", l.Addr())
+	}
+	port := addr.Port
+	HoldPendingTCPListener(port, l)
+	t.Cleanup(func() { ReleasePendingTCPListener(port) })
+	return port
+}
+
+// reserveIPv6LoopbackTCPPort returns a free TCP port on the IPv6 loopback that is
+// left free for the caller to bind, for the one case reserveHeldIPv6TCPPort
+// cannot serve: a test that asserts on the bind itself, which adopting a held
+// listener would skip. The port therefore leaves this test's control as soon as
+// it is returned, so callers must treat losing it as expected and retry the
+// whole bind on a fresh port (see portReserveAttempts) rather than failing.
+func reserveIPv6LoopbackTCPPort(t *testing.T) int {
+	t.Helper()
+	probe, err := net.Listen("tcp", "[::1]:0")
+	if err != nil {
+		t.Skipf("IPv6 loopback unavailable: %v", err)
+	}
+	addr, ok := probe.Addr().(*net.TCPAddr)
+	if !ok {
+		_ = probe.Close()
+		t.Fatalf("reserveIPv6LoopbackTCPPort unexpected addr type: %T", probe.Addr())
+	}
+	port := addr.Port
+	if err := probe.Close(); err != nil {
+		t.Fatalf("reserveIPv6LoopbackTCPPort close: %v", err)
+	}
 	return port
 }
 
@@ -94,6 +142,14 @@ func waitSignal(t *testing.T, ch <-chan struct{}, timeout time.Duration, msg str
 // reserveUnboundTCPPort). Losing such a port to a parallel test is expected, so
 // the scenario is retried on a fresh port instead of failing the test.
 const portReserveAttempts = 5
+
+// isAddrInUse reports whether err is the kernel refusing a bind because the
+// port was taken. It is what tells a lost port reservation — which a caller
+// answers by retrying on a fresh port — apart from an address the code under
+// test could not derive at all, which is the failure the caller must report.
+func isAddrInUse(err error) bool {
+	return errors.Is(err, syscall.EADDRINUSE)
+}
 
 // allocateUDPPortPair returns two loopback UDP ports for interfaces that forward
 // to each other, holding both sockets until the interfaces adopt them.

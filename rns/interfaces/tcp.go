@@ -432,9 +432,23 @@ func (tci *TCPClientInterface) Send(data []byte) error {
 // newer connection installed by a concurrent reconnect: only the connection
 // that is still current triggers the down transition.
 func (tci *TCPClientInterface) failConn(conn net.Conn) {
+	// The interface is taken down before its connection is let go, and not
+	// after. Status reads running without this lock, so the order of these two
+	// writes is the whole of what an observer can see: clearing the connection
+	// first would let a reader be told the interface is up at a moment when
+	// there is nothing left to send over, and the transport would route through
+	// an interface that cannot carry a byte. Python's TCPInterface keeps the
+	// same order — online = False before the socket is torn down, just as
+	// connect sets online = True only once the socket exists.
+	//
+	// Swap rather than CompareAndSwap: the down transition is notified once, so
+	// the previous value has to be the one that is kept, not one loaded before
+	// the lock was taken.
+	down := false
 	tci.mu.Lock()
 	current := tci.conn
 	if current == conn {
+		down = atomic.SwapInt32(&tci.running, 0) == 1
 		tci.conn = nil
 	}
 	tci.mu.Unlock()
@@ -451,7 +465,7 @@ func (tci *TCPClientInterface) failConn(conn net.Conn) {
 		return
 	}
 
-	if atomic.CompareAndSwapInt32(&tci.running, 1, 0) {
+	if down {
 		// Notify the transport once on the up->down transition so it can
 		// eagerly invalidate paths routed through this interface. This
 		// replaces the old behavior where path invalidation happened

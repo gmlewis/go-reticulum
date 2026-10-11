@@ -92,24 +92,17 @@ func TestTCPConcatHostPortIsUndialable(t *testing.T) {
 func TestTCPClientInterfaceConnectsToIPv6Literal(t *testing.T) {
 	t.Parallel()
 
-	// Reserve a free port on the IPv6 loopback, then hand it to the server.
-	probe, err := net.Listen("tcp", "[::1]:0")
-	if err != nil {
-		t.Skipf("IPv6 loopback unavailable: %v", err)
-	}
-	port, ok := probe.Addr().(*net.TCPAddr)
-	if !ok {
-		_ = probe.Close()
-		t.Fatalf("unexpected listener addr type: %T", probe.Addr())
-	}
-	if err := probe.Close(); err != nil {
-		t.Fatalf("close probe listener: %v", err)
-	}
+	// The port is held by a listener until the server adopts it (see
+	// reserveHeldIPv6TCPPort): this test is about the *client* reaching an IPv6
+	// literal, and the literal is still resolved for real on the client's dial.
+	// Releasing a probe here instead let a parallel test claim the port, which
+	// failed the bind with "address already in use" under -race -count=5.
+	port := reserveHeldIPv6TCPPort(t)
 
-	server := mustTestNewTCPServerInterface(t, "v6-server", "::1", port.Port, func([]byte, Interface) {})
+	server := mustTestNewTCPServerInterface(t, "v6-server", "::1", port, func([]byte, Interface) {})
 	t.Cleanup(func() { _ = server.Detach() })
 
-	client := mustTestNewTCPClientInterface(t, "v6-client", "::1", port.Port, false, nil)
+	client := mustTestNewTCPClientInterface(t, "v6-client", "::1", port, false, nil)
 	t.Cleanup(func() { _ = client.Detach() })
 
 	waitForIfaceRunning(t, client, 2*time.Second)
@@ -130,40 +123,53 @@ func TestTCPClientInterfaceConnectsToIPv6Literal(t *testing.T) {
 func TestTCPServerInterfaceBindsAnAlreadyBracketedIPv6Literal(t *testing.T) {
 	t.Parallel()
 
-	// Reserve a free port on the IPv6 loopback.
-	probe, err := net.Listen("tcp", "[::1]:0")
-	if err != nil {
-		t.Skipf("IPv6 loopback unavailable: %v", err)
-	}
-	addr, ok := probe.Addr().(*net.TCPAddr)
-	if !ok {
-		_ = probe.Close()
-		t.Fatalf("unexpected listener addr type: %T", probe.Addr())
-	}
-	port := addr.Port
-	if err := probe.Close(); err != nil {
-		t.Fatalf("close probe listener: %v", err)
-	}
-
 	for _, bindIP := range []string{"[::1]", "::1"} {
-		// Deliberately NOT parallel: both cases bind the same reserved port, and the second
-		// would race the first for it.
+		// Deliberately NOT parallel: both cases bind an IPv6 loopback port, and
+		// running them together would put them in each other's way rather than
+		// exercise the bracket.
 		t.Run(bindIP, func(t *testing.T) {
-			server, err := NewTCPServerInterface("bracketed-server", bindIP, port, func([]byte, Interface) {}, nil)
-			if err != nil {
-				t.Fatalf("a hub configured with listen_ip = %v could not bind: %v\n"+
-					"hostPortAddr(%q, %v) = %q; the fleet's hub wrote [::] and was refused for days",
-					bindIP, err, bindIP, port, hostPortAddr(bindIP, port))
+			// The port is probed and then released, rather than held and adopted
+			// the way reserveTCPPort holds one, because the server has to perform
+			// the bind for this test to mean anything: the second bracket is
+			// refused inside net.Listen, so adopting a listener this test had
+			// already bound would skip the code path being guarded. A parallel
+			// test can therefore claim the released port first; that is expected
+			// and the scenario is retried on a fresh port rather than failed.
+			for range portReserveAttempts {
+				port := reserveIPv6LoopbackTCPPort(t)
+				if bracketedIPv6ServerBindsAndAccepts(t, bindIP, port) {
+					return
+				}
 			}
-			defer func() { _ = server.Detach() }()
-
-			// Binding is not enough: the listener has to accept, or the hub is up on paper
-			// exactly as it was while the fleet was down.
-			conn, err := net.DialTimeout("tcp", hostPortAddr(bindIP, port), 2*time.Second)
-			if err != nil {
-				t.Fatalf("nothing accepted on the address derived from listen_ip = %v: %v", bindIP, err)
-			}
-			_ = conn.Close()
+			t.Fatalf("no reserved IPv6 port stayed free over %v attempts", portReserveAttempts)
 		})
 	}
+}
+
+// bracketedIPv6ServerBindsAndAccepts binds a hub on bindIP:port and verifies it
+// accepts a connection on the address derived from that bindIP. It reports false
+// when the port reservation was lost (the caller retries on a fresh port), and
+// fails the test for any other error — the double bracket, whose message names
+// neither the bracket nor the config file that wrote it.
+func bracketedIPv6ServerBindsAndAccepts(t *testing.T, bindIP string, port int) bool {
+	t.Helper()
+	server, err := NewTCPServerInterface("bracketed-server", bindIP, port, func([]byte, Interface) {}, nil)
+	if err != nil {
+		if isAddrInUse(err) {
+			return false
+		}
+		t.Fatalf("a hub configured with listen_ip = %v could not bind: %v\n"+
+			"hostPortAddr(%q, %v) = %q; the fleet's hub wrote [::] and was refused for days",
+			bindIP, err, bindIP, port, hostPortAddr(bindIP, port))
+	}
+	defer func() { _ = server.Detach() }()
+
+	// Binding is not enough: the listener has to accept, or the hub is up on paper
+	// exactly as it was while the fleet was down.
+	conn, err := net.DialTimeout("tcp", hostPortAddr(bindIP, port), 2*time.Second)
+	if err != nil {
+		t.Fatalf("nothing accepted on the address derived from listen_ip = %v: %v", bindIP, err)
+	}
+	_ = conn.Close()
+	return true
 }
