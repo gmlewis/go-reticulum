@@ -7,7 +7,7 @@ matter are all in the platform's security model, not in the network stack.
 This page covers what the stack itself needs to know about Android. For a
 step-by-step guide to running an application (`gonomadnet`) on a device — build,
 install, home-screen icon, configuration — see
-[go-nomadnet's Android guide](https://github.com/gmlewis/go-nomadnet/blob/master/docs/ANDROID.md).
+[go-nomadnet's Android guide](https://github.com/gmlewis/go-nomadnet/blob/master/docs/Android.md).
 
 Android reaches the stack through [Termux](https://termux.dev), which gives an
 unprivileged application a PTY, a shell, and a writable home directory. Two
@@ -110,7 +110,7 @@ PING example.org(2603:900b:3300:a::1be9) 56 data bytes
 
 A launcher script can do this on every start so the name remains the source of
 truth; `go-nomadnet`'s
-[Android guide](https://github.com/gmlewis/go-nomadnet/blob/master/docs/ANDROID.md)
+[Android guide](https://github.com/gmlewis/go-nomadnet/blob/master/docs/Android.md)
 shows the complete script.
 
 ---

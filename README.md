@@ -30,8 +30,11 @@ It is based upon the following Python original works:
 - **One External Runtime Dependency**: `golang.org/x/sys`, for the `poll(2)` check that
   tells a serial port which has hung up from one that is merely idle. A read reports both
   the same way, so the RNode read loop has to ask the port, and only the standard library
-  cannot ask. Everything else the core stack, the messaging layer and the CLI binaries
-  rely on is the Go standard library plus the in-repo packages listed above.
+  cannot ask. Everything else the core stack and the messaging layer rely on is the Go
+  standard library plus the in-repo packages listed above. Four CLI programs that link the
+  wasm page sandbox — `cmd/gornsd`, `cmd/gorrcd`, `cmd/gornx` and `cmd/golxmd` — each carry
+  their own `go.mod` and require `github.com/wago-org/wago` for that build tag; every other
+  `cmd/` program needs nothing beyond the root module.
 - **Vendored Compression Snapshot**: A local in-repo snapshot (with source commit
   `39efe44ab707ffd2c1ef32cc7dbebfe584718686`) of `github.com/dsnet/compress/bzip2`
   is included under `compress/bzip2` for parity work so that the rest of `lxmf` and `rns`
@@ -276,7 +279,7 @@ gonomadnet Public RRC Hub  (gonomadnet node + gornsd + gorngit + gorrcd + golxmd
   golxmd prop dest      <7acc095f0e83182feb58c888d090a3cc>  lxmf.propagation
 ```
 
-- **NomadNet Page**: Open `c7d0e7bbd883e595f53e14fa6986188c` (`Ctrl-U` in `gonomadnet`) to browse Micron pages and live [Wasm Executable Pages](#wasm-executable-pages).
+- **NomadNet Page**: Open `c7d0e7bbd883e595f53e14fa6986188c` (`Ctrl-U` in `gonomadnet`) to browse Micron pages and live [Wasm Plugin Sandbox](#wasm-plugin-sandbox).
 - **RRC Chat & `@gobot`**: Join `rrc://a012129c10205c0b9441fcd2b755b2a7/#general` to chat and interact with [`@gobot`](#gorrcbot--the-rrc-bot-client). From a shell, the [`gobot`](#gobot--the-one-shot-cli-for-gobot) CLI reaches the same official bot with one command and no setup.
 - **Git over Reticulum**: Clone repositories directly over the mesh using `gorngit` / `git`: `git clone rns://58a0406047ec2e7ce23e9e9a83b744df/go-reticulum`.
 - **LXMF Propagation Node**: Use `7acc095f0e83182feb58c888d090a3cc` as your LXMF propagation node for offline store-and-forward message delivery.
@@ -424,7 +427,7 @@ plus a few that only matter on a mesh:
 | `ping` | answer `pong` — a liveness check |
 | `uptime` | runtime, hub hash, and how long this connection has been up |
 | `whoami` | your nick and full identity hash as this hub sees them |
-| `botinfo` | the bot, this hub, and the bot's own identity hash (alias `id`) |
+| `botinfo` | the bot's nick, identity hash, `@hash-prefix` alias, version, hub, and command count (alias `id`) |
 | `addr <nick\|hash\|me>` (alias `address`, `addresses`) | every address a peer's identity publishes — the identity hash a hub knows them by, then `lxmf.delivery` and `nomadnetwork.node` — each printed in the form a client turns into a working link |
 | `qr [<nick\|hash\|me>] [identity\|lxmf]` | that address drawn as a black-and-white picture a phone camera can scan, with the address and its full destination specifier beneath it (the picture needs a message pane about 42 columns wide) |
 | `dnotice <nick\|hash\|me> <text>` (alias `dn`) | send one client a direct NOTICE |
@@ -443,7 +446,6 @@ plus a few that only matter on a mesh:
 | `kjv <reference\|words\|regex>` | look up a Bible verse or search the King James text (needs `kjv_txt_file`; see below) |
 | `seen <nick\|hash>` | when a client last spoke in a joined room |
 | `rooms [room]` | the rooms the bot has joined, or with a room named the clients the hub reports in it (alias `members`) |
-| `botinfo` | the bot's nick, identity hash, `@hash-prefix` alias, version, hub, and command count (alias `id`) |
 
 Each of these can be explained on demand: `@gobot help kjv` prints that one
 command's purpose, its usage, its inputs, and a worked example — as does

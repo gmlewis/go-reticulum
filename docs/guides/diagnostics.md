@@ -9,7 +9,11 @@ Managing LoRa mesh networks requires ongoing radio telemetry and link quality as
 `gornode-diagnostics` profiles multiple connected RNodes and serial devices, reporting hardware revisions, firmware integrity, and RF performance:
 
 ```bash
-gornode-diagnostics /dev/ttyUSB*
+# Probe every serial device it can find
+gornode-diagnostics
+
+# Or name the ports explicitly
+gornode-diagnostics -port /dev/ttyUSB0,/dev/ttyUSB1
 ```
 
 ---
@@ -31,4 +35,6 @@ When evaluating LoRa link reliability, monitor:
 
 ## Reticulum Diagnostics
 
-Use `gornstatus -a` to monitor packet throughput, dropped frames, and interface error rates across all active physical interfaces.
+Use `gornstatus -m` to watch packet throughput, dropped frames and interface
+error rates continuously. `gornstatus -a` includes interfaces that are down,
+which is what you want when one of them is the problem.

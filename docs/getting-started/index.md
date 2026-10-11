@@ -19,7 +19,7 @@ Download the appropriate binary archive for your system, extract it, and place t
 
 ### Building from Source
 
-To build from source, ensure you have **Go 1.23+** installed:
+To build from source, ensure you have **Go 1.26+** installed:
 
 ```bash
 git clone https://github.com/gmlewis/go-reticulum.git
@@ -50,15 +50,8 @@ Run `gornstatus` to verify:
 gornstatus
 ```
 
-Output will display the local Reticulum identity hash, uptime, interfaces, and current routing table.
-
-```
-Shared Instance[0] is running, pid 14280
-Primary Interface   : AutoInterface[Default Interface]
-Interface Status    : Up
-Received Traffic    : 0 bytes
-Sent Traffic        : 0 bytes
-```
+It prints the running transport instance and its uptime, then a block per
+interface — its name, its `Status` (`Up` or `Down`), and its traffic counters.
 
 ---
 

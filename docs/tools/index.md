@@ -40,5 +40,5 @@ Go Reticulum includes a comprehensive suite of command-line tools and standalone
 | [**gornsh**](cli-utilities.md#gornsh) | `gornsh` | Authenticated, encrypted remote shell over Reticulum. |
 | [**gorngit**](cli-utilities.md#gorngit) | `gorngit` | Git transport helper (`gogit-remote-rns`) allowing git clones and pushes over mesh links. |
 | [**gorngcs**](cli-utilities.md#gorngcs) | `gorngcs` | Reticulum Signed Git (RSG) commit signature signer and validator (`rngcs`). |
-| [**gornpkg**](cli-utilities.md#gornpkg) | `gornpkg` | Package manager for distribution of files and software bundles over Reticulum. |
-| [**gornir**](cli-utilities.md#gornir) | `gornir` | Reticulum Distributed Identity Resolver daemon (`rnir`). |
+| [**gornpkg**](cli-utilities.md#gornpkg) | `gornpkg` | Port of the Reticulum Meta Package Manager — a stub that initializes the stack and exits. |
+| [**gornir**](cli-utilities.md#gornir) | `gornir` | Port of the Reticulum Distributed Identity Resolver (`rnir`) — a stub that initializes the stack and exits. |

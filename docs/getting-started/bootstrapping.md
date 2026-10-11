@@ -104,6 +104,8 @@ gornprobe <destination_hash>
 
 Output:
 ```
-Sent 16 byte probe to <destination_hash>
-Valid reply received in 42.18 ms (1 hop)
+Sent probe 1 (16 bytes) to <destination_hash>
+Valid reply from <destination_hash>
+Round-trip time is 42.2 milliseconds over 1 hop
+Sent 1, received 1, packet loss 0.0%
 ```

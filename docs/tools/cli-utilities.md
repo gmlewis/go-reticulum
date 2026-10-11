@@ -13,8 +13,11 @@ gornstatus
 ```
 
 Options:
-- `-a, --all`: Show detailed interface parameters (frequencies, spreading factors, MTUs).
-- `-r, --routes`: Display complete routing table with known destination hashes and next hops.
+- `-a, --all`: Include interfaces that are currently down.
+- `-m, --monitor`: Keep monitoring, instead of printing once and exiting.
+- `-s, --sort <key>`: Sort interfaces by `rate`, `traffic`, `rx`, `tx`, `announces`, `held`, `gravity` and others.
+- `-r, --reverse`: Reverse the sort order.
+- `-t, --totals`: Show traffic totals.
 - `-j, --json`: Emit metrics in machine-readable JSON format.
 
 ---
@@ -28,8 +31,10 @@ gornpath <destination_hash>
 ```
 
 Options:
-- `-d, --drop`: Drop any cached path to the destination and force fresh route discovery.
-- `-w, --wait <sec>`: Maximum time to wait for path discovery announces.
+- `-t, --table`: Show every known path — the routing table.
+- `-m, --max <hops>`: Filter the path table by hop count.
+- `-r, --rates`: Show announce rate information.
+- `-d, --drop`: Drop the path to a destination and force fresh discovery.
 
 ---
 
@@ -82,9 +87,12 @@ Secure, encrypted remote shell over Reticulum.
 # Connect to an authorized remote server
 gornsh <destination_hash>
 
-# Run a listener to accept authorized inbound shell sessions
-gornsh -l -i ~/.reticulum/my_identity -a ~/.reticulum/authorized_keys
+# Run a listener that allows one caller, by identity hash
+gornsh -l -i ~/.reticulum/my_identity --allowed <identity_hash>
 ```
+
+Allowed caller hashes can also be listed one per line, in
+`~/.rnsh/allowed_identities` or `~/.config/rnsh/allowed_identities`.
 
 ---
 
@@ -100,14 +108,13 @@ git clone rns://<destination_hash>/repo.git
 
 ## gornpkg
 
-Offline package manager and distribution utility for sharing software archives, packages, and firmware bundles across Reticulum mesh networks.
+The Go port of the Reticulum Meta Package Manager. **It is a stub:** it
+initializes the Reticulum stack to show the port starts, then exits. There is no
+publish or fetch yet.
 
 ```bash
-# Publish a package bundle
-gornpkg publish my-package.bundle
-
-# Fetch and install a package bundle
-gornpkg get <destination_hash>/my-package.bundle
+gornpkg --version
+gornpkg --exampleconfig
 ```
 
 ---
@@ -161,7 +168,8 @@ Authorized caller identity hashes are configured in `~/.rnx/allowed_identities` 
 
 ## gornir
 
-Distributed Identity Resolver daemon (Go port of `rnir`). Discovers and resolves Reticulum destination addresses and identities across the mesh.
+The Go port of the Reticulum Distributed Identity Resolver. **It is a stub:** it
+initializes the Reticulum stack and exits, so nothing is resolved yet.
 
 ```bash
 gornir

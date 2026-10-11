@@ -146,7 +146,7 @@ WantedBy=multi-user.target
 By default the hub also accepts private command lines addressed to its own
 identity, so two users can exchange private messages with
 `/msg <nick|hash> <text>` without joining a room. Set
-`enable_private_commands = false` in `~/.gorrcd/config.toml` to turn this off and
+`enable_private_commands = false` in `~/.rrcd/rrcd.toml` to turn this off and
 emit a `WELCOME` byte-identical to stock Python `rrcd`; see
 [gorrcd — Private Messages Between RRC Users](../tools/gorrcd.md#private-messages-between-rrc-users).
 
@@ -206,7 +206,7 @@ Once running, verify node status across each layer:
 ```bash
 gornstatus
 ```
-Confirm `Shared Instance[0] is running` and that your physical interfaces report `Status: Up`.
+Confirm the transport instance reports it is running — `Transport Instance <hash> running` — and that your physical interfaces report a `Status` of `Up`.
 
 ### 2. LXMF Message Propagation
 ```bash

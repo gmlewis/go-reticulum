@@ -106,18 +106,18 @@ When transmitting a private command, the client constructs a standard RRC `T_NOT
 
 | Key | CBOR Key Index | Type | Value / Description |
 |-----|----------------|------|---------------------|
-| `KSrc` | `0` | `bytes` | Sender's 16-byte Reticulum identity hash. |
-| `KDst` | `1` | `bytes` | **Hub's 16-byte identity hash** (extracted from `WELCOME` source). |
-| `KRoom` | `2` | `nil` | **Must be omitted or nil**. Direct notices never specify a room. |
-| `KNick` | `3` | `text` | Sender's nickname (optional; normalized by hub). |
-| `KBody` | `4` | `text` | Command string starting with `/` (e.g. `/msg alice hi`, `/dnotice alice hi`, `/who`, `/stats`). |
-| `KMsgID`| `6` | `bytes` | 8-byte unique random message ID. |
-| `KTs` | `7` | `int` | Millisecond Unix timestamp. |
+| `KSrc` | `4` | `bytes` | Sender's 16-byte Reticulum identity hash. |
+| `KDst` | `8` | `bytes` | **Hub's 16-byte identity hash** (extracted from `WELCOME` source). |
+| `KRoom` | `5` | `nil` | **Must be omitted or nil**. Direct notices never specify a room. |
+| `KNick` | `7` | `text` | Sender's nickname (optional; normalized by hub). |
+| `KBody` | `6` | `text` | Command string starting with `/` (e.g. `/msg alice hi`, `/dnotice alice hi`, `/who`, `/stats`). |
+| `KID`   | `2` | `bytes` | 8-byte unique random message ID. |
+| `KTS`   | `3` | `int` | Millisecond Unix timestamp. |
 
 #### Hub Processing Rules
 
 1. When a hub receives a `T_NOTICE` envelope with `KDst` matching `hub_identity_hash`:
-   - If `enable_private_commands` is false or capability 3 is not enabled, return an error notice: `"unrecognized destination"`.
+   - If `enable_private_commands` is false or capability 3 is not enabled, return an error notice: `"destination not connected"`.
    - If `KRoom` is present, reject with error notice: `"direct notice must not include room"`.
    - If `KBody` is a text string starting with `/`:
      - Dispatch `KBody` to the hub's operator command handler (`HandleOperatorCommand`).

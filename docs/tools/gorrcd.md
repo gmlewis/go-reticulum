@@ -23,45 +23,61 @@ Run `gorrcd` for the first time:
 gorrcd
 ```
 
-On first run, `gorrcd` creates its configuration file at `~/.gorrcd/config.toml` and generates its hub identity before exiting cleanly.
+On first run, `gorrcd` writes `~/.rrcd/rrcd.toml` and `~/.rrcd/rooms.toml`, generates its hub identity at `~/.rrcd/hub_identity`, and exits cleanly.
 
 ---
 
-## Configuration (`~/.gorrcd/config.toml`)
+## Configuration (`~/.rrcd/rrcd.toml`)
+
+`~/.rrcd` is the default home; set `RRCD_HOME` to keep it elsewhere.
 
 ```toml
-# Storage directory for message history
-storage_dir = "~/.gorrcd/storage"
-
-# Hub identity private key path
-identity_path = "~/.gorrcd/hub_identity"
-
 [hub]
-name = "My Reticulum Hub"
-motd = "Welcome to Reticulum Relay Chat! Be kind."
 
-# Maximum messages saved per room
-history_limit = 100
+# Optional: Reticulum configuration directory. Unset means Reticulum's own
+# default, usually ~/.reticulum.
+configdir = ""
+
+# The hub's persistent identity.
+identity_path = "~/.rrcd/hub_identity"
+
+# Registered rooms, topics, modes and bans. gorrcd maintains this file, and a
+# running hub re-reads it with /reload.
+room_registry_path = "~/.rrcd/rooms.toml"
+
+# The name clients show beside the hub's version, and the greeting they see.
+hub_name = "gorrcd"
+greeting = ""
+
+# Announce once at startup, and how often after that (0 = startup only).
+announce_on_start = true
+announce_period_s = 0.0
 
 # Accept private command lines addressed to the hub and advertise
 # CAP_PRIVATE_COMMAND in the WELCOME. The default is true; set false for a
 # WELCOME byte-identical to stock Python rrcd.
 enable_private_commands = true
 
-# Public and key-protected rooms
-[[rooms]]
-name = "general"
+# Name the joiner in JOINED notifications. A bot already in a room needs this to
+# learn about peers that join later, and to answer them.
+include_joined_member_list = false
+```
+
+Rooms live in `~/.rrcd/rooms.toml`, not in `rrcd.toml`:
+
+```toml
+[rooms."general"]
 topic = "Public discussion"
 
-[[rooms]]
-name = "emergency"
-topic = "Emergency coordination"
-
-[[rooms]]
-name = "operations"
+[rooms."operations"]
 topic = "Operations team only"
-key = "supersecretpassphrase"   # Key-protected room (+k)
+moderated = true
+operators = ["<identity hash>"]
 ```
+
+Each room takes `founder`, `topic`, `moderated`, `operators`, `voiced`, `bans` and
+`invited`; every identity is a hex hash. A key-protected room (`+k`) is set from
+the client, not from this file.
 
 ---
 
