@@ -12,4 +12,6 @@ require (
 	github.com/wago-org/wago v0.1.0-beta.8
 )
 
+require golang.org/x/sys v0.47.0 // indirect
+
 replace github.com/gmlewis/go-reticulum => ../..
