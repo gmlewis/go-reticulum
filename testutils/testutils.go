@@ -144,6 +144,17 @@ func removeAllWithRetry(path string) error {
 		if err == nil || os.IsNotExist(err) {
 			return nil
 		}
+		if errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM) {
+			// "permission denied" from unlinkat is a directory that will not give up
+			// the entries inside it, which is what this whole helper is about: the Go
+			// module cache a scratch GOPATH pulled in is 0555 directories holding 0444
+			// files. Making the tree writable IS the fix, so the retry is immediate —
+			// there is nothing to wait for. Seen once in CI as
+			// "os.RemoveAll: unlinkat /tmp/gornodeconf-trustkey-…/go/pkg/mod/golang.org/x/sys@v0.47.0/plan9/mkall.sh: permission denied",
+			// which failed a test that had already passed its assertions.
+			makeTreeWritable(path)
+			continue
+		}
 		if !isRetriableRemoveAllError(err) {
 			return err
 		}

@@ -41,6 +41,23 @@ import (
 var (
 	loopbackPortsMu    sync.Mutex
 	loopbackPortsTaken = map[int]bool{}
+	loopbackPortNext   = freePortRangeFirst
+)
+
+// The block of loopback ports tests draw from, chosen to sit BELOW the kernel's
+// ephemeral range (Linux 32768-60999, macOS 49152-65535). Net.Listen(":0") picks
+// from that range, and a port picked from it can be handed out again behind the
+// test's back as the source port of any outbound connection — and then the test
+// that reserved the port cannot bind it. That is the
+//
+//	relay TCP server: listen tcp 127.0.0.1:34629: bind: address already in use
+//
+// that made TestFleetTwoInstancesDeliverWelcome flake on CI. Below the range the
+// kernel never allocates a port on its own, so the only competitor left is
+// another process that bound the same number deliberately.
+const (
+	freePortRangeFirst = 20000
+	freePortRangeLast  = 32000
 )
 
 // freeLoopbackPort reserves a free loopback TCP port for a test. The listener
@@ -52,24 +69,49 @@ func freeLoopbackPort(t *testing.T) int {
 	t.Helper()
 	loopbackPortsMu.Lock()
 	defer loopbackPortsMu.Unlock()
-	// A bounded search: the kernel has tens of thousands of ports to choose from,
-	// so running out means something is very wrong and says so rather than looping.
-	for range 1000 {
-		ln, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatalf("Listen: %v", err)
+	// A bounded search over the block below the ephemeral range: running out
+	// means something is very wrong and says so rather than looping.
+	for range freePortRangeLast - freePortRangeFirst {
+		port := loopbackPortNext
+		loopbackPortNext++
+		if loopbackPortNext > freePortRangeLast {
+			loopbackPortNext = freePortRangeFirst
 		}
-		port := ln.Addr().(*net.TCPAddr).Port
+		if loopbackPortsTaken[port] {
+			continue
+		}
+		ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		if err != nil {
+			continue
+		}
 		if err := ln.Close(); err != nil {
 			t.Fatalf("Close: %v", err)
 		}
-		if !loopbackPortsTaken[port] {
-			loopbackPortsTaken[port] = true
-			return port
-		}
+		loopbackPortsTaken[port] = true
+		return port
 	}
-	t.Fatal("no loopback port left that this run has not already handed out")
+	t.Fatal("no free loopback port below the ephemeral range")
 	return 0
+}
+
+// TestFreeLoopbackPortStaysBelowTheEphemeralRange pins the property that keeps
+// the fleet rigs' binds from colliding with the kernel's own allocations: every
+// reserved port comes from the block below the ephemeral range, and no port is
+// handed out twice in a run.
+func TestFreeLoopbackPortStaysBelowTheEphemeralRange(t *testing.T) {
+	t.Parallel()
+	seen := map[int]bool{}
+	for range 50 {
+		port := freeLoopbackPort(t)
+		if port < freePortRangeFirst || port > freePortRangeLast {
+			t.Fatalf("freeLoopbackPort returned %v, outside the block below the ephemeral range [%v,%v]",
+				port, freePortRangeFirst, freePortRangeLast)
+		}
+		if seen[port] {
+			t.Fatalf("freeLoopbackPort handed out %v twice in one run", port)
+		}
+		seen[port] = true
+	}
 }
 
 // instanceConfig renders a per-test RNS configuration. share decides whether
