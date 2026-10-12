@@ -88,10 +88,9 @@ bytes in the middle would be a second framer in a conversation it is not a party
 
 ## Sensors
 
-Android feeds a receiver to the stack through FIFOs (`gps.nmea`, `compass.nmea`). There are
-no FIFOs to create on iOS — `mkfifo` is not something an application may use — so the feed is
-a loopback TCP server instead, and `gonsensor`'s consumers read NMEA from it over
-`tcp://127.0.0.1:<port>`.
+Android feeds a receiver to the stack through FIFOs (`gps.nmea`, `compass.nmea`). An iOS
+application has nowhere to put one, so the feed is a loopback TCP server instead and
+`gonsensor`'s consumers read NMEA from it over `tcp://127.0.0.1:<port>`.
 
 Both are the same protocol: NMEA-0183 sentences, one sample converted once so that every
 subscriber sees identical bytes. A `gps_port` or `compass_port` of the form

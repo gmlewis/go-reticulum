@@ -13,10 +13,15 @@ Go Reticulum provides multi-platform binaries. The certified continuous-integrat
 | **FreeBSD** | `amd64`, `arm64` | Community verified | **Supported** | Published |
 | **Windows** | `amd64`, `arm64` | Community verified | Unsupported (`not supported on platform`) | Published (CLI only) |
 | **Android (Termux)** | `arm64`, `arm`, `amd64`, `386` | Community verified | Unsupported | Build from source |
+| **iOS / iPadOS** | `arm64` | Community verified | Unsupported | Linked into an application |
 
 Android needs platform-specific configuration that the other platforms do not;
 see [Android (Termux)](../guides/android.md) for the `targetSdk` requirement, the
 missing `/etc/resolv.conf`, and the `AutoInterface` restriction.
+
+iOS is the other way round: it needs less configuration and far more care, because an
+application there may not start another process and most of the filesystem it can see is not
+writable. See [iOS and iPadOS](../guides/ios.md).
 
 ---
 
@@ -28,7 +33,7 @@ missing `/etc/resolv.conf`, and the `AutoInterface` restriction.
 | `TCPClientInterface` | Supported | Outbound TCP client connectivity |
 | `TCPServerInterface` | Supported | Inbound TCP listener |
 | `UDPInterface` | Supported | Static point-to-point UDP tunnels |
-| `RNodeInterface` | Supported | USB serial LoRa transceivers (Linux, macOS, FreeBSD) |
+| `RNodeInterface` | Supported | USB serial LoRa transceivers (Linux, macOS, FreeBSD). On iOS only the `tcp://host:port` form: there is no serial device, and `ble://` is refused |
 | `KISSInterface` | Supported | KISS TNCs for packet radio (VHF/UHF) |
 | `PipeInterface` | Supported | Unix domain socket / pipe IPC |
 | `I2PInterface` | Supported | Invisible Internet Project anonymous tunneling |
