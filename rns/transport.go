@@ -299,15 +299,12 @@ type TransportSystem struct {
 	// downNotified is the once-per-down-transition latch for the outbound
 	// fan-out paths (sendRebroadcast, dispatchForwardSend). When an
 	// interface's Send fails while it was up, the first caller claims the
-	// latch and performs the log + InvalidatePathsViaInterface; the dozens
-	// of concurrent queued sends that fail on the same now-dead connection
-	// suppress, so a half-open peer whose write deadline fires cannot
-	// trigger a burst of full pathTable scans and error lines under ts.mu
-	// (which starves inbound link-handshake processing). onDown (registered
-	// for TCP interfaces in RegisterInterface) already invalidates once on
-	// the down transition; this latch keeps the fan-out paths from redo it
-	// per queued send. The latch is cleared by processAnnounceTable once the
-	// interface is observed up again, and by RegisterInterface.
+	// latch and logs the down transition; the dozens of concurrent queued
+	// sends that fail on the same now-dead connection suppress, so a half-open
+	// peer whose write deadline fires cannot produce an error-line burst under
+	// ts.mu (which starves inbound link-handshake processing). The latch is
+	// cleared by processAnnounceTable once the interface is observed up again,
+	// and by RegisterInterface.
 	downNotified map[interfaces.Interface]struct{}
 
 	packetRSSICache map[string]float64
@@ -2298,14 +2295,13 @@ func (ts *TransportSystem) InvalidatePath(destHash []byte) bool {
 // interface failing while it was up. It is the once-per-down-transition latch
 // for the outbound fan-out paths (sendRebroadcast, dispatchForwardSend, and the
 // path-table / link-transport forwarding branches of Inbound): the first
-// failing send claims the latch and performs the log + path invalidation,
-// while the concurrent queued sends that fail on the same now-dead connection
-// suppress. Without this, a half-open TCP peer whose write deadline fires
-// drains a burst of dozens of queued sends onto the closed socket, each running
-// a full InvalidatePathsViaInterface scan under ts.mu — starving inbound
-// link-handshake processing and timing out otherwise-healthy links. The latch
-// is cleared by processAnnounceTable once the interface is back up, and by
-// RegisterInterface.
+// failing send claims the latch and logs the down transition, while the
+// concurrent queued sends that fail on the same now-dead connection suppress.
+// Without this, a half-open TCP peer whose write deadline fires drains a burst
+// of dozens of queued sends onto the closed socket, each logging an error and
+// contending for ts.mu — starving inbound link-handshake processing and timing
+// out otherwise-healthy links. The latch is cleared by processAnnounceTable once
+// the interface is back up, and by RegisterInterface.
 func (ts *TransportSystem) claimDownNotify(iface interfaces.Interface) bool {
 	ts.mu.Lock()
 	if _, ok := ts.downNotified[iface]; ok {
@@ -2317,7 +2313,15 @@ func (ts *TransportSystem) claimDownNotify(iface interfaces.Interface) bool {
 	return true
 }
 
-// InvalidatePathsViaInterface removes all known paths that route via an interface.
+// InvalidatePathsViaInterface removes all known paths that route via an
+// interface, returning how many were removed.
+//
+// This is an explicit path-management primitive (the counterpart of the
+// shared-instance / CLI path-drop operations); it must never be called because
+// a single send failed. Python's Transport removes a path when its interface is
+// gone, not when a write fails, and a node that purges on a failed write loses
+// every route the moment one peer's socket goes half-open. cullExpiredPaths
+// performs the interface-gone removal automatically.
 func (ts *TransportSystem) InvalidatePathsViaInterface(iface interfaces.Interface) int {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
@@ -2568,15 +2572,20 @@ func (ts *TransportSystem) sendRebroadcast(iface interfaces.Interface, raw []byt
 	raw = ts.reframeAnnounceForTransport(raw, "rebroadcast")
 	// Capture whether the interface was up before Send. A down interface
 	// fast-fails Send with "is not running"; that is expected and must not
-	// spam the log or trigger a full pathTable scan on every rebroadcast,
-	// which the announce-queue timer would otherwise do every few
-	// milliseconds for high-bitrate TCP interfaces. Only a real failure on
-	// an interface that was up warrants logging and path invalidation.
+	// spam the log, which the announce-queue timer would otherwise do every
+	// few milliseconds for high-bitrate TCP interfaces. Only a real failure on
+	// an interface that was up is logged, once per down transition.
+	//
+	// A failed write never removes path-table entries: Python's Transport
+	// mutates path_table only on disk load, the age-based cull, a timestamp
+	// refresh, an announce add/update, expire_path and blackholed identities.
+	// Purging on a failed write left a node with 0 paths out of 8707 during the
+	// 2026-10-12 hub outage, so entries are left to the age-based cull and to
+	// vanish-with-interface handling in cullExpiredPaths.
 	wasUp := iface.Status()
 	if err := iface.Send(raw); err != nil {
 		if wasUp && ts.claimDownNotify(iface) {
 			ts.logger.Error("Failed to re-broadcast announce on %v: %v", iface.Name(), err)
-			ts.InvalidatePathsViaInterface(iface)
 		}
 	}
 }
@@ -2620,13 +2629,15 @@ func (ts *TransportSystem) reframeAnnounceForTransport(raw []byte, what string) 
 // frames are small and idempotent, so one more attempt recovers the common
 // transient case. What stops the attempts is not this count but the interface's
 // own status: a peer that is genuinely down reports down, and the caller then
-// takes the same one-per-transition path invalidation it always did.
+// logs the down transition once (see claimDownNotify).
 const controlSendAttempts = 2
 
 // sendControlFrame puts one already-framed control frame on iface, retrying a
-// transient failure once, and reports the down transition when every attempt
+// transient failure once, and logs the down transition when every attempt
 // fails. It is the single place where a control-frame write failure becomes a
-// transport-level action, so no caller can silently drop the frame.
+// transport-level action, so no caller can silently drop the frame. The action
+// is a log line, not a path purge: Python RNS drops the packet and keeps the
+// paths it learned over that interface.
 func (ts *TransportSystem) sendControlFrame(iface interfaces.Interface, raw []byte, what string) error {
 	wasUp := iface.Status()
 	var err error
@@ -2642,14 +2653,13 @@ func (ts *TransportSystem) sendControlFrame(iface interfaces.Interface, raw []by
 	}
 	if wasUp && ts.claimDownNotify(iface) {
 		ts.logger.Error("Failed %v on %v: %v", what, iface.Name(), err)
-		ts.InvalidatePathsViaInterface(iface)
 	}
 	return err
 }
 
 // dispatchForwardSend sends one forwarded/rebroadcast frame to a single
-// outbound interface, applying IFAC egress and invalidating paths on a real
-// failure. It is meant to run in its own goroutine so a stalled peer — one
+// outbound interface, applying IFAC egress and logging a real failure. It is
+// meant to run in its own goroutine so a stalled peer — one
 // whose conn.Write blocks until the per-interface write deadline fires —
 // cannot block the caller.
 //
@@ -2669,9 +2679,9 @@ func (ts *TransportSystem) dispatchForwardSend(iface interfaces.Interface, raw [
 		raw = processed
 	}
 
-	// sendControlFrame logs a real failure and invalidates the paths for a
-	// down transition; this goroutine has no caller to report to, so the
-	// returned error needs no further handling here.
+	// sendControlFrame logs a real failure once per down transition; this
+	// goroutine has no caller to report to, so the returned error needs no
+	// further handling here.
 	_ = ts.sendControlFrame(iface, raw, what)
 }
 
@@ -3273,12 +3283,32 @@ func (ts *TransportSystem) forwardPathResponseToRequesters(packet *Packet, sourc
 	return len(jobs) > 0
 }
 
+// cullExpiredPaths drops path-table entries that have aged out, and entries
+// whose attached interface has been torn down — mirroring Python's jobs-loop
+// cull (RNS/Transport.py:930-955 v1.4.1: "Path to X was removed since the
+// attached interface no longer exists").
+//
+// Losing the interface is the only interface-related reason Python removes a
+// path. An interface that is merely down keeps its paths (Python
+// TCPInterface.py:452-453 removes an interface only when it is not the
+// initiator), so a configured TCP client survives an outage with its path
+// table intact. Purging on a failed write instead left this port with an empty
+// path table for hours after a hub outage.
+//
+// Python tests membership in Transport.interfaces because it registers every
+// spawned interface (LocalInterface.py:460,476). This port keeps spawned
+// interfaces on their parent instead, so a detached interface is the closest
+// equivalent of Python's removed interface; judging by membership alone would
+// cull the paths a shared instance learns from its own clients.
 func (ts *TransportSystem) cullExpiredPaths(now time.Time) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	ts.ensureStateLocked()
+
 	for destinationHash, entry := range ts.pathTable {
-		if !entry.Expires.IsZero() && now.After(entry.Expires) {
+		expired := !entry.Expires.IsZero() && now.After(entry.Expires)
+		interfaceGone := entry.Interface != nil && entry.Interface.IsDetached()
+		if expired || interfaceGone {
 			delete(ts.pathTable, destinationHash)
 			delete(ts.announceTable, destinationHash)
 			delete(ts.pathRequests, destinationHash)
@@ -4005,14 +4035,18 @@ func (ts *TransportSystem) RegisterInterface(iface interfaces.Interface) {
 	ts.mu.Unlock()
 	ts.logger.Debug("[Transport] RegisterInterface: %v, interfaces before: %v, after: %v, destinations: %v", iface.Name(), interfacesBefore, interfacesAfter, destinationsBefore)
 
-	// For TCP client interfaces, eagerly invalidate paths routed through
-	// the interface when its connection fails, so pathfinding re-routes
-	// without waiting for stale paths to expire. The hook fires once per
-	// up->down transition (inside failConn) instead of on every failed
-	// rebroadcast/forward Send as the old lazy path did. The down timestamp
-	// feeds the reconnect-announce outage gate (reconnectAnnounceAllowed):
-	// only interfaces that stayed down at least reconnectAnnounceMinDown
-	// re-announce on recovery.
+	// For TCP client interfaces, record the moment the connection is observed
+	// down (inside failConn, once per up->down transition). The down timestamp
+	// feeds the reconnect-announce outage gate (reconnectAnnounceAllowed): only
+	// interfaces that stayed down at least reconnectAnnounceMinDown re-announce
+	// on recovery.
+	//
+	// The down transition deliberately leaves the path table untouched:
+	// Python's Transport keeps the paths it learned over an interface whose
+	// connection failed, because a down initiator interface keeps its
+	// registration (TCPInterface.py:452-453) and paths expire by age, not by
+	// link state. Only cullExpiredPaths removes them, and only once the
+	// interface has actually been removed from the registry.
 	//
 	// Re-announce on (re)connect with a rate limit. After a restart the
 	// hub's path table still points at the old (dead) TCP connection, so
@@ -4026,8 +4060,12 @@ func (ts *TransportSystem) RegisterInterface(iface interfaces.Interface) {
 	// all (Transport.py add_interface only registers the interface).
 	if tci, ok := iface.(*interfaces.TCPClientInterface); ok {
 		tci.SetOnDown(func() {
+			// Record the down transition only. The paths learned over this
+			// interface stay: a down initiator interface keeps its registration
+			// (Python TCPInterface.py:452-453), and path tables expire by age,
+			// not by link state. cullExpiredPaths drops them if the interface is
+			// ever removed from the registry.
 			ts.stampIfaceDown(tci.HashString(), time.Now())
-			ts.InvalidatePathsViaInterface(tci)
 		})
 		// Spawned (server-accepted) clients: remove the dead interface from
 		// this registry when its connection transitions down, matching
@@ -5806,13 +5844,14 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 					// A down interface fast-fails Send with "is not running";
 					// that is expected, and the interface reports its own down
 					// transition, so only a real failure on an interface that
-					// was up is logged and invalidated — once per down
-					// transition, like sendRebroadcast and dispatchForwardSend.
+					// was up is logged — once per down transition, like
+					// sendRebroadcast and dispatchForwardSend. The path is kept:
+					// Python drops the packet and leaves the path to the
+					// age-based cull.
 					wasUp := entry.Interface.Status()
 					if err := entry.Interface.Send(newRaw); err != nil {
 						if wasUp && ts.claimDownNotify(entry.Interface) {
 							ts.logger.Error("Failed to forward packet: %v", err)
-							ts.InvalidatePath(packet.DestinationHash)
 						}
 					}
 					return
@@ -5880,12 +5919,14 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 						// never per packet: the 2026-09-13 Beleth TCP outage
 						// logged 2278 of these lines in 0.3 s, which tripped
 						// journald's rate limiter and hid the incident's own
-						// diagnostics.
+						// diagnostics. The paths over that interface are kept
+						// (Python parity): a dead peer costs the packets it can
+						// no longer carry, not the node's knowledge of the
+						// network.
 						wasUp := outboundIface.Status()
 						if err := outboundIface.Send(newRaw); err != nil {
 							if wasUp && ts.claimDownNotify(outboundIface) {
 								ts.logger.Error("Failed to forward link-transport packet: %v", err)
-								ts.InvalidatePathsViaInterface(outboundIface)
 							}
 						}
 						return
@@ -6710,8 +6751,10 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 			packet.GetTruncatedHash(), packet.DestinationHash, pathEntry.Interface.Name(), pathEntry.Hops)
 
 		if err := pathEntry.Interface.Send(raw); err != nil {
+			// Log only: Python's Transport transmits and forgets, leaving the
+			// path in place for the age-based cull. Removing it here made one
+			// failed write cost the whole route until something re-announced.
 			ts.logger.Error("Could not transmit on %v: %v", pathEntry.Interface.Name(), err)
-			ts.InvalidatePath(packet.DestinationHash)
 		}
 		ts.recordOutboundPR(packet, pathEntry.Interface)
 
@@ -6744,8 +6787,11 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 		}
 
 		if err := iface.Send(raw); err != nil {
+			// Broadcast fallback: a dead or half-open peer drops its copy of
+			// the packet and nothing else happens — Python transmits and
+			// forgets, and the paths stay until they age out or their
+			// interface is removed.
 			ts.logger.Error("Could not transmit on %v: %v", iface.Name(), err)
-			ts.InvalidatePathsViaInterface(iface)
 		}
 		ts.recordOutboundPR(packet, iface)
 	}

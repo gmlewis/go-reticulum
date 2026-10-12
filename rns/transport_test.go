@@ -1103,7 +1103,12 @@ func TestCullExpiredPaths(t *testing.T) {
 	}
 }
 
-func TestOutboundSendFailureInvalidatesPaths(t *testing.T) {
+// TestOutboundSendFailureKeepsPaths pins Python's behaviour when a broadcast
+// send fails on one interface: the packet is dropped for that peer and the path
+// table is left exactly as it was. Python's Transport.transmit has no path
+// invalidation at all, so a half-open peer costs its own copies of the packets
+// and nothing else.
+func TestOutboundSendFailureKeepsPaths(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)
 
@@ -1125,8 +1130,8 @@ func TestOutboundSendFailureInvalidatesPaths(t *testing.T) {
 		t.Fatalf("outbound failed: %v", err)
 	}
 
-	if _, ok := ts.pathTable["via-failing"]; ok {
-		t.Fatalf("expected path via failing interface to be invalidated")
+	if _, ok := ts.pathTable["via-failing"]; !ok {
+		t.Fatalf("expected path via the failing interface to survive a failed send")
 	}
 	if _, ok := ts.pathTable["via-good"]; !ok {
 		t.Fatalf("expected path via good interface retained")
@@ -2441,14 +2446,14 @@ func TestClaimDownNotifyOncePerDown(t *testing.T) {
 	}
 }
 
-// TestDispatchForwardSendFloodInvalidatesOncePerDown reproduces the Quortal
-// flood: a half-open interface whose Send fails on a burst of ~50 concurrent
-// queued sends (the drain after a write-deadline timeout). Without the latch
-// each failing send ran a full InvalidatePathsViaInterface scan; with it, the
-// path is invalidated exactly once per down transition and a second burst
-// while the interface is still down suppresses, matching Python RNS which
-// tears down once instead of invalidating per failed send.
-func TestDispatchForwardSendFloodInvalidatesOncePerDown(t *testing.T) {
+// TestDispatchForwardSendFloodKeepsPaths reproduces the Quortal flood: a
+// half-open interface whose Send fails on a burst of ~50 concurrent queued
+// sends (the drain after a write-deadline timeout). The burst must cost the
+// packets it could not carry and nothing else: the path stays, because Python's
+// Transport drops the packet and leaves path_table alone on a failed write, and
+// the down transition is reported exactly once so the flood cannot produce an
+// error-line burst.
+func TestDispatchForwardSendFloodKeepsPaths(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)
 	ts.identity = mustTestNewIdentity(t, true)
@@ -2473,43 +2478,34 @@ func TestDispatchForwardSendFloodInvalidatesOncePerDown(t *testing.T) {
 	ts.mu.Unlock()
 
 	// First burst: interface is up, Send fails. Exactly one goroutine claims
-	// the latch and invalidates the path; the other 49 suppress.
+	// the latch and reports the transition; the other 49 suppress. The path is
+	// not touched.
 	burst(50)
 	ts.mu.Lock()
 	_, pathOK := ts.pathTable[string(destHash)]
 	_, latched := ts.downNotified[dead]
 	ts.mu.Unlock()
-	if pathOK {
-		t.Fatalf("expected path via dead interface to be invalidated after first burst")
+	if !pathOK {
+		t.Fatalf("a failed send removed the path via the dead interface; Python leaves it to the age-based cull")
 	}
 	if !latched {
 		t.Fatalf("expected down-notify latch to be set after first burst")
 	}
 
-	// Re-add the path. A second burst must NOT re-invalidate while the latch
-	// is set (the interface has not been observed up again).
+	// A second burst while the latch is set, and a third after the interface is
+	// observed up again (processAnnounceTable clears the latch for up
+	// interfaces), must both leave the path alone — there is no failure count
+	// at which a path is dropped.
+	burst(50)
 	ts.mu.Lock()
-	ts.pathTable[string(destHash)] = &PathEntry{Interface: dead, Hops: 2, Timestamp: time.Now()}
+	delete(ts.downNotified, dead)
 	ts.mu.Unlock()
 	burst(50)
 	ts.mu.Lock()
 	_, stillThere := ts.pathTable[string(destHash)]
 	ts.mu.Unlock()
 	if !stillThere {
-		t.Fatalf("second burst re-invalidated the path; latch should suppress until interface is back up")
-	}
-
-	// Simulate the interface coming back up (processAnnounceTable clears the
-	// latch for up interfaces). A third burst can invalidate again.
-	ts.mu.Lock()
-	delete(ts.downNotified, dead)
-	ts.mu.Unlock()
-	burst(50)
-	ts.mu.Lock()
-	_, goneAgain := ts.pathTable[string(destHash)]
-	ts.mu.Unlock()
-	if goneAgain {
-		t.Fatalf("third burst after latch clear should invalidate the path again")
+		t.Fatalf("a later burst removed the path; only the age-based cull and a removed interface may drop a path")
 	}
 }
 
