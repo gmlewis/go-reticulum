@@ -38,14 +38,13 @@ const whereamiCardRule = "------------------------------------------------------
 
 // whereamiNoFixLine is the answer when there is no receiver, no fix, and no
 // argument: the command says what it is waiting for rather than guessing.
-const whereamiNoFixLine = "/whereami: no GNSS fix yet — acquiring; " +
-	"give a location to answer immediately (" + whereamiUsage + ")"
+const whereamiNoFixLine = "no GNSS fix (no location information available)"
 
 // discoveryNoFixHint is the second line a zero-argument proximity request gets
 // when there is no fix to fall back on. It is printed instead of a bare usage
 // line because the useful answer to "I do not know where you are" is what to
 // type instead.
-const discoveryNoFixHint = "no GNSS fix yet — name a location instead " +
+const discoveryNoFixHint = "no GNSS fix (no location information available) — name a location instead " +
 	"(coordinates, a plus code, a grid, or a place name)"
 
 // gnssContext returns the live GNSS fix's position together with the label a
