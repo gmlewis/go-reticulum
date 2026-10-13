@@ -26,6 +26,8 @@ It is based upon the following Python original works:
   Date:   Mon Jan 12 09:17:07 2026 -0500
   ```
 
+Note that AI was heavily used in the port of the original Python3 project to Go.
+
 ## Go Port Security & Dependency Policy
 - **One External Runtime Dependency**: `golang.org/x/sys`, for the `poll(2)` check that
   tells a serial port which has hung up from one that is merely idle. A read reports both
