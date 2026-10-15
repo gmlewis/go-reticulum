@@ -2137,6 +2137,51 @@ func (ts *TransportSystem) LoadPathTable() {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	ts.loadPathTableLocked()
+	ts.prunePathEntriesWithoutInterfaceLocked()
+}
+
+// ReprunePathsAfterInterfaces re-runs the unattachable-entry prune now that the
+// instance's interfaces have been created, which is when a loaded entry's
+// interface hash can finally be judged: an entry still unattached references an
+// interface that no longer exists.
+func (ts *TransportSystem) ReprunePathsAfterInterfaces() int {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return ts.prunePathEntriesWithoutInterfaceLocked()
+}
+
+// prunePathEntriesWithoutInterfaceLocked drops loaded path-table entries whose
+// receiving interface does not exist, restoring the invariant Python holds by
+// construction: it builds a path entry only when find_interface_from_hash
+// resolves the interface (RNS/Transport.py:329). Go loads the table before its
+// interfaces exist and reattaches by hash as they register, so an entry whose
+// interface hash matches nothing would otherwise survive with a nil Interface.
+// Such an entry is harmful: an outbound packet for that destination cannot take
+// the path branch, so it falls through to the broadcast fallback (which reports
+// the packet sent) and is silently lost, instead of the sender being told there
+// is no usable path and requesting a fresh one.
+//
+// The prune is skipped while the transport has no registered interface at all:
+// every entry is unattachable then, and a node that could not bring any
+// interface up would otherwise lose its whole path table. Callers re-run it
+// (ReprunePathsAfterInterfaces) once interfaces exist.
+func (ts *TransportSystem) prunePathEntriesWithoutInterfaceLocked() int {
+	ts.ensureStateLocked()
+	if len(ts.interfaces) == 0 {
+		return 0
+	}
+	removed := 0
+	for destHash, entry := range ts.pathTable {
+		if entry == nil || entry.Interface != nil {
+			continue
+		}
+		delete(ts.pathTable, destHash)
+		removed++
+	}
+	if removed > 0 {
+		ts.logger.Verbose("Pruned %v path table entries whose interface no longer exists", removed)
+	}
+	return removed
 }
 
 // SetConnectedToSharedInstance records whether this transport is a client of

@@ -606,6 +606,16 @@ func NewReticulumWithLogger(ts Transport, configDir string, logger *Logger, opts
 			}
 			return nil, err
 		}
+		// The path table was loaded before the interfaces existed, so entries
+		// whose interface hash matched nothing could only be judged now: an
+		// entry still unattached references an interface that is gone, and
+		// Python never holds one (it builds an entry only when
+		// find_interface_from_hash resolves the interface). Keeping it would
+		// make outbound packets for that destination fall through to the
+		// broadcast fallback and be lost silently.
+		if pruner, ok := r.transport.(interface{ ReprunePathsAfterInterfaces() int }); ok {
+			pruner.ReprunePathsAfterInterfaces()
+		}
 	} else if r.shareInstance && !r.requireShared {
 		// An attached client watches its shared instance, so a long-running
 		// process recovers instead of retaining a dead interface forever.
