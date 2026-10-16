@@ -689,6 +689,22 @@ const (
 	// Link.ESTABLISHMENT_TIMEOUT_PER_HOP = Reticulum.DEFAULT_PER_HOP_TIMEOUT = 6 seconds.
 	establishmentTimeoutPerHop = 6 * time.Second
 
+	// packetTimeoutPerHop is the per-hop term of a non-link packet receipt's
+	// timeout. Python defines it separately from the link establishment constant
+	// (Packet.TIMEOUT_PER_HOP = Reticulum.DEFAULT_PER_HOP_TIMEOUT, Packet.py:115)
+	// but both are 6 seconds.
+	packetTimeoutPerHop = 6 * time.Second
+
+	// MaxReceipts is the cap on the outstanding-receipt list, matching Python's
+	// Transport.MAX_RECEIPTS = 1024 (Transport.py:96). Past it the oldest
+	// receipts are culled so an unreachable mesh cannot grow the list without
+	// bound.
+	MaxReceipts = 1024
+
+	// trafficTimeoutMinSeconds is the floor on a link receipt's timeout, matching
+	// Python's Link.TRAFFIC_TIMEOUT_MIN_MS/1000 = 5/1000 (Packet.py:416).
+	trafficTimeoutMinSeconds = 0.005
+
 	// maxRandomBlobs is the maximum number of random blobs per destination
 	// for announce replay protection, matching Python's Transport.MAX_RANDOM_BLOBS.
 	maxRandomBlobs = 64
@@ -1636,6 +1652,7 @@ func (ts *TransportSystem) maintenance() {
 			now := time.Now()
 			ts.processAnnounceTable(now)
 			ts.processPendingLinks(now)
+			ts.processReceipts(now)
 			ts.cullPathRequests(now)
 			ts.cullExpiredPaths(now)
 			ts.cullStaleTransportTables(now)
@@ -4259,9 +4276,17 @@ func (ts *TransportSystem) GetPathEntry(destHash []byte) *PathInfo {
 
 // FirstHopTimeout computes the establishment-timeout first-hop term for the
 // path to destinationHash, mirroring Python's Transport.first_hop_timeout
-// (Transport.py:2787-2791): DEFAULT_PER_HOP_TIMEOUT + MTU/bitrate when the
-// next-hop interface bitrate is known, falling back to DEFAULT_PER_HOP_TIMEOUT
-// (6s) when the path or interface is unknown or has no bitrate.
+// (Transport.py:2786-2791):
+//
+//	per_bit_latency  = 1/bitrate
+//	per_byte_latency = per_bit_latency * 8
+//	timeout          = MTU * per_byte_latency + DEFAULT_PER_HOP_TIMEOUT
+//
+// i.e. DEFAULT_PER_HOP_TIMEOUT + MTU*8/bitrate while the next-hop interface's
+// bitrate is known, falling back to DEFAULT_PER_HOP_TIMEOUT (6s) when the path
+// or interface is unknown or has no bitrate. The factor of eight is the whole
+// point of the term — it is one MTU-sized packet's transmission time — and is
+// the same arithmetic extraLinkProofTimeout below applies.
 //
 // Link.Establish and NewLink use this instead of the bare
 // establishmentTimeoutPerHop constant so that slow radio links (e.g. a 1200
@@ -4273,8 +4298,128 @@ func (ts *TransportSystem) FirstHopTimeout(destinationHash []byte) time.Duration
 	if entry == nil || entry.Interface == nil || entry.Interface.Bitrate() <= 0 {
 		return establishmentTimeoutPerHop
 	}
-	latencySec := float64(MTU) / float64(entry.Interface.Bitrate())
-	return establishmentTimeoutPerHop + time.Duration(latencySec*float64(time.Second))
+	perBitLatency := 1.0 / float64(entry.Interface.Bitrate())
+	perByteLatency := perBitLatency * 8.0
+	return establishmentTimeoutPerHop + time.Duration(float64(MTU)*perByteLatency*float64(time.Second))
+}
+
+// armReceiptTimeout sets a newly registered receipt's timeout window, mirroring
+// Python's PacketReceipt.__init__ (Packet.py:414-418):
+//
+//	LINK destination: max(destination.rtt * traffic_timeout_factor,
+//	                      Link.TRAFFIC_TIMEOUT_MIN_MS/1000)
+//	otherwise:        first_hop_timeout(destination.hash)
+//	                  + Packet.TIMEOUT_PER_HOP * hops_to(destination.hash)
+//
+// Python constructs and arms the receipt inside its packet_sent callback, i.e.
+// at the moment the packet leaves on the interface; the Go port creates the
+// receipt earlier (Packet.Send) and marks it sent in Outbound, so this is called
+// from the same place Outbound registers the receipt in ts.receipts — the
+// moment the destination's measured RTT and the packet's hop count are both
+// settled.
+//
+// Without this the receipt carries a timeout of zero, and zero is not "never
+// expires": Python's is_timed_out is `sent_at + timeout < now`, which is true for
+// any past sent_at, so an unarmed receipt swept by processReceipts would expire
+// on the next tick. Arming and sweeping therefore belong together.
+func (ts *TransportSystem) armReceiptTimeout(pr *PacketReceipt) {
+	if pr == nil || pr.Destination == nil {
+		return
+	}
+	if link, ok := pr.Destination.(*Link); ok {
+		link.mu.Lock()
+		rtt := link.rtt
+		factor := link.trafficTimeoutFactor
+		link.mu.Unlock()
+		pr.SetTimeout(max(rtt*factor, trafficTimeoutMinSeconds))
+		return
+	}
+	destHash := pr.Destination.GetHash()
+	hops := PathfinderM
+	firstHop := establishmentTimeoutPerHop
+	if ts != nil {
+		hops = ts.HopsTo(destHash)
+		firstHop = ts.FirstHopTimeout(destHash)
+	}
+	timeout := float64(firstHop+packetTimeoutPerHop*time.Duration(hops)) / float64(time.Second)
+	pr.SetTimeout(timeout)
+}
+
+// receiptEligible reports whether an outgoing packet's receipt belongs in the
+// transport's outstanding-receipt list: a DATA packet to a real destination,
+// excluding the link keepalive/proof and resource context ranges (Python
+// Transport.send's generate_receipt test, Transport.py:1105-1123).
+func receiptEligible(packet *Packet) bool {
+	return packet.Receipt != nil &&
+		packet.PacketType == PacketData &&
+		packet.DestinationType != DestinationPlain &&
+		!(packet.Context >= ContextKeepalive && packet.Context <= ContextLrproof) &&
+		!(packet.Context >= ContextResource && packet.Context <= ContextResourceRcl)
+}
+
+// processReceipts runs the transport's outstanding-receipt pass, mirroring
+// Python's Transport.jobs receipt section (Transport.py:569-587):
+//
+//   - while the list is longer than MAX_RECEIPTS, evict the oldest entries,
+//     marking each with the -1 cull sentinel so its conclusion is CULLED rather
+//     than FAILED (nothing was learned about delivery — it was evicted);
+//   - then expire every receipt whose window has passed and drop the entries
+//     that are no longer SENT.
+//
+// This is the only thing that ends an unproved delivery. The LXMF router arms a
+// message's receipt with a timeout callback that resets the message to OUTBOUND
+// and tears its link down (lxmf/router.go sendMessagePacketLocked); with no
+// sweep, a message handed to a link whose proof never arrives stays SENDING for
+// ever, the client keeps reusing the dead link and never rebuilds it. Python's
+// single jobs loop drives both that and the link Channel's retries, because its
+// Channel has no timer of its own.
+//
+// Receipts that nobody registered a callback for are skipped: with no observer
+// there is nothing for the expiry to mean, and Python's arming happens to make
+// every receipt observable where Go's does not. Skipping them keeps an expiry
+// from ever being invented for a receipt no part of the system is waiting on.
+func (ts *TransportSystem) processReceipts(now time.Time) {
+	nowSeconds := float64(now.UnixNano()) / 1e9
+
+	ts.mu.Lock()
+	var culled []*PacketReceipt
+	for len(ts.receipts) > MaxReceipts {
+		evicted := ts.receipts[0]
+		ts.receipts = ts.receipts[1:]
+		if evicted != nil {
+			culled = append(culled, evicted)
+		}
+	}
+	pending := make([]*PacketReceipt, len(ts.receipts))
+	copy(pending, ts.receipts)
+	ts.mu.Unlock()
+
+	// Evictions conclude outside the lock: a timeout callback may re-enter the
+	// transport (tearing a link down takes transport locks).
+	for _, pr := range culled {
+		pr.SetTimeout(receiptTimeoutCulled)
+		pr.CheckTimeout(nowSeconds)
+	}
+
+	for _, pr := range pending {
+		pr.mu.Lock()
+		hasCallback := pr.timeoutCallback != nil
+		pr.mu.Unlock()
+		if !hasCallback {
+			continue
+		}
+		pr.CheckTimeout(nowSeconds)
+	}
+
+	ts.mu.Lock()
+	kept := ts.receipts[:0]
+	for _, pr := range ts.receipts {
+		if pr.GetStatus() == ReceiptSent {
+			kept = append(kept, pr)
+		}
+	}
+	ts.receipts = kept
+	ts.mu.Unlock()
 }
 
 // GetRateTable returns a snapshot of observed announce-rate state.
@@ -6742,16 +6887,20 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 		}
 		ts.recordOutboundPR(packet, attachedIface)
 
+		// Arm the receipt's timeout before taking ts.mu: the arming reads the
+		// path table, which takes the same lock.
+		register := receiptEligible(packet)
+		if register {
+			ts.armReceiptTimeout(packet.Receipt)
+		}
+
 		ts.mu.Lock()
 		packet.Sent = true
 		packet.SentAt = float64(time.Now().UnixNano()) / 1e9
 		if packet.Receipt != nil {
 			packet.Receipt.MarkSent(packet.SentAt)
 			// Register in TransportSystem if it's a DATA packet
-			if packet.PacketType == PacketData &&
-				packet.DestinationType != DestinationPlain &&
-				!(packet.Context >= ContextKeepalive && packet.Context <= ContextLrproof) &&
-				!(packet.Context >= ContextResource && packet.Context <= ContextResourceRcl) {
+			if register {
 				ts.receipts = append(ts.receipts, packet.Receipt)
 			}
 		}
@@ -6803,16 +6952,19 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 		}
 		ts.recordOutboundPR(packet, pathEntry.Interface)
 
+		// Arm before taking ts.mu (see the attached-interface branch above).
+		register := receiptEligible(packet)
+		if register {
+			ts.armReceiptTimeout(packet.Receipt)
+		}
+
 		ts.mu.Lock()
 		packet.Sent = true
 		packet.SentAt = float64(time.Now().UnixNano()) / 1e9
 		if packet.Receipt != nil {
 			packet.Receipt.MarkSent(packet.SentAt)
 			// Register in TransportSystem if it's a DATA packet
-			if packet.PacketType == PacketData &&
-				packet.DestinationType != DestinationPlain &&
-				!(packet.Context >= ContextKeepalive && packet.Context <= ContextLrproof) &&
-				!(packet.Context >= ContextResource && packet.Context <= ContextResourceRcl) {
+			if register {
 				ts.receipts = append(ts.receipts, packet.Receipt)
 			}
 		}
@@ -6841,16 +6993,19 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 		ts.recordOutboundPR(packet, iface)
 	}
 
+	// Arm before taking ts.mu (see the attached-interface branch above).
+	register := receiptEligible(packet)
+	if register {
+		ts.armReceiptTimeout(packet.Receipt)
+	}
+
 	ts.mu.Lock()
 	packet.Sent = true
 	packet.SentAt = float64(time.Now().UnixNano()) / 1e9
 	if packet.Receipt != nil {
 		packet.Receipt.MarkSent(packet.SentAt)
 		// Register in TransportSystem if it's a DATA packet
-		if packet.PacketType == PacketData &&
-			packet.DestinationType != DestinationPlain &&
-			!(packet.Context >= ContextKeepalive && packet.Context <= ContextLrproof) &&
-			!(packet.Context >= ContextResource && packet.Context <= ContextResourceRcl) {
+		if register {
 			ts.receipts = append(ts.receipts, packet.Receipt)
 		}
 	}

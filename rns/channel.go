@@ -259,14 +259,22 @@ func (c *Channel) checkTimeouts() {
 		pr.mu.Unlock()
 
 		if hasTimeoutCB && sentAt > 0 && timeout > 0 && now >= sentAt+timeout {
-			pr.MarkSent(now)
 			events = append(events, timeoutEvent{receipt: pr})
 		}
 	}
 	c.mu.RUnlock()
 
+	// CheckTimeout is the same guarded transition the transport's own receipt
+	// sweep applies (TransportSystem.processReceipts), so a receipt this channel
+	// is waiting on is retired exactly once no matter which pass reaches it
+	// first. Python has only the transport's pass — its Channel has no timer
+	// thread; it arms the receipt and lets Transport.jobs fire it
+	// (RNS/Channel.py:591-594). The Go port keeps this second pass as the
+	// channel's retry heartbeat, which is why the transition has to be
+	// idempotent. The receipt's retry window is re-armed by the resend path
+	// (outlet.Resend -> Outbound -> MarkSent, plus SetTimeout below), not here.
 	for _, event := range events {
-		event.receipt.TriggerTimeout()
+		event.receipt.CheckTimeout(now)
 	}
 }
 

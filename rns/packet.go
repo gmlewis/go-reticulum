@@ -624,6 +624,55 @@ func (pr *PacketReceipt) TriggerTimeout() {
 	}
 }
 
+// GetStatus returns the receipt's current status under its own lock.
+func (pr *PacketReceipt) GetStatus() int {
+	pr.mu.Lock()
+	defer pr.mu.Unlock()
+	return pr.Status
+}
+
+// receiptTimeoutCulled is the sentinel timeout the transport's MAX_RECEIPTS cull
+// installs on a receipt it is about to drop (Python PacketReceipt.timeout = -1,
+// Transport.py:573). A receipt carrying it is marked CULLED rather than FAILED,
+// because nothing was learned about delivery — it was simply evicted.
+const receiptTimeoutCulled = -1
+
+// CheckTimeout applies Python's PacketReceipt.check_timeout (Packet.py:535-545):
+// a receipt that is still SENT and whose sent_at+timeout has passed becomes
+// FAILED — or CULLED when its timeout is the -1 sentinel — and its timeout
+// callback is run. It reports whether it fired.
+//
+// The `status == SENT` guard is what makes the pass idempotent, and in the Go
+// port it is load-bearing: the transport sweeps the outstanding-receipt list once
+// a second (TransportSystem.processReceipts) while the link Channel runs its own
+// pass over the same receipts (Channel.checkTimeouts), and both come through
+// here. Whichever fires first wins and the other is a no-op. Python needs only
+// the one sweeper, because its Channel has no timer thread at all — it arms the
+// receipt's timeout and callback and lets Transport.jobs fire it
+// (RNS/Channel.py:591-594, RNS/Transport.py:569-587).
+//
+// The callback runs on the caller's goroutine, matching TriggerTimeout and the
+// channel's retry path; Python instead starts a daemon thread per callback.
+func (pr *PacketReceipt) CheckTimeout(now float64) bool {
+	pr.mu.Lock()
+	if pr.Status != ReceiptSent || now <= pr.SentAt+pr.Timeout {
+		pr.mu.Unlock()
+		return false
+	}
+	if pr.Timeout == receiptTimeoutCulled {
+		pr.Status = ReceiptCulled
+	} else {
+		pr.Status = ReceiptFailed
+	}
+	pr.ConcludedAt = now
+	cb := pr.timeoutCallback
+	pr.mu.Unlock()
+	if cb != nil {
+		cb(pr)
+	}
+	return true
+}
+
 const (
 	// ReceiptFailed indicates that a packet failed to be delivered within its timeout window.
 	ReceiptFailed = 0x00
