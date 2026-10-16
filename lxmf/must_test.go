@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
 
 func mustTest(t *testing.T, err error) {
@@ -16,6 +17,41 @@ func mustTest(t *testing.T, err error) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+// mustTestPropagatedPayload returns the lxmf_data a propagation node serves for
+// msg: the encrypted envelope destinationHash + Encrypt(sourceHash + signature
+// + packed payload) that packPropagated builds. A test that drives
+// messageGetResponse must feed this rather than msg.Packed — no node ever
+// serves plaintext LXMF bytes, and a plaintext fixture hides the decryption the
+// receiving client has to perform before it can unpack anything.
+func mustTestPropagatedPayload(t *testing.T, msg *Message) []byte {
+	t.Helper()
+
+	if err := msg.Pack(); err != nil {
+		t.Fatalf("Pack: %v", err)
+	}
+	if err := msg.packPropagated(); err != nil {
+		t.Fatalf("packPropagated: %v", err)
+	}
+
+	unpacked, err := msgpack.Unpack(msg.PropagationPacked)
+	if err != nil {
+		t.Fatalf("unpack propagation payload: %v", err)
+	}
+	container, ok := unpacked.([]any)
+	if !ok || len(container) != 2 {
+		t.Fatalf("propagation payload = %T with %v elements, want a 2-element list", unpacked, len(container))
+	}
+	messages, ok := container[1].([]any)
+	if !ok || len(messages) != 1 {
+		t.Fatalf("propagation payload messages = %T, want a 1-element list", container[1])
+	}
+	lxmfData, ok := messages[0].([]byte)
+	if !ok {
+		t.Fatalf("propagated lxmf_data is %T, want []byte", messages[0])
+	}
+	return lxmfData
 }
 
 func mustTestNewIdentity(t *testing.T, createKeys bool) *rns.Identity {

@@ -4498,14 +4498,33 @@ func (r *Router) handlePropagatedInboundAllowDuplicate(payload []byte, allowDupl
 		}
 	}
 	r.locallyProcessedIDs[string(append([]byte{}, transientID...))] = r.now()
-	_, isLocalDelivery := r.deliveryDestinations[string(destinationHash)]
+	deliveryDest, isLocalDelivery := r.deliveryDestinations[string(destinationHash)]
 	r.mu.Unlock()
 
-	if !isLocalDelivery {
+	if !isLocalDelivery || deliveryDest == nil {
 		return false
 	}
 
-	message, err := UnpackMessageFromBytes(r.transport, payload, MethodPropagated)
+	// A message downloaded from a propagation node is not plaintext LXMF bytes:
+	// lxmf_data is destinationHash + Encrypt(sourceHash + signature + packed
+	// payload), the same encrypted envelope a paper (URI) message carries. Decrypt
+	// it with the local delivery destination and rebuild the full LXMF bytes
+	// before unpacking, exactly as Python's lxmf_propagation local-delivery branch
+	// does (LXMRouter.py:2508-2516) and as ingestURIOutcome already does for the
+	// paper path. Unpacking the envelope as-is fails on the ciphertext, so every
+	// downloaded message was counted by messageGetResponse and then discarded
+	// here — the sync reported "Downloaded N new messages" while the recipient's
+	// conversation stayed empty.
+	decrypted, err := deliveryDest.Decrypt(payload[DestinationLength:])
+	if err != nil || decrypted == nil {
+		r.logger().Debug("Could not decrypt propagated message %x for %x", transientID, destinationHash)
+		return false
+	}
+	full := make([]byte, 0, DestinationLength+len(decrypted))
+	full = append(full, payload[:DestinationLength]...)
+	full = append(full, decrypted...)
+
+	message, err := UnpackMessageFromBytes(r.transport, full, MethodPropagated)
 	if err != nil {
 		return false
 	}

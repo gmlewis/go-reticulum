@@ -8243,14 +8243,11 @@ func TestPropagationSyncMessageGetResponseTracksDuplicatesAndPurges(t *testing.T
 
 	duplicateMsg := mustTestNewMessage(t, localDest, sourceDest, "duplicate", "title", nil)
 	freshMsg := mustTestNewMessage(t, localDest, sourceDest, "fresh", "title", nil)
-	if err := duplicateMsg.Pack(); err != nil {
-		t.Fatalf("duplicateMsg.Pack: %v", err)
-	}
-	if err := freshMsg.Pack(); err != nil {
-		t.Fatalf("freshMsg.Pack: %v", err)
-	}
-	duplicateTransientID := rns.FullHash(duplicateMsg.Packed)
-	freshTransientID := rns.FullHash(freshMsg.Packed)
+	// A node serves the encrypted propagated envelope, not msg.Packed.
+	duplicatePayload := mustTestPropagatedPayload(t, duplicateMsg)
+	freshPayload := mustTestPropagatedPayload(t, freshMsg)
+	duplicateTransientID := rns.FullHash(duplicatePayload)
+	freshTransientID := rns.FullHash(freshPayload)
 	router.locallyProcessedIDs[string(duplicateTransientID)] = time.Now()
 
 	var delivered []*Message
@@ -8277,7 +8274,7 @@ func TestPropagationSyncMessageGetResponseTracksDuplicatesAndPurges(t *testing.T
 
 	router.messageGetResponse(&rns.RequestReceipt{
 		Link:     &rns.Link{},
-		Response: []any{duplicateMsg.Packed, freshMsg.Packed},
+		Response: []any{duplicatePayload, freshPayload},
 	})
 
 	if requestedPath != messageGetPath {
@@ -8358,9 +8355,7 @@ func TestPropagationSyncMessageGetResponsePurgeAckSendErrorStillCompletes(t *tes
 	}
 
 	msg := mustTestNewMessage(t, localDest, sourceDest, "fresh", "title", nil)
-	if err := msg.Pack(); err != nil {
-		t.Fatalf("msg.Pack: %v", err)
-	}
+	payload := mustTestPropagatedPayload(t, msg)
 
 	router.propagationTransferState = PRReceiving
 	router.propagationTransferProgress = 0.625
@@ -8375,7 +8370,7 @@ func TestPropagationSyncMessageGetResponsePurgeAckSendErrorStillCompletes(t *tes
 
 	router.messageGetResponse(&rns.RequestReceipt{
 		Link:     &rns.Link{},
-		Response: []any{msg.Packed},
+		Response: []any{payload},
 	})
 
 	if router.PropagationTransferState() != PRComplete {
@@ -8387,7 +8382,7 @@ func TestPropagationSyncMessageGetResponsePurgeAckSendErrorStillCompletes(t *tes
 	if got, ok := router.PropagationTransferLastResult(); !ok || got != 1 {
 		t.Fatalf("last result = (%v,%v), want (1,true)", got, ok)
 	}
-	if _, ok := router.locallyDeliveredIDs[string(rns.FullHash(msg.Packed))]; !ok {
+	if _, ok := router.locallyDeliveredIDs[string(rns.FullHash(payload))]; !ok {
 		t.Fatal("expected fresh transient ID in locally delivered cache")
 	}
 	if _, err := os.Stat(filepath.Join(router.storagePath, "local_deliveries")); err != nil {
@@ -8728,10 +8723,8 @@ func TestPropagationSyncMessageGetResponseMixedListProcessesEarlierPayloadBefore
 	}
 
 	freshMsg := mustTestNewMessage(t, localDest, sourceDest, "fresh", "title", nil)
-	if err := freshMsg.Pack(); err != nil {
-		t.Fatalf("freshMsg.Pack: %v", err)
-	}
-	freshTransientID := rns.FullHash(freshMsg.Packed)
+	freshPayload := mustTestPropagatedPayload(t, freshMsg)
+	freshTransientID := rns.FullHash(freshPayload)
 
 	var delivered []*Message
 	router.deliveryCallback = func(message *Message) {
@@ -8774,7 +8767,7 @@ func TestPropagationSyncMessageGetResponseMixedListProcessesEarlierPayloadBefore
 
 	router.messageGetResponse(&rns.RequestReceipt{
 		Link:     &rns.Link{},
-		Response: []any{freshMsg.Packed, "x"},
+		Response: []any{freshPayload, "x"},
 	})
 }
 
@@ -8809,10 +8802,8 @@ func TestPropagationSyncMessageGetResponseMixedListProcessesEarlierPayloadBefore
 			}
 
 			freshMsg := mustTestNewMessage(t, localDest, sourceDest, "fresh", "title", nil)
-			if err := freshMsg.Pack(); err != nil {
-				t.Fatalf("freshMsg.Pack: %v", err)
-			}
-			freshTransientID := rns.FullHash(freshMsg.Packed)
+			freshPayload := mustTestPropagatedPayload(t, freshMsg)
+			freshTransientID := rns.FullHash(freshPayload)
 
 			var delivered []*Message
 			router.deliveryCallback = func(message *Message) {
@@ -8855,7 +8846,7 @@ func TestPropagationSyncMessageGetResponseMixedListProcessesEarlierPayloadBefore
 
 			router.messageGetResponse(&rns.RequestReceipt{
 				Link:     &rns.Link{},
-				Response: []any{freshMsg.Packed, tc.invalidEntry},
+				Response: []any{freshPayload, tc.invalidEntry},
 			})
 		})
 	}

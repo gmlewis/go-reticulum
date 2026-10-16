@@ -121,7 +121,18 @@ func (r *Router) handlePropagationAnnounceWithContext(destinationHash []byte, _ 
 	// outside the propagation_node guard — so a router that is not itself a
 	// propagation node still dispatches pending propagated messages to its
 	// outbound PN when it (re)announces.
-	if r.outboundPropagationNode != nil && equalHashes(destinationHash, r.outboundPropagationNode) {
+	//
+	// The configured node's hash is read under r.mu because this handler runs on
+	// the transport's announce path, concurrently with the UI setting a default
+	// propagation node (SetOutboundPropagationNode). Python's
+	// get_outbound_propagation_node() is atomic; a bare field read here is a data
+	// race on the slice header.
+	r.mu.Lock()
+	isConfiguredOutboundNode := r.outboundPropagationNode != nil &&
+		equalHashes(destinationHash, r.outboundPropagationNode)
+	r.mu.Unlock()
+
+	if isConfiguredOutboundNode {
 		nowSeconds := float64(r.now().UnixNano()) / 1e9
 		shouldProcess := false
 		r.mu.Lock()
