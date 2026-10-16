@@ -529,6 +529,61 @@ type Ext struct {
 	Data []byte
 }
 
+// MarshalMsgpack encodes the extension value in the smallest form that holds
+// its data, which is the form umsgpack writes and the form a decoded extension
+// has to come back as when a message carrying one is forwarded.
+func (e Ext) MarshalMsgpack() ([]byte, error) {
+	data := e.Data
+	var header []byte
+	switch n := len(data); {
+	case n == 1:
+		header = []byte{fixExt1}
+	case n == 2:
+		header = []byte{fixExt2}
+	case n == 4:
+		header = []byte{fixExt4}
+	case n == 8:
+		header = []byte{fixExt8}
+	case n == 16:
+		header = []byte{fixExt16}
+	case n < 1<<8:
+		header = []byte{ext8, byte(n)}
+	case n < 1<<16:
+		header = []byte{ext16, byte(n >> 8), byte(n)}
+	default:
+		header = []byte{ext32, byte(n >> 24), byte(n >> 16), byte(n >> 8), byte(n)}
+	}
+	out := make([]byte, 0, len(header)+1+len(data))
+	out = append(out, header...)
+	out = append(out, byte(e.Type))
+	return append(out, data...), nil
+}
+
+// collectionMapKey is the map key a decoded array stands in for. MessagePack
+// allows an array as a map key; Go does not allow an []any there, and storing
+// one panicked the runtime ("hash of unhashable type []interface {}") and took
+// the whole process down, which is how a single inbound packet could kill a
+// node. It holds the array's canonical msgpack encoding, so two equal arrays
+// compare equal as map keys — the stand-in for the tuple umsgpack converts a
+// list key to — and writing it back reproduces the array it was decoded from.
+type collectionMapKey string
+
+// MarshalMsgpack writes the array back exactly as it was decoded.
+func (k collectionMapKey) MarshalMsgpack() ([]byte, error) { return []byte(k), nil }
+
+// extMapKey is the map key a decoded extension value stands in for. umsgpack
+// hashes an extension value as a (type, data) pair, and Go cannot hash Ext
+// itself: its Data slice makes the struct incomparable.
+type extMapKey struct {
+	Type int8
+	Data string
+}
+
+// MarshalMsgpack writes the extension value back in its smallest form.
+func (k extMapKey) MarshalMsgpack() ([]byte, error) {
+	return Ext{Type: k.Type, Data: []byte(k.Data)}.MarshalMsgpack()
+}
+
 // OrderedMapEntry is a single entry in an OrderedMap.
 type OrderedMapEntry struct {
 	Key   any
@@ -846,6 +901,10 @@ func unpackMapWithOptions(r *bytes.Reader, l int, opts unpackOptions) (map[any]a
 				k = string(b)
 			}
 		}
+		k, err = makeMapKeyHashable(k)
+		if err != nil {
+			return nil, err
+		}
 		v, err := unpackWithOptions(r, opts)
 		if err != nil {
 			return nil, err
@@ -882,6 +941,10 @@ func unpackOrderedMapWithOptions(r *bytes.Reader, l int, opts unpackOptions) (Or
 				k = string(b)
 			}
 		}
+		k, err = makeMapKeyHashable(k)
+		if err != nil {
+			return nil, err
+		}
 		v, err := unpackWithOptions(r, opts)
 		if err != nil {
 			return nil, err
@@ -893,6 +956,44 @@ func unpackOrderedMapWithOptions(r *bytes.Reader, l int, opts unpackOptions) (Or
 
 func strictMapKeyError(key any) error {
 	return fmt.Errorf("%v is not allowed for map key when strict_map_key=True", pythonTypeName(key))
+}
+
+// makeMapKeyHashable returns a map key Go can store, or an error when the key
+// has no hashable equivalent. MessagePack permits any value as a map key, but a
+// Go map needs a comparable one, and inserting an incomparable key panics the
+// runtime. That panic killed whatever decoded the packet: on glenn-kamrui the
+// propagation node died on it repeatedly ("hash of unhashable type
+// map[interface {}]interface {}", "[]interface {}", "msgpack.Ext"), each time
+// mid-transfer, which is why two clients using it could not exchange a message.
+//
+// umsgpack, which Reticulum and LXMF use, never dies there: it converts a list
+// key to a tuple, hashes an extension value as its (type, data) pair, and raises
+// UnhashableKeyException for anything else, which its callers catch and drop the
+// packet with. This mirrors that: an array becomes a collectionMapKey and an
+// extension value an extMapKey — both re-encode to exactly the bytes they came
+// from, so a message carrying one survives being forwarded — and a map, which is
+// unhashable in Python too, is an error the callers already handle by dropping
+// the packet.
+func makeMapKeyHashable(key any) (any, error) {
+	switch k := key.(type) {
+	case []any:
+		encoded, err := PackSorted(k)
+		if err != nil {
+			return nil, err
+		}
+		return collectionMapKey(encoded), nil
+	case Ext:
+		return extMapKey{Type: k.Type, Data: string(k.Data)}, nil
+	case map[any]any, OrderedMap:
+		return nil, unhashableMapKeyError(key)
+	}
+	return key, nil
+}
+
+// unhashableMapKeyError reports a map key with no hashable equivalent, in
+// umsgpack's words.
+func unhashableMapKeyError(key any) error {
+	return fmt.Errorf("encountered unhashable key: %q (%v)", fmt.Sprint(key), pythonTypeName(key))
 }
 
 func pythonTypeName(value any) string {
