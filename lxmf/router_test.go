@@ -12181,8 +12181,12 @@ func TestPeerName(t *testing.T) {
 		t.Fatalf("Name() = %q, want %q for empty metadata", got, "")
 	}
 
-	// Metadata with PN_META_NAME key => name returned as utf-8 string.
-	peer.metadata = map[any]any{int(PNMetaName): []byte("Alice")}
+	// Metadata with PN_META_NAME key => name returned as utf-8 string. The map is
+	// keyed with PNMetaName itself, as an announce delivers it — msgpack decodes
+	// an integer key as an int64, and keying an int here (as this test once did)
+	// pinned the mismatch that hid every propagation node's name
+	// (TestPeerNameFromDecodedMetadata pins the wire side of it).
+	peer.metadata = map[any]any{PNMetaName: []byte("Alice")}
 	if got := peer.Name(); got != "Alice" {
 		t.Fatalf("Name() = %q, want %q", got, "Alice")
 	}

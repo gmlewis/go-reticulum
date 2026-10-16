@@ -14,8 +14,14 @@ import (
 const (
 	// AppName defines the core application name for LXMF routing and addressing.
 	AppName = "lxmf"
-	// PNMetaName matches Python's LXMF.PN_META_NAME metadata key.
-	PNMetaName = 0x01
+	// PNMetaName matches Python's LXMF.PN_META_NAME metadata key. It is int64
+	// rather than an untyped constant because it keys maps that arrive decoded
+	// from msgpack, and a msgpack integer decodes as an int64: an untyped
+	// constant keys an int in a map[any]any and matches nothing, which is how a
+	// propagation node's announced name went missing on every client. int64(1)
+	// packs to the same bytes as the untyped 1, so the wire format is unchanged
+	// and Python still reads the name it always did.
+	PNMetaName = int64(0x01)
 
 	// SFCompression is the supported-functionality code signalling that a peer
 	// accepts auto-compressed LXMF message resources. It appears in the
