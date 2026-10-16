@@ -6316,20 +6316,36 @@ func (ts *TransportSystem) forwardAnnounceToLocalClients(packet *Packet, receive
 	raw = append(raw, byte(packet.Context))
 	raw = append(raw, packet.Data...)
 
-	// Snapshot the LocalServerInterfaces registered with this transport. We
-	// release the transport lock before sending: a stalled co-located client
+	// Snapshot the local-client servers registered with this transport: the
+	// Unix-socket shared instance AND any TCP server. Both spawn a per-client
+	// interface, and both need the announce, because in each case the receiving
+	// interface is the per-client one rather than the listener, so the ordinary
+	// rebroadcast does not reach the server's other clients.
+	//
+	// A TCP server was missing here until 2026-10-16, which meant two clients of
+	// one TCP hub — the shape the whole fleet runs, and the only shape the two
+	// Android appliances have, since AutoInterface is dead on Android — never
+	// heard each other's announces at all. They learned paths to peers the hub had
+	// heard on its other interfaces, but never to each other: no name, no app-data,
+	// no identity, and nothing but a propagation-node sync could get a message
+	// across. See TestTCPServerForwardsAnnounceToItsOtherClients.
+	//
+	// We release the transport lock before sending: a stalled co-located client
 	// must not block the readLoop that received the announce.
 	ts.mu.Lock()
-	servers := make([]*interfaces.LocalServerInterface, 0, 2)
+	type clientServer interface {
+		SpawnedClientInterfaces() []interfaces.Interface
+	}
+	servers := make([]clientServer, 0, 2)
 	for _, iface := range ts.interfaces {
-		if lsi, ok := iface.(*interfaces.LocalServerInterface); ok {
-			servers = append(servers, lsi)
+		if cs, ok := iface.(clientServer); ok {
+			servers = append(servers, cs)
 		}
 	}
 	ts.mu.Unlock()
 
-	for _, lsi := range servers {
-		for _, sc := range lsi.SpawnedClientInterfaces() {
+	for _, srv := range servers {
+		for _, sc := range srv.SpawnedClientInterfaces() {
 			if sc == receivedOn {
 				continue
 			}

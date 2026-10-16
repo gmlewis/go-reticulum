@@ -833,6 +833,31 @@ func (tsi *TCPServerInterface) Send(data []byte) error {
 	return nil
 }
 
+// SpawnedClientInterfaces returns a snapshot of the per-client interfaces
+// currently spawned by this server. It is the TCP-server counterpart of
+// LocalServerInterface.SpawnedClientInterfaces, and the transport uses it to
+// forward an accepted announce to the server's OTHER clients.
+//
+// Python gets that for free: an announce arriving from one TCP client is
+// received on that client's *spawned* interface, so the listener itself is not
+// the receiving interface and the ordinary rebroadcast reaches the remaining
+// clients (TCPInterface.py:612). Go's transport forwards co-located clients
+// explicitly instead, so the TCP server has to expose its spawns the same way
+// the shared-instance server does — without this, two clients of one TCP hub
+// never hear each other at all.
+//
+// The snapshot is taken under the server mutex so the caller may iterate it
+// without holding the lock; removeSpawned keeps it free of dead clients.
+func (tsi *TCPServerInterface) SpawnedClientInterfaces() []Interface {
+	tsi.mu.Lock()
+	defer tsi.mu.Unlock()
+	out := make([]Interface, len(tsi.spawnedInterfaces))
+	for i, sc := range tsi.spawnedInterfaces {
+		out[i] = sc
+	}
+	return out
+}
+
 // removeSpawned drops a spawned client from the parent's spawn list. It is
 // called by failConn on the dead client's up->down transition so announce
 // fan-out stops targeting corpses, and is idempotent: Detach racing a
