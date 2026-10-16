@@ -184,9 +184,13 @@ func TestFailMessageLogsSendFailure(t *testing.T) {
 	failed := make(chan *Message, 1)
 	msg.FailedCallback = func(m *Message) { failed <- m }
 
+	// failMessageLocked returns the notification the caller owes the message's
+	// FailedCallback; it is run after the lock is released, because the callback
+	// is foreign code that may re-enter the router (see failMessageLocked).
 	router.mu.Lock()
-	router.failMessageLocked(msg)
+	notify := router.failMessageLocked(msg)
 	router.mu.Unlock()
+	notifyMessage(notify)
 
 	select {
 	case <-failed:

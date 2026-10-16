@@ -2127,8 +2127,9 @@ func (r *Router) HandleOutbound(message *Message) error {
 	// fail_message; the error mirrors Python's raised IOError.
 	if message.DesiredMethod == MethodPropagated && r.outboundPropagationNode == nil {
 		r.mu.Lock()
-		r.failMessageLocked(message)
+		notify := r.failMessageLocked(message)
 		r.mu.Unlock()
+		notifyMessage(notify)
 		return errors.New("attempt to send propagated message with no outbound propagation node configured")
 	}
 
@@ -2414,8 +2415,18 @@ func (r *Router) ProcessOutbound() {
 
 	r.ProcessDeferredStamps()
 
+	// The failures this pass records are notified after the pass, with r.mu
+	// released: a message's FailedCallback is foreign code that may re-enter this
+	// router (see failMessageLocked), and r.mu is not reentrant.
+	var failures []func()
+
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	defer func() {
+		r.mu.Unlock()
+		for _, notify := range failures {
+			notifyMessage(notify)
+		}
+	}()
 
 	nowSeconds := float64(r.now().UnixNano()) / 1e9
 	remaining := make([]*Message, 0, len(r.pendingOutbound))
@@ -2511,7 +2522,7 @@ func (r *Router) ProcessOutbound() {
 				remaining = append(remaining, message)
 				continue
 			}
-			r.failMessageLocked(message)
+			failures = append(failures, r.failMessageLocked(message))
 			continue
 		}
 
@@ -2523,11 +2534,11 @@ func (r *Router) ProcessOutbound() {
 		if sendMethod == MethodPropagated {
 			if r.outboundPropagationNode == nil {
 				r.logger().Error("No outbound propagation node for propagated message to %x", destinationHash)
-				r.failMessageLocked(message)
+				failures = append(failures, r.failMessageLocked(message))
 				continue
 			}
 			if message.DeliveryAttempts > maxDeliveryAttempts {
-				r.failMessageLocked(message)
+				failures = append(failures, r.failMessageLocked(message))
 				continue
 			}
 			if link := r.outboundPropagationLink; link != nil {
@@ -2577,7 +2588,7 @@ func (r *Router) ProcessOutbound() {
 				peerIdentity := r.transport.Recall(r.outboundPropagationNode)
 				if peerIdentity == nil {
 					r.logger().Error("Cannot recall identity for propagation node %x", r.outboundPropagationNode)
-					r.failMessageLocked(message)
+					failures = append(failures, r.failMessageLocked(message))
 					continue
 				}
 
@@ -2688,7 +2699,7 @@ func (r *Router) ProcessOutbound() {
 					message.SetState(StateSending)
 					if err := r.sendMessageLocked(message); err != nil {
 						if errors.Is(err, errResourceRepresentationNotSupported) {
-							r.failMessageLocked(message)
+							failures = append(failures, r.failMessageLocked(message))
 							continue
 						}
 						if errors.Is(err, errResourceLinkPending) {
@@ -2759,7 +2770,7 @@ func (r *Router) ProcessOutbound() {
 		if err := r.sendMessageLocked(message); err != nil {
 			r.logger().Error("Sending LXM %x (dest %x) failed: %v", message.Hash, destinationHash, err)
 			if errors.Is(err, errResourceRepresentationNotSupported) {
-				r.failMessageLocked(message)
+				failures = append(failures, r.failMessageLocked(message))
 				continue
 			}
 			if errors.Is(err, errResourceLinkPending) {
@@ -2860,8 +2871,9 @@ func (r *Router) ProcessDeferredStamps() {
 				}
 				return
 			}
-			r.failMessageLocked(selected)
+			notify := r.failMessageLocked(selected)
 			r.mu.Unlock()
+			notifyMessage(notify)
 			return
 		}
 
@@ -2872,8 +2884,9 @@ func (r *Router) ProcessDeferredStamps() {
 			r.mu.Lock()
 			delete(r.pendingDeferredStamps, selectedMessageID)
 			selected.StampGenerationFailed = true
-			r.failMessageLocked(selected)
+			notify := r.failMessageLocked(selected)
 			r.mu.Unlock()
+			notifyMessage(notify)
 			return
 		}
 		stampGenerationSuccess = true
@@ -2885,8 +2898,9 @@ func (r *Router) ProcessDeferredStamps() {
 			r.mu.Lock()
 			delete(r.pendingDeferredStamps, selectedMessageID)
 			selected.StampGenerationFailed = true
-			r.failMessageLocked(selected)
+			notify := r.failMessageLocked(selected)
 			r.mu.Unlock()
+			notifyMessage(notify)
 			return
 		}
 
@@ -2906,8 +2920,9 @@ func (r *Router) ProcessDeferredStamps() {
 				}
 				return
 			}
-			r.failMessageLocked(selected)
+			notify := r.failMessageLocked(selected)
 			r.mu.Unlock()
+			notifyMessage(notify)
 			return
 		}
 
@@ -2918,8 +2933,9 @@ func (r *Router) ProcessDeferredStamps() {
 			r.mu.Lock()
 			delete(r.pendingDeferredStamps, selectedMessageID)
 			selected.StampGenerationFailed = true
-			r.failMessageLocked(selected)
+			notify := r.failMessageLocked(selected)
 			r.mu.Unlock()
+			notifyMessage(notify)
 			return
 		}
 		propagationStampGenerationSuccess = true
@@ -2933,17 +2949,46 @@ func (r *Router) ProcessDeferredStamps() {
 	}
 }
 
-// failMessageLocked marks a message as failed and invokes its FailedCallback.
-// Mirrors Python LXMRouter.fail_message() lines 2389-2402.
-func (r *Router) failMessageLocked(message *Message) {
+// failMessageLocked marks a message as failed and returns the notification its
+// FailedCallback is owed, or nil when it has none. The caller runs what it
+// returns once r.mu has been released (see notifyMessage).
+//
+// The notification is returned rather than invoked because a message's callback
+// is foreign code and must not run while r.mu is held: the nomadnet client's
+// callback (Conversation.MessageNotification) retries a permanently failed
+// message as propagated, through HandleOutbound, which takes r.mu itself. Go's
+// sync.Mutex is not reentrant, so invoking the callback here made the caller wait
+// on a lock its own goroutine held, for good. The client runs its whole send —
+// Ctrl-D, HandleOutbound, ProcessOutbound and this failure — on the tview event
+// loop, so it stopped dead on the first send that failed: no drawing, no keys, no
+// resize, nothing but a console restart.
+//
+// Python cannot deadlock here: its process_outbound returns at once when the
+// outbound lock is already held (LXMRouter.py:2683) and its handle_outbound takes
+// no lock at all, so a retry issued from a failure callback re-enters freely.
+//
+// Mirrors Python LXMRouter.fail_message() (LXMRouter.py:2565), whose callback run
+// is left to the caller's post-unlock step.
+func (r *Router) failMessageLocked(message *Message) func() {
 	// Python LXMRouter.fail_message (LXMRouter.py:2565).
 	r.logger().Debug("LXM %x failed to send", message.Hash)
 	message.SetProgress(0)
 	if message.state != StateRejected {
 		message.SetState(StateFailed)
 	}
-	if message.FailedCallback != nil {
-		message.FailedCallback(message)
+	callback := message.FailedCallback
+	if callback == nil {
+		return nil
+	}
+	return func() { callback(message) }
+}
+
+// notifyMessage runs a notification returned by failMessageLocked, if there is
+// one. Every caller reaches it with r.mu released, which is the point of
+// failMessageLocked returning the notification instead of invoking it.
+func notifyMessage(notify func()) {
+	if notify != nil {
+		notify()
 	}
 }
 
