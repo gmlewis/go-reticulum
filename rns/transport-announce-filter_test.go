@@ -58,29 +58,39 @@ func (a *announceFilterInterface) Send(data []byte) error {
 }
 
 // TestShouldTransmitAnnounceParity walks every branch of the
-// RNS/Transport.py:1207-1290 announce-broadcast filter (v1.4.1) and asserts the
-// Go decision matches the verbatim-Python golden for each chosen case. The
-// golden decisions were derived by reproducing the Python elif chain exactly
-// and enumerating combinations; the representative cases below cover every
-// branch (B1–B7) including the local-destination, announces_from_internal and
+// RNS/Transport.py:1216-1345 announce-broadcast filter and asserts the Go
+// decision matches the verbatim-Python golden for each chosen case. The golden
+// decisions were derived by reproducing the Python elif chain exactly and
+// enumerating combinations; the representative cases below cover every branch
+// (B1–B7) including the local-destination, announces_from_internal and
 // announces_to_internal interactions.
+//
+// Each option is set on the interface Python reads it from: announces_from_
+// internal on the outbound interface (RNS/Transport.py:1222) and announces_to_
+// internal on the next hop (RNS/Transport.py:1237). An earlier version of this
+// table put both on the outbound interface, which made the table agree with the
+// port instead of with Python.
 func TestShouldTransmitAnnounceParity(t *testing.T) {
 	t.Parallel()
 
 	ts := NewTransportSystem(nil)
 
 	mk := func(name string, mode int) *announceFilterInterface { return newAFI(name, mode) }
-	boolPtr := func(v bool) *bool { return &v }
 
 	type tc struct {
 		name  string
 		out   int
 		from  int // -1 means nil from-interface
 		local bool
-		afi   bool
-		ati   *bool
-		hops  int
-		want  announceTransmitDecision
+		// afi is the OUTBOUND interface's announces_from_internal.
+		afi bool
+		// fromATI is the NEXT HOP's announces_to_internal. Python reads the
+		// allowance from the next hop (RNS/Transport.py:1237), so a case that
+		// means to exercise it must set this, not an option on the outbound
+		// interface.
+		fromATI *bool
+		hops    int
+		want    announceTransmitDecision
 	}
 
 	cases := []tc{
@@ -103,9 +113,9 @@ func TestShouldTransmitAnnounceParity(t *testing.T) {
 		// B4: outbound internal (guarded by !local).
 		// B4c: boundary next-hop onto internal outbound → block.
 		{"B4c boundary->internal block", interfaces.ModeInternal, interfaces.ModeBoundary, false, true, nil, 1, announceBlock},
-		{"B4c boundary->internal ati=false", interfaces.ModeInternal, interfaces.ModeBoundary, false, true, boolPtr(false), 1, announceBlock},
+		{"B4c boundary->internal next-hop ati=false", interfaces.ModeInternal, interfaces.ModeBoundary, false, true, new(false), 1, announceBlock},
 		// B4b: announces_to_internal=true overrides the boundary block.
-		{"B4b ati-allow boundary->internal", interfaces.ModeInternal, interfaces.ModeBoundary, false, true, boolPtr(true), 1, announceDirect},
+		{"B4b next-hop ati=true allows boundary->internal", interfaces.ModeInternal, interfaces.ModeBoundary, false, true, new(true), 1, announceDirect},
 		// B4d: other next-hop modes onto internal outbound → direct (no cap).
 		{"B4d internal<-full direct", interfaces.ModeInternal, interfaces.ModeFull, false, true, nil, 1, announceDirect},
 		{"B4d internal<-internal direct", interfaces.ModeInternal, interfaces.ModeInternal, false, true, nil, 1, announceDirect},
@@ -146,15 +156,16 @@ func TestShouldTransmitAnnounceParity(t *testing.T) {
 			t.Parallel()
 			out := mk("out", c.out)
 			out.afi = c.afi
-			out.ati = c.ati
 			var from interfaces.Interface
 			if c.from >= 0 {
-				from = mk("from", c.from)
+				f := mk("from", c.from)
+				f.ati = c.fromATI
+				from = f
 			}
 			got := ts.shouldTransmitAnnounce(out, from, c.local, c.hops)
 			if got != c.want {
-				t.Errorf("shouldTransmitAnnounce(out=%#x, from=%v, local=%v, afi=%v, ati=%v, hops=%v) = %v, want %v",
-					c.out, modeName(c.from), c.local, c.afi, atiStr(c.ati), c.hops, got, c.want)
+				t.Errorf("shouldTransmitAnnounce(out=%#x, from=%v, local=%v, outAfi=%v, nextHopAti=%v, hops=%v) = %v, want %v",
+					c.out, modeName(c.from), c.local, c.afi, atiStr(c.fromATI), c.hops, got, c.want)
 			}
 		})
 	}
@@ -280,44 +291,64 @@ func TestProcessAnnounceTableAnnouncesFromInternalBlock(t *testing.T) {
 
 // TestProcessAnnounceTableAnnouncesToInternalAllow asserts the slice
 // end-to-end: an announce from a boundary next-hop onto an internal outbound is
-// blocked by default (B4c) but allowed when the internal outbound has
-// announces_to_internal=true (B4b).
+// blocked by default (B4c) and allowed when the NEXT HOP has
+// announces_to_internal=true (B4b reads the next hop's option,
+// RNS/Transport.py:1237).
+//
+// Each case gets its own transport so the next hop's option can differ, and the
+// ati=true case is the one that distinguishes the corrected rule from the old
+// one: with the option on the outbound interface the announce was allowed, and
+// with it on the next hop it is allowed for the same and only reason Python
+// allows it.
 func TestProcessAnnounceTableAnnouncesToInternalAllow(t *testing.T) {
 	t.Parallel()
-	ts := NewTransportSystem(nil)
-	ts.identity = mustTestNewIdentity(t, true)
-	ts.SetEnabled(true)
 
-	from := newAFI("from-boundary", interfaces.ModeBoundary)
-	outInternalBlock := newAFI("out-internal-block", interfaces.ModeInternal)
-	outInternalAllow := newAFI("out-internal-allow", interfaces.ModeInternal)
-	ati := true
-	outInternalAllow.ati = &ati
-	ts.interfaces = append(ts.interfaces, from, outInternalBlock, outInternalAllow)
-
-	id := mustTestNewIdentity(t, true)
-	// Unregistered destination: B4 (outbound internal) only applies when
-	// !localDestination.
-	dest, err := NewDestination(nil, id, DestinationIn, DestinationSingle, "ati-test")
-	if err != nil {
-		t.Fatalf("NewDestination: %v", err)
-	}
-	p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 1)
-	p.Hops = 1
-	ts.handleAnnounce(p, from)
-
-	if len(ts.announceTable) != 1 {
-		t.Fatalf("expected one queued announce, got %v", len(ts.announceTable))
+	cases := []struct {
+		name       string
+		nextHopATI *bool
+		wantSends  int
+	}{
+		{name: "next_hop_ati_unset_blocks", nextHopATI: nil, wantSends: 0},
+		{name: "next_hop_ati_false_blocks", nextHopATI: new(false), wantSends: 0},
+		{name: "next_hop_ati_true_allows", nextHopATI: new(true), wantSends: 1},
 	}
 
-	ts.processAnnounceTable(time.Now().Add(10 * time.Second))
-	ts.WaitOutboundSends()
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 
-	if outInternalBlock.sendCount != 0 {
-		t.Errorf("default boundary->internal should block, got %v sends", outInternalBlock.sendCount)
-	}
-	if outInternalAllow.sendCount == 0 {
-		t.Errorf("announces_to_internal=true should allow boundary->internal, got 0 sends")
+			ts := NewTransportSystem(nil)
+			ts.identity = mustTestNewIdentity(t, true)
+			ts.SetEnabled(true)
+
+			from := newAFI("from-boundary", interfaces.ModeBoundary)
+			from.ati = c.nextHopATI
+			outInternal := newAFI("out-internal", interfaces.ModeInternal)
+			ts.interfaces = append(ts.interfaces, from, outInternal)
+
+			id := mustTestNewIdentity(t, true)
+			// Unregistered destination: B4 (outbound internal) only applies when
+			// !localDestination.
+			dest, err := NewDestination(nil, id, DestinationIn, DestinationSingle, "ati-test")
+			if err != nil {
+				t.Fatalf("NewDestination: %v", err)
+			}
+			p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 1)
+			p.Hops = 1
+			ts.handleAnnounce(p, from)
+
+			if len(ts.announceTable) != 1 {
+				t.Fatalf("expected one queued announce, got %v", len(ts.announceTable))
+			}
+
+			ts.processAnnounceTable(time.Now().Add(10 * time.Second))
+			ts.WaitOutboundSends()
+
+			if outInternal.sendCount != c.wantSends {
+				t.Errorf("boundary next hop onto an internal outbound with announces_to_internal=%v: got %v sends, want %v",
+					atiStr(c.nextHopATI), outInternal.sendCount, c.wantSends)
+			}
+		})
 	}
 }
 

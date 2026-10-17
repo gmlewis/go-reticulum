@@ -501,63 +501,16 @@ func TestHDLCVectorsAgainstPython(t *testing.T) {
 			}
 			want := mustHex(t, res.Unescaped)
 			got := HDLCUnescape(c.in)
-
-			if !hdlcWellFormed(c.in) {
-				// Only two byte sequences are legal inside an HDLC frame:
-				// 7D 5D for a literal 7D and 7D 5E for a literal 7E
-				// (RNS/Interfaces/TCPInterface.py:389-404). Anything else means
-				// the frame is malformed, and the two implementations dispose of
-				// it differently without either being wrong about a frame that
-				// can occur: Python's two sequential replacements leave an
-				// unrecognised sequence alone, while the port's general
-				// escape-decoder consumes a lone ESC and XORs the byte after it.
-				// Both hand a frame that fails to parse on to the packet layer,
-				// so the packet is dropped either way.
-				reason, documented := acceptedHDLCDiffs["malformed"]
-				if !documented {
-					t.Errorf("malformed frame %x diverges from Python (%x vs %x) and no reason is recorded in acceptedHDLCDiffs", c.in, got, want)
-					return
-				}
-				t.Logf("malformed frame (%x): python keeps %x, port yields %x — %v", c.in, want, got, reason)
-				return
-			}
 			if !equalBytes(got, want) {
-				t.Errorf("HDLCUnescape(%x) = %x, want %x (RNS/Interfaces/TCPInterface.py:392-404)", c.in, got, want)
+				t.Errorf("HDLCUnescape(%x) = %x, want %x (RNS/Interfaces/TCPInterface.py:392-404: only 7D 5D and 7D 5E are decoded; every other byte, a lone 7D included, passes through)", c.in, got, want)
 			}
 		})
 	}
 }
 
-// acceptedHDLCDiffs records the one reviewed HDLC divergence, with its reason.
-// It covers every malformed input in the table (any 7D not followed by 5D or
-// 5E), which is why the test routes malformed frames through a log rather than
-// a byte comparison: Python unescapes with two sequential two-byte
-// replacements and leaves an unrecognised sequence untouched, while the port's
-// escape-decoder consumes the ESC and XORs the following byte. Both produce a
-// frame that fails to parse, so the packet is dropped either way, and a
-// well-formed frame can never contain such a sequence.
-var acceptedHDLCDiffs = map[string]string{
-	"malformed": "On malformed input (7D not followed by 5D/5E) Python leaves the bytes and the port decodes them; both frames fail to parse downstream.",
-}
-
-// hdlcWellFormed reports whether every ESC byte in the frame introduces one of
-// the two legal escape sequences.
-func hdlcWellFormed(in []byte) bool {
-	for i := 0; i < len(in); i++ {
-		if in[i] != HDLCEsc {
-			continue
-		}
-		if i+1 >= len(in) {
-			return false
-		}
-		next := in[i+1]
-		if next != HDLCEsc^HDLCEscMask && next != HDLCFlag^HDLCEscMask {
-			return false
-		}
-		i++
-	}
-	return true
-}
+// There is no accepted-divergence ledger for HDLC: the port decodes exactly the
+// two sequences Python decodes, so every row of the table, malformed input
+// included, is compared byte for byte.
 
 // pythonHDLCVectorScript applies Python's own HDLC escape and unescape.
 const pythonHDLCVectorScript = `

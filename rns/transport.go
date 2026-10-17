@@ -2786,6 +2786,12 @@ const (
 // next-hop filters — while the MODE_INTERNAL outbound branch (B4) is guarded
 // by `!localDestination`, so a local destination's announce onto an internal
 // interface falls through to the else (announce-cap) branch.
+//
+// The two interface options are read from *different* interfaces, because that
+// is what Python does: announces_from_internal from the outbound interface
+// (RNS/Transport.py:1222) and announces_to_internal from the next hop
+// (RNS/Transport.py:1237). Reading the wrong side of the second one silently
+// changes whether a boundary node forwards announces into an internal segment.
 func (ts *TransportSystem) shouldTransmitAnnounce(outIface, fromIface interfaces.Interface, localDestination bool, receivedHops int) announceTransmitDecision {
 	switch {
 	// B1: no next-hop interface exists for the destination.
@@ -2807,9 +2813,13 @@ func (ts *TransportSystem) shouldTransmitAnnounce(outIface, fromIface interfaces
 		if fromIface == nil {
 			return announceBlock
 		}
-		// B4b: announces_to_internal allowance overrides the boundary block
-		// (Task: announces_to_internal boundary→internal allowance).
-		if ati := outIface.AnnouncesToInternal(); ati != nil && *ati {
+		// B4b: the boundary-to-internal allowance. Python reads the NEXT HOP's
+		// announces_to_internal here (`if from_interface.announces_to_internal
+		// == True: pass`, RNS/Transport.py:1237), not the outbound interface's,
+		// so this consults fromIface for the same reason B2 consults outIface's
+		// announces_from_internal: each option is read from the interface Python
+		// reads it from.
+		if ati := fromIface.AnnouncesToInternal(); ati != nil && *ati {
 			return announceDirect
 		}
 		// B4c: boundary-mode next-hop interface onto an internal outbound
@@ -6897,6 +6907,23 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 		}
 	}
 
+	// A transport that cannot transmit carries nothing, whatever the packet is.
+	// Python never reaches its transmit call for such an interface because the
+	// whole broadcast branch is gated on `if interface.OUT:`
+	// (RNS/Transport.py:1197), and the attached-interface filter lives inside
+	// that branch, so an attached IN-only interface receives the packet nowhere
+	// and outbound reports it unsent. The one shape Python handles differently is
+	// a packet with BOTH an attached interface and a known path: there the known
+	// path wins (Transport.py:1144 runs before the loop). That ordering cannot
+	// matter here, because every attached interface the port stamps belongs to a
+	// link, a proof or a tunnel whose destination hash is never a path-table key
+	// (link.go:360, identity.go:495, transport.go:7443).
+	if attachedIface != nil && !attachedIface.IsOut() {
+		ts.logger.Debug("No interfaces could process the outbound packet: attached interface %v is not outgoing",
+			attachedIface.Name())
+		return nil
+	}
+
 	if attachedIface != nil {
 		raw := packet.Raw
 		if ifac, ok := attachedIface.(ifacOutboundHook); ok {
@@ -7014,7 +7041,65 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 		return nil
 	}
 
+	// The broadcast fallback, which is also where Python applies the announce
+	// exclusions: its loop opens with `if interface.OUT:` and then walks the
+	// same elif chain the rebroadcast path uses (RNS/Transport.py:1196-1345).
+	// Both are reproduced here, so an announce is filtered on every interface it
+	// might leave by, whether it originated locally or arrived from a peer, and
+	// a non-OUT interface never carries a packet.
+	//
+	// The two lookups happen once for the whole loop, as Python does. Python's
+	// next_hop_interface also falls back to the shared instance's interface when
+	// the destination is registered locally; that branch cannot affect this
+	// decision, because every branch that reads the next hop is guarded by
+	// `not local_destination` while the fallback requires the destination to be
+	// registered locally. The path table lookup alone is therefore exact here.
+	// attemptedAny records whether the loop handed the packet to an interface at
+	// all. Python's sent flag means "a transmit was attempted", not "a transmit
+	// succeeded": packet_sent() runs after Transport.transmit returns, and
+	// transmit reports nothing, so a dead interface still counts (Packet.py:301,
+	// Transport.py:1350-1355).
+	attemptedAny := false
+
+	isAnnounce := packet.PacketType == PacketAnnounce
+	var announceFromIface interfaces.Interface
+	var localDestination bool
+	if isAnnounce {
+		ts.mu.Lock()
+		announceFromIface = ts.nextHopInterfaceLocked(packet.DestinationHash)
+		localDestination = ts.isLocalDestinationLocked(packet.DestinationHash)
+		ts.mu.Unlock()
+	}
+
 	for _, iface := range interfacesSnapshot {
+		if !iface.IsOut() {
+			continue
+		}
+		if isAnnounce {
+			// The decision and the announce-cap queue share one lock hold, and
+			// the cap queue is the same one the rebroadcast path uses: a queued
+			// announce is sent by its timer, exactly as Python's
+			// threading.Timer(wait_time, interface.process_announce_queue) does.
+			ts.mu.Lock()
+			decision := ts.shouldTransmitAnnounce(iface, announceFromIface, localDestination, packet.Hops)
+			var capped []byte
+			if decision == announceCapped {
+				capped = ts.queueOrSendAnnounceLocked(time.Now(), iface, string(packet.DestinationHash), packet.Raw, packet.Hops)
+			}
+			ts.mu.Unlock()
+
+			switch decision {
+			case announceBlock:
+				ts.logger.Debug("Blocking announce broadcast on %v (%v)", iface.Name(), announceExclusionReason(iface, announceFromIface, localDestination))
+				continue
+			case announceCapped:
+				if len(capped) == 0 {
+					// Queued (or dropped by a full queue); the queue timer sends it.
+					continue
+				}
+			}
+		}
+
 		raw := packet.Raw
 		if ifac, ok := iface.(ifacOutboundHook); ok {
 			processed, err := ifac.ApplyIFACOutbound(raw)
@@ -7025,6 +7110,7 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 			raw = processed
 		}
 
+		attemptedAny = true
 		if err := iface.Send(raw); err != nil {
 			// Broadcast fallback: a dead or half-open peer drops its copy of
 			// the packet and nothing else happens — Python transmits and
@@ -7033,6 +7119,17 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 			ts.logger.Error("Could not transmit on %v: %v", iface.Name(), err)
 		}
 		ts.recordOutboundPR(packet, iface)
+	}
+
+	if !attemptedAny {
+		// Nothing left this node: Python's Transport.outbound returns False, and
+		// Packet.send logs "No interfaces could process the outbound packet" at
+		// debug level, leaves sent False and arms no receipt (Packet.py:299-303).
+		// Reporting success here instead made a packet that never went anywhere
+		// look delivered, which is the difference between "the peer is
+		// unreachable" and "we transmitted and it did not answer".
+		ts.logger.Debug("No interfaces could process the outbound packet")
+		return nil
 	}
 
 	// Arm before taking ts.mu (see the attached-interface branch above).
@@ -7973,5 +8070,39 @@ func (ts *TransportSystem) AwaitPath(destinationHash []byte, timeout time.Durati
 			remaining = awaitPathPollInterval
 		}
 		time.Sleep(remaining)
+	}
+}
+
+// nextHopInterfaceLocked returns the interface an announce for destHash arrived
+// on, which is the path entry's interface. Python's Transport.next_hop_interface
+// (Transport.py:2750-2758) also falls back to the shared instance's interface
+// when the destination is registered locally, and that fallback is deliberately
+// absent: every caller here reads the result only inside a branch guarded by
+// `not local_destination`, while the fallback requires the destination to be
+// registered locally, so the two can never meet. Callers must hold ts.mu.
+func (ts *TransportSystem) nextHopInterfaceLocked(destHash []byte) interfaces.Interface {
+	if entry, ok := ts.pathTable[string(destHash)]; ok && entry != nil {
+		return entry.Interface
+	}
+	return nil
+}
+
+// announceExclusionReason names the Python branch that blocked an announce, for
+// the debug log. It mirrors the branch order of shouldTransmitAnnounce and
+// exists only to make a blocked broadcast explain itself.
+func announceExclusionReason(outIface, fromIface interfaces.Interface, localDestination bool) string {
+	switch {
+	case !localDestination && fromIface == nil:
+		return "RNS/Transport.py:1220: no next-hop interface for the destination"
+	case fromIface != nil && !outIface.AnnouncesFromInternal() && fromIface.Mode() == interfaces.ModeInternal:
+		return "RNS/Transport.py:1222: internal-mode next hop onto an interface that does not announce from internal"
+	case outIface.Mode() == interfaces.ModeAccessPoint:
+		return "RNS/Transport.py:1226: access-point interface"
+	case outIface.Mode() == interfaces.ModeInternal:
+		return "RNS/Transport.py:1232,1240: boundary-mode next hop onto an internal interface"
+	case outIface.Mode() == interfaces.ModeRoaming:
+		return "RNS/Transport.py:1244,1252-1256: roaming or boundary next hop onto a roaming interface"
+	default:
+		return "RNS/Transport.py:1259-1269: roaming next hop onto a boundary interface"
 	}
 }

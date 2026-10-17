@@ -78,22 +78,34 @@ func HDLCEscape(data []byte) []byte {
 	return out
 }
 
-// HDLCUnescape parses a raw byte stream and removes escape markers to restore
-// the original payload. It reverses the obfuscation applied for transmission.
+// HDLCUnescape removes HDLC byte stuffing from a frame's bytes, restoring the
+// payload between the two flag delimiters.
+//
+// Only the two sequences a conforming sender ever emits are decoded, and
+// everything else — including a 7D that introduces neither — is passed through
+// unchanged. That is exactly what Python's unescape does: it is two sequential
+// replacements, `7D 5E -> 7E` and then `7D 5D -> 7D`
+// (RNS/Interfaces/TCPInterface.py:392-404, duplicated in BackboneInterface.py).
+// A general escape-decoder instead consumes any 7D and XORs the byte after it,
+// which silently rewrites a byte Python keeps when the frame is malformed.
+// Well-formed frames cannot contain such a sequence, because the sender escapes
+// every 7D and 7E, so the two agree on every frame either implementation emits.
 func HDLCUnescape(data []byte) []byte {
 	out := make([]byte, 0, len(data))
-	escape := false
-	for _, b := range data {
-		if b == HDLCEsc && !escape {
-			escape = true
-			continue
+	for i := 0; i < len(data); i++ {
+		if data[i] == HDLCEsc && i+1 < len(data) {
+			switch data[i+1] {
+			case HDLCEsc ^ HDLCEscMask:
+				out = append(out, HDLCEsc)
+				i++
+				continue
+			case HDLCFlag ^ HDLCEscMask:
+				out = append(out, HDLCFlag)
+				i++
+				continue
+			}
 		}
-		if escape {
-			out = append(out, b^HDLCEscMask)
-			escape = false
-		} else {
-			out = append(out, b)
-		}
+		out = append(out, data[i])
 	}
 	return out
 }

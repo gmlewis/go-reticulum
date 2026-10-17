@@ -93,6 +93,7 @@ func (d *identityEncryptDestination) Verify([]byte, []byte) bool { return false 
 type framingVectorInterface struct {
 	dummyInterface
 	mode    int
+	isOut   bool
 	fromInt bool
 	toInt   *bool
 	mu      sync.Mutex
@@ -100,9 +101,10 @@ type framingVectorInterface struct {
 }
 
 func newFramingVectorInterface(name string, mode int) *framingVectorInterface {
-	return &framingVectorInterface{dummyInterface: dummyInterface{name: name}, mode: mode}
+	return &framingVectorInterface{dummyInterface: dummyInterface{name: name}, mode: mode, isOut: true}
 }
 
+func (f *framingVectorInterface) IsOut() bool                 { return f.isOut }
 func (f *framingVectorInterface) Mode() int                   { return f.mode }
 func (f *framingVectorInterface) AnnouncesFromInternal() bool { return f.fromInt }
 func (f *framingVectorInterface) AnnouncesToInternal() *bool  { return f.toInt }
@@ -447,6 +449,10 @@ func packVectorGo(c packMatrixCase) ([]byte, int, error) {
 type outboundVectorRequest struct {
 	SharedInstance    bool   `json:"shared_instance"`
 	WithInterface     bool   `json:"with_interface"`
+	InterfaceIsOut    bool   `json:"interface_is_out"`
+	AttachedInterface bool   `json:"attached_interface"`
+	AttachedIsOut     bool   `json:"attached_is_out"`
+	LocalDestination  bool   `json:"local_destination"`
 	DestHash          string `json:"dest_hash"`
 	DestType          int    `json:"dest_type"`
 	PacketType        int    `json:"packet_type"`
@@ -486,10 +492,10 @@ class Owner:
         self.is_connected_to_shared_instance = shared
 
 class StubInterface:
-    """Mirrors the Go vector's stub: full mode, able to transmit."""
-    def __init__(self, name):
+    """Mirrors the Go vector's stub: full mode, with the case's OUT flag."""
+    def __init__(self, name, out=True):
         self.name = name
-        self.OUT = True
+        self.OUT = out
         self.IN = True
         self.bitrate = 1000000
         self.mode = RNS.Interfaces.Interface.Interface.MODE_FULL
@@ -512,6 +518,10 @@ class MockDest:
         self.link_id = h
         self.type = dtype
         self.mtu = mtu
+        # A LINK destination carries its own state and its own attached
+        # interface; the broadcast branch reads both (Transport.py:1401-1403).
+        self.status = None
+        self.attached_interface = None
     def encrypt(self, data): return bytes(data)
     def decrypt(self, data): return bytes(data)
 
@@ -529,22 +539,39 @@ for c in cases:
     Transport.destinations_map_lock = threading.RLock()
     Transport.held_announces = {}
 
-    iface = StubInterface("stub")
+    iface = StubInterface("out", c.get("interface_is_out", True))
     Transport.interfaces = [iface] if c.get("with_interface") else []
 
+    attached = None
+    if c.get("attached_interface"):
+        attached = StubInterface("attached", c.get("attached_is_out", True))
+        Transport.interfaces.append(attached)
+
     dest_hash = bytes.fromhex(c["dest_hash"])
+    if c.get("local_destination"):
+        Transport.destinations_map[dest_hash] = object()
+        # next_hop_interface falls back to the shared instance's interface for a
+        # locally-registered destination (Transport.py:2750-2758). There is no
+        # shared instance in this scenario, so it returns None -- which is what
+        # the real function returns here too; the stub avoids needing a live
+        # Reticulum singleton.
+        Transport.next_hop_interface = staticmethod(lambda dh: None)
     if c.get("path_hops") is not None:
         Transport.path_table[dest_hash] = [0.0, bytes.fromhex(c.get("next_hop") or ("00"*16)),
                                            c["path_hops"], 0.0, [], iface, None]
 
     recorded = []
-    Transport.transmit = lambda interface, raw: recorded.append(raw.hex())
+    Transport.transmit = lambda interface, raw: recorded.append(interface.name + ":" + raw.hex())
 
     dest = MockDest(dest_hash, c["dest_type"])
+    if c["dest_type"] == RNS.Destination.LINK:
+        dest.status = RNS.Link.ACTIVE
+        dest.attached_interface = attached
     p = PacketCls(dest, bytes.fromhex(c["plaintext"]),
                   packet_type=c["packet_type"], context=c["context"],
                   transport_type=c["transport_type"], header_type=c["header_type"],
                   transport_id=bytes.fromhex(c["transport_id"]) if c.get("transport_id") else None,
+                  attached_interface=attached,
                   create_receipt=False)
     p.hops = c.get("hops", 0)
     rec = {"sent": False, "frames": [], "err": ""}
@@ -577,35 +604,26 @@ type outboundVectorCase struct {
 	// forwarding (RNS/Transport.py:2007-2020). It is the only packet type
 	// Python can frame as HEADER_2 (RNS/Packet.py:226-234).
 	header2Announce bool
-	citation        string
+	// interfaceInOnly registers an interface that cannot transmit. Python's
+	// broadcast loop is gated on `if interface.OUT:` (Transport.py:1197), so
+	// nothing leaves by it, whatever the packet type.
+	interfaceInOnly bool
+	// localDestination registers the destination locally, which is the state a
+	// node announcing its own destination is in.
+	localDestination bool
+	// attachedInOnly stamps an attached interface that cannot transmit, which a
+	// link, a proof or a synthesized tunnel can be attached to.
+	attachedInOnly bool
+	citation       string
 }
 
 // acceptedOutboundDiffs lists reviewed scenarios where Go and Python
-// deliberately differ. Each entry carries its reason; an unlisted difference
-// fails the test.
-var acceptedOutboundDiffs = map[string]string{
-	// Go's broadcast fallback reports success even when no interface accepted
-	// the packet. Python leaves sent=False and returns False, because sent is
-	// only set inside the per-interface loop (RNS/Transport.py:1349-1355).
-	// Unreachable in production — a started transport always has at least one
-	// OUT interface, and the attached-interface, known-path and local-delivery
-	// branches all return before the loop — so the port keeps its
-	// error-returning contract rather than reporting a false failure.
-	"no_path/no_interface/data/single": "Go reports success with no interfaces; Python returns sent=False. Not reachable in production.",
-
-	// Go's Outbound broadcast fallback does not run the announce exclusion
-	// chain, while Python's outbound does (RNS/Transport.py:1216-1345: with an
-	// unknown, non-local destination and no next-hop interface the announce is
-	// blocked). The port applies that chain where it actually emits a forwarded
-	// announce — the rebroadcast path, transport.go processAnnounceTable →
-	// shouldTransmitAnnounce, pinned against Python by
-	// TestFramingVectorsAnnounceExclusions — and Outbound's only announcer
-	// caller is the local path-response announce, whose destination is
-	// registered locally and which Python's chain allows. Unreachable in the
-	// port; recorded so that routing a forwarded announce through Outbound
-	// later cannot silently diverge.
-	"header2_announce/transport/no_path": "Outbound's broadcast fallback has no announce exclusion chain; the port excludes announces in the rebroadcast path. Unreachable in the port.",
-}
+// deliberately differ. It is empty: the two entries it held were fixed rather
+// than tolerated. Outbound now leaves the sent flag alone when no interface
+// accepted the packet (matching Packet.py:299-303), and its broadcast fallback
+// runs the announce exclusion chain (matching Transport.py:1196-1345). A future
+// entry needs a reason on its line, so an unexplained difference cannot pass.
+var acceptedOutboundDiffs = map[string]string{}
 
 // framingOutboundCases returns the Outbound scenarios.
 func framingOutboundCases() []outboundVectorCase {
@@ -671,6 +689,36 @@ func framingOutboundCases() []outboundVectorCase {
 			packetType: PacketData, context: ContextKeepalive,
 			citation: "RNS/Transport.py:1149-1162 (the context does not change the insert rule)",
 		},
+		{
+			name: "no_path/data/in_only_interface", withInterface: true, interfaceInOnly: true,
+			destType: DestinationSingle, packetType: PacketData,
+			citation: "RNS/Transport.py:1197 (the broadcast loop only uses interfaces with OUT set)",
+		},
+		{
+			name: "no_path/announce/in_only_interface", withInterface: true, interfaceInOnly: true,
+			destType: DestinationSingle, packetType: PacketAnnounce,
+			citation: "RNS/Transport.py:1197 (the OUT gate applies to announces too)",
+		},
+		{
+			name: "no_path/announce/local_destination", withInterface: true, localDestination: true,
+			destType: DestinationSingle, packetType: PacketAnnounce,
+			citation: "RNS/Transport.py:1287-1294 (a locally-originated announce is always transmitted, hops 0, no cap)",
+		},
+		{
+			name: "no_path/announce/unknown_destination", withInterface: true,
+			destType: DestinationSingle, packetType: PacketAnnounce,
+			citation: "RNS/Transport.py:1220 (announce for an unknown, non-local destination with no next hop is blocked)",
+		},
+		{
+			name: "attached/in_only_interface", withInterface: true, attachedInOnly: true,
+			destType: DestinationLink, packetType: PacketData, context: ContextKeepalive,
+			citation: "RNS/Transport.py:1197,1403 (the OUT gate also filters the attached interface)",
+		},
+		{
+			name: "attached/out_interface", withInterface: true,
+			destType: DestinationLink, packetType: PacketData, context: ContextKeepalive,
+			citation: "RNS/Transport.py:1403 (a link packet leaves by its attached interface and no other)",
+		},
 	}
 }
 
@@ -686,16 +734,20 @@ func TestFramingVectorsOutboundFraming(t *testing.T) {
 	req := make([]outboundVectorRequest, 0, len(cases))
 	for _, c := range cases {
 		r := outboundVectorRequest{
-			SharedInstance: c.sharedInstance,
-			WithInterface:  c.withInterface,
-			DestHash:       hex.EncodeToString(framingVectorDestHash),
-			DestType:       c.destType,
-			PacketType:     c.packetType,
-			Context:        c.context,
-			TransportType:  TransportBroadcast,
-			HeaderType:     Header1,
-			Plaintext:      hex.EncodeToString([]byte(framingVectorPayload)),
-			PathHops:       c.pathHops,
+			SharedInstance:    c.sharedInstance,
+			WithInterface:     c.withInterface,
+			InterfaceIsOut:    !c.interfaceInOnly,
+			AttachedInterface: c.attachedInOnly || strings.Contains(c.name, "attached/"),
+			AttachedIsOut:     !c.attachedInOnly,
+			LocalDestination:  c.localDestination,
+			DestHash:          hex.EncodeToString(framingVectorDestHash),
+			DestType:          c.destType,
+			PacketType:        c.packetType,
+			Context:           c.context,
+			TransportType:     TransportBroadcast,
+			HeaderType:        Header1,
+			Plaintext:         hex.EncodeToString([]byte(framingVectorPayload)),
+			PathHops:          c.pathHops,
 		}
 		if c.pathHops != nil {
 			r.NextHop = hex.EncodeToString(framingVectorTransportID)
@@ -724,7 +776,7 @@ func TestFramingVectorsOutboundFraming(t *testing.T) {
 				return
 			}
 
-			goSent, goFrames, err := outboundVectorGo(t, c)
+			goSent, goFrames, goFrameNames, err := outboundVectorGo(t, c)
 			if res.Err != "" {
 				t.Fatalf("python failed for this case: %v", res.Err)
 			}
@@ -732,19 +784,24 @@ func TestFramingVectorsOutboundFraming(t *testing.T) {
 				t.Fatalf("go Outbound: %v", err)
 			}
 
-			wantFrames := make([][]byte, 0, len(res.Frames))
-			for _, f := range res.Frames {
-				wantFrames = append(wantFrames, mustDecodeHex(t, f))
+			if len(goFrames) != len(res.Frames) {
+				t.Fatalf("transmitted %v frame(s), python transmitted %v (%v):\n  go     = %x\n  python = %v",
+					len(goFrames), len(res.Frames), c.citation, goFrames, res.Frames)
 			}
-
-			if len(goFrames) != len(wantFrames) {
-				t.Fatalf("transmitted %v frame(s), python transmitted %v (%v):\n  go     = %x\n  python = %x",
-					len(goFrames), len(wantFrames), c.citation, goFrames, wantFrames)
-			}
-			for j := range wantFrames {
-				if !bytes.Equal(goFrames[j], wantFrames[j]) {
+			for j, want := range res.Frames {
+				name, hexPart, ok := strings.Cut(want, ":")
+				if !ok {
+					t.Fatalf("python frame %q is not name:hex", want)
+				}
+				gotName := goFrameNames[j]
+				if gotName != name {
+					t.Errorf("frame %v left by interface %v, python sent it by %v (%v)", j, gotName, name, c.citation)
+					continue
+				}
+				wantBytes := mustDecodeHex(t, hexPart)
+				if !bytes.Equal(goFrames[j], wantBytes) {
 					t.Errorf("frame %v differs from Python (%v):\n  go     = %x\n  python = %x",
-						j, c.citation, goFrames[j], wantFrames[j])
+						j, c.citation, goFrames[j], wantBytes)
 				}
 			}
 			if res.Sent != goSent {
@@ -757,7 +814,7 @@ func TestFramingVectorsOutboundFraming(t *testing.T) {
 // outboundVectorGo drives the Go Outbound for one scenario with a real
 // TransportSystem, a path-table entry and a capturing interface, and returns
 // every frame the interface received together with the packet's sent flag.
-func outboundVectorGo(t *testing.T, c outboundVectorCase) (bool, [][]byte, error) {
+func outboundVectorGo(t *testing.T, c outboundVectorCase) (bool, [][]byte, []string, error) {
 	t.Helper()
 
 	ts := NewTransportSystem(nil)
@@ -765,9 +822,28 @@ func outboundVectorGo(t *testing.T, c outboundVectorCase) (bool, [][]byte, error
 	ts.SetEnabled(true)
 	ts.SetConnectedToSharedInstance(c.sharedInstance)
 
-	iface := newFramingVectorInterface("framing-vector-out", interfaces.ModeFull)
+	iface := newFramingVectorInterface("out", interfaces.ModeFull)
+	iface.isOut = !c.interfaceInOnly
 	if c.withInterface {
 		ts.RegisterInterface(iface)
+	}
+	var attached *framingVectorInterface
+	if c.attachedInOnly || strings.Contains(c.name, "attached/") {
+		attached = newFramingVectorInterface("attached", interfaces.ModeFull)
+		attached.isOut = !c.attachedInOnly
+		ts.RegisterInterface(attached)
+	}
+	if c.localDestination {
+		// Python models "the destination is registered locally" by re-pointing a
+		// destination's hash at the announcement's hash (Transport.py:1998 does
+		// exactly that when it rebuilds an announce). The same re-pointing is
+		// needed here so both sides see the vector's destination as local.
+		d := mustTestNewDestination(t, ts, ts.identity, DestinationIn, DestinationSingle, "framing", "local")
+		ts.mu.Lock()
+		delete(ts.destinationsMap, string(d.Hash))
+		d.Hash = append([]byte(nil), framingVectorDestHash...)
+		ts.mu.Unlock()
+		ts.RegisterDestination(d)
 	}
 	if c.pathHops != nil {
 		now := time.Now()
@@ -787,19 +863,36 @@ func outboundVectorGo(t *testing.T, c outboundVectorCase) (bool, [][]byte, error
 	p.PacketType = c.packetType
 	p.Context = c.context
 	p.HeaderType = Header1
+	if attached != nil {
+		p.AttachedInterface = attached
+	}
 	if c.header2Announce {
 		p.HeaderType = Header2
 		p.TransportType = TransportForward
 		p.TransportID = framingVectorTransportID
 	}
 	if err := p.Pack(); err != nil {
-		return false, nil, err
+		return false, nil, nil, err
 	}
 
 	if err := ts.Outbound(p); err != nil {
-		return false, nil, err
+		return false, nil, nil, err
 	}
-	return p.Sent, iface.SentFrames(), nil
+
+	// Frames from the outbound interface come first, then the attached one; only
+	// one of the two can receive a packet.
+	var frames [][]byte
+	var names []string
+	for _, fi := range []*framingVectorInterface{iface, attached} {
+		if fi == nil {
+			continue
+		}
+		for _, f := range fi.SentFrames() {
+			frames = append(frames, f)
+			names = append(names, fi.Name())
+		}
+	}
+	return p.Sent, frames, names, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -902,20 +995,12 @@ print(json.dumps(out))
 `
 
 // acceptedAnnounceDiffs lists reviewed announce-exclusion divergences, keyed by
-// case name. Each value states the reason, with both sides cited.
-var acceptedAnnounceDiffs = map[string]string{
-	// Python consults the NEXT-HOP interface's announces_to_internal in the
-	// boundary-to-internal allowance: RNS/Transport.py:1237 reads
-	// `from_interface.announces_to_internal`. The port consults the OUTBOUND
-	// interface's instead (transport.go shouldTransmitAnnounce branch B4b),
-	// which TestProcessAnnounceTableAnnouncesToInternalAllow pins. A boundary
-	// next hop with the flag set therefore forwards into the internal segment in
-	// Python and is blocked by the port. The change is behavioural and
-	// network-wide, so it is recorded here for the owner's decision rather than
-	// flipped silently.
-	"internal_out/boundary_from/ati_from": "Python reads the next hop's announces_to_internal; the port reads the outbound interface's.",
-	"internal_out/boundary_from/from_ati": "Python reads the next hop's announces_to_internal; the port reads the outbound interface's.",
-}
+// case name. It is empty: the one entry it held (Python reading the next hop's
+// announces_to_internal while the port read the outbound interface's) was fixed
+// in shouldTransmitAnnounce branch B4b, and the table now matches Python for
+// every cell in the matrix. A future entry needs a reason on its line, so an
+// unexplained difference cannot pass.
+var acceptedAnnounceDiffs = map[string]string{}
 
 // announceExclusionCases enumerates the elif chain's inputs: outbound mode ×
 // next-hop mode (or absent) × local/remote destination × received hops, plus
