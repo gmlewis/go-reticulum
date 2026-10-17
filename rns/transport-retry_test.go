@@ -10,7 +10,6 @@ import (
 	"errors"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/gmlewis/go-reticulum/rns/interfaces"
 )
@@ -178,8 +177,9 @@ func TestHandlePathRequestRetriesFailedSend(t *testing.T) {
 // The pending entry is the only record of who asked. Deleting it when every
 // requester had gone down (or was the source itself) means the late response
 // the requester is still waiting for has nowhere to go, and the request is
-// only re-issued when the requester gives up and asks again. The TTL cull
-// already bounds how long the entry lives, so keeping it is free.
+// only re-issued when the requester gives up and asks again. The cull bounds
+// the entry by the requester's own lifetime (never by a timer), so keeping it
+// is free.
 func TestForwardPathResponseKeepsRequestersWhenNothingIsSendable(t *testing.T) {
 	t.Parallel()
 
@@ -190,7 +190,6 @@ func TestForwardPathResponseKeepsRequestersWhenNothingIsSendable(t *testing.T) {
 	source := &capturingInterface{name: "source"}
 	ts.interfaces = append(ts.interfaces, down, source)
 	ts.pendingPathRequests["dest"] = []interfaces.Interface{down}
-	ts.pendingPathRequestAt["dest"] = time.Now()
 
 	packet := &Packet{DestinationHash: []byte("dest"), Raw: []byte{0x00, 0x00}}
 	if ts.forwardPathResponseToRequesters(packet, source) {

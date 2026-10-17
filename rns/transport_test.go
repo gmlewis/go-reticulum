@@ -2090,7 +2090,6 @@ func TestTransportDropAnnounceQueues(t *testing.T) {
 	ts.announceTable["dest1"] = &AnnounceEntry{}
 	ts.announceTable["dest2"] = &AnnounceEntry{}
 	ts.pendingPathRequests["dest1"] = nil
-	ts.pendingPathRequestAt["dest1"] = time.Now()
 	ts.announceQueues[iface] = &announceQueueState{
 		queue: []announceQueueEntry{{destinationHash: "queued-dest"}},
 	}
@@ -2103,7 +2102,7 @@ func TestTransportDropAnnounceQueues(t *testing.T) {
 
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
-	if len(ts.announceTable) != 0 || len(ts.pendingPathRequests) != 0 || len(ts.pendingPathRequestAt) != 0 {
+	if len(ts.announceTable) != 0 || len(ts.pendingPathRequests) != 0 {
 		t.Fatalf("expected announce and pending queues to be cleared")
 	}
 	if state := ts.announceQueues[iface]; state != nil && len(state.queue) != 0 {

@@ -282,7 +282,6 @@ type TransportSystem struct {
 	announceQueues        map[interfaces.Interface]*announceQueueState
 	pathRequests          map[string]time.Time
 	pendingPathRequests   map[string][]interfaces.Interface
-	pendingPathRequestAt  map[string]time.Time
 
 	// discoveryPRTags is the ordered list of unique path-request tags seen by
 	// this transport, for dedup of inbound path requests. It mirrors Python's
@@ -654,7 +653,6 @@ const (
 	queuedAnnounceLife     = 24 * time.Hour
 	pathRequestMinInterval = 20 * time.Second
 	pathRequestCullAfter   = 2 * pathRequestMinInterval
-	pendingPathRequestTTL  = 20 * time.Second
 
 	// maxPRTags is the maximum number of unique path-request tags remembered
 	// for dedup, matching Python's Transport.max_pr_tags (Transport.py:128).
@@ -730,7 +728,6 @@ func NewTransportSystem(logger *Logger) *TransportSystem {
 		announceQueues:          make(map[interfaces.Interface]*announceQueueState),
 		pathRequests:            make(map[string]time.Time),
 		pendingPathRequests:     make(map[string][]interfaces.Interface),
-		pendingPathRequestAt:    make(map[string]time.Time),
 		discoveryPRTagsSet:      make(map[string]struct{}),
 		downNotified:            make(map[interfaces.Interface]struct{}),
 		packetRSSICache:         make(map[string]float64),
@@ -836,9 +833,6 @@ func (ts *TransportSystem) ensureStateLocked() {
 	}
 	if ts.pendingPathRequests == nil {
 		ts.pendingPathRequests = make(map[string][]interfaces.Interface)
-	}
-	if ts.pendingPathRequestAt == nil {
-		ts.pendingPathRequestAt = make(map[string]time.Time)
 	}
 	if ts.discoveryPRTagsSet == nil {
 		ts.discoveryPRTagsSet = make(map[string]struct{})
@@ -3032,10 +3026,28 @@ func (ts *TransportSystem) cullPathRequests(now time.Time) {
 			delete(ts.pathRequests, destinationHash)
 		}
 	}
-	for destinationHash, requestedAt := range ts.pendingPathRequestAt {
-		if now.Sub(requestedAt) > pendingPathRequestTTL {
+	// Cull pending path-request records whose requester has GONE. Python bounds
+	// such a record by the requester's own lifetime, never by a timer: "Cull
+	// invalidated path requests" pops it only when the recording interface is no
+	// longer among Transport.interfaces (Transport.py:660-672), and the delivery
+	// path pops it when the reply arrives (Transport.py:1975). A timed cull is
+	// the wrong instrument: a path-response announce is excluded from the
+	// local-client fan-out (handleAnnounce gates on
+	// Context != ContextPathResponse), so forgetting a record while its requester
+	// is still connected means the reply is silently dropped and the client never
+	// learns the peer. On the fleet's multi-hop LoRa links a relayed round trip
+	// routinely outlives any fixed bound, while on a LAN it is sub-millisecond —
+	// which is why a timer fails only on the slow paths.
+	for destinationHash, requesters := range ts.pendingPathRequests {
+		alive := false
+		for _, requester := range requesters {
+			if requester != nil && !requester.IsDetached() {
+				alive = true
+				break
+			}
+		}
+		if !alive {
 			delete(ts.pendingPathRequests, destinationHash)
-			delete(ts.pendingPathRequestAt, destinationHash)
 		}
 	}
 }
@@ -3206,7 +3218,6 @@ func (ts *TransportSystem) forwardPathRequest(packet *Packet, source interfaces.
 	if !ts.hasPendingPathRequesterLocked(targetKey, source) {
 		ts.pendingPathRequests[targetKey] = append(ts.pendingPathRequests[targetKey], source)
 	}
-	ts.pendingPathRequestAt[targetKey] = time.Now()
 	ts.mu.Unlock()
 
 	pathReqDst, err := NewDestination(ts, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
@@ -3312,13 +3323,12 @@ func (ts *TransportSystem) forwardPathResponseToRequesters(packet *Packet, sourc
 		// Nothing could be served: every requestor had gone down, or was the
 		// source itself. Keep the pending entry. It is the only record of who
 		// asked, and deleting it here forgets the requestor for good — the late
-		// response it is still waiting for then has nowhere to go. The cull at
-		// pendingPathRequestTTL already bounds how long the entry is kept.
+		// response it is still waiting for then has nowhere to go. cullPathRequests
+		// drops it once the requester itself is gone.
 		ts.mu.Unlock()
 		return false
 	}
 	delete(ts.pendingPathRequests, destinationKey)
-	delete(ts.pendingPathRequestAt, destinationKey)
 	ts.mu.Unlock()
 
 	// The response MUST be re-framed as Header2 with this node's transport
@@ -4504,9 +4514,6 @@ func (ts *TransportSystem) DropAnnounceQueues() int {
 	}
 	for k := range ts.pendingPathRequests {
 		delete(ts.pendingPathRequests, k)
-	}
-	for k := range ts.pendingPathRequestAt {
-		delete(ts.pendingPathRequestAt, k)
 	}
 	return count
 }
