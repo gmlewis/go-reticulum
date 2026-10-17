@@ -95,6 +95,7 @@ prefixes=(
   pluginstore- prettysize-parity- prettyspeed-parity- testutils-signal-cleanup-
   readonly-cleanup-
   rns-test-
+  rns-topology- rns-ifac-vectors-
   rns-discovery- rns-kd- rns-payload-sizes rns-local-client-hops
   rns-shared-serving rns-both-clients rns-ratchet-test-
   rns-auto-parity- rns-pipe-parity- rns-tcp-parity- rns-tcp-kiss-parity-
@@ -103,7 +104,7 @@ prefixes=(
   rns-pathtable-midpersist- rns-preset-log- rns-pubtofile- rns-location-cmd-
   rns-entropy-test- rns-prune-paths rns-shared-learns rns-receipt-timeout-
   rns-shared-pathreq rns-hub-pathreq
-  lxmf-int- lxmf-peer- lxmf-tcp- py-interop-
+  lxmf-int- lxmf-peer- lxmf-tcp- lxmf-topo- py-interop-
   nomadnet-rrc- gonet-
   gonomadnet-test- gonomadnet-tc- gonomadnet-bench-config
   gonomadnet-tmux-test-suite- nomadnet-tmux-test-suite-

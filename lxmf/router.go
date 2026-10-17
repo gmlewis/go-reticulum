@@ -4888,6 +4888,19 @@ func (r *Router) writePropagationMessageFile(transientID []byte, receivedAt time
 	}
 
 	timestamp := strconv.FormatFloat(peerTime(receivedAt), 'f', -1, 64)
+	// The file name carries the transient id, the receive time and, when the
+	// message was stamped, the stamp value. Python's rule is
+	// `value_component = f"_{stamp_value}" if stamp_value and stamp_value > 0
+	// else ""` (LXMRouter.py:2513-2514): it omits the component whenever the
+	// stamp value is 0, which includes a message that was accepted with no
+	// stamp at all — and that produces a two-component name its own indexer
+	// then skips, because the indexer requires three components
+	// (LXMRouter.py:568). The port keeps the explicit zero for an unstamped
+	// message so its own store stays re-indexable, and reproduces Python's two
+	// component form only for the stamped-but-zero case, where Python's rule
+	// and the port's agree. A store the port can read is therefore readable by
+	// Python too; the reverse is not true only for the file Python itself
+	// cannot re-index.
 	fileName := fmt.Sprintf("%x_%v_%v", transientID, timestamp, stampValue)
 	if len(stampData) > 0 && stampValue <= 0 {
 		fileName = fmt.Sprintf("%x_%v", transientID, timestamp)
