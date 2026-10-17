@@ -126,6 +126,11 @@ type Router struct {
 	peerSyncBackoff        time.Duration
 	peerMaxAge             time.Duration
 
+	// propagationHandlersRegistered guards the one-time installation of the
+	// serving request handlers/callbacks on the propagation destination (Python
+	// installs them in enable_propagation, LXMRouter.py:666-670).
+	propagationHandlersRegistered bool
+
 	controlDestination *rns.Destination
 	controlAllowed     map[string]struct{}
 	peers              map[string]*Peer
@@ -442,6 +447,15 @@ func NewRouter(ts rns.Transport, identity *rns.Identity, storagePath string) (*R
 	router.sendResource = router.sendMessageResourceLocked
 	router.processOutbound = router.ProcessOutbound
 	router.processingInterval = DefaultProcessingInterval
+	// Python LXMRouter.__init__ (LXMRouter.py:188-191): the lxmf.propagation
+	// destination exists as soon as the router does, carrying the propagation
+	// announce payload as its default app data. That is what lets any router —
+	// including one whose propagation is disabled — declare that address, which
+	// is the value NomadNet's node Info page derives and prints
+	// (Network.py:629-634, Node.py:216-220).
+	if _, err := router.newPropagationDestination(); err != nil {
+		return nil, err
+	}
 	router.startJobLoop()
 	router.registerAnnounceHandlers()
 	if err := router.LoadAvailableTickets(); err != nil {
@@ -481,11 +495,15 @@ func NewRouterWithConfig(ts rns.Transport, identity *rns.Identity, storagePath s
 	return router, nil
 }
 
-// RegisterPropagationDestination initializes and registers the destination required to participate as an LXMF propagation node.
-func (r *Router) RegisterPropagationDestination() (*rns.Destination, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
+// newPropagationDestinationLocked returns the router's lxmf.propagation
+// destination, creating and registering it if necessary. Python creates this
+// destination unconditionally in LXMRouter.__init__ (LXMF/LXMRouter.py:188-191,
+// v1.1.1) and installs get_propagation_node_app_data as its default app data, so
+// every router — client or propagation node — owns the destination and can
+// declare the address; the serving surface is installed separately
+// (RegisterPropagationDestination, LXMRouter.py:666-670 enable_propagation).
+// The caller must hold r.mu.
+func (r *Router) newPropagationDestinationLocked() (*rns.Destination, error) {
 	if r.propagationDestination != nil {
 		return r.propagationDestination, nil
 	}
@@ -495,12 +513,57 @@ func (r *Router) RegisterPropagationDestination() (*rns.Destination, error) {
 		return nil, fmt.Errorf("create propagation destination: %w", err)
 	}
 
+	r.propagationDestination = destination
+	destination.SetDefaultAppData(r.getPropagationNodeAppDataLocked())
+	return destination, nil
+}
+
+// newPropagationDestination is the locking counterpart of
+// newPropagationDestinationLocked, for calls made while r.mu is not held (router
+// construction).
+func (r *Router) newPropagationDestination() (*rns.Destination, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.newPropagationDestinationLocked()
+}
+
+// refreshPropagationDefaultAppDataLocked keeps the propagation destination's
+// default app data in step with the current serving state. Python's destination
+// carries get_propagation_node_app_data as a *callable* default (LXMRouter.py:191),
+// so an implicit re-announce — the transport re-announces registered
+// destinations when an interface connects, passing nil — always carries a
+// current node_state. The Go destination holds a static payload, so every state
+// change must refresh it or the re-announce would declare an unreadable payload
+// and erase the declaration. The caller must hold r.mu.
+func (r *Router) refreshPropagationDefaultAppDataLocked() {
+	if r.propagationDestination != nil {
+		r.propagationDestination.SetDefaultAppData(r.getPropagationNodeAppDataLocked())
+	}
+}
+
+// RegisterPropagationDestination installs the request handlers and callbacks
+// required to serve as an LXMF propagation node and returns the router's
+// lxmf.propagation destination, mirroring Python's enable_propagation
+// (LXMF/LXMRouter.py:666-670, v1.1.1). The destination itself exists from
+// construction (newPropagationDestinationLocked); this installs the serving
+// surface and is idempotent.
+func (r *Router) RegisterPropagationDestination() (*rns.Destination, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	destination, err := r.newPropagationDestinationLocked()
+	if err != nil {
+		return nil, err
+	}
+	if r.propagationHandlersRegistered {
+		return destination, nil
+	}
+	r.propagationHandlersRegistered = true
+
 	destination.RegisterRequestHandler(offerRequestPath, r.offerRequest, rns.AllowAll, nil, false)
 	destination.RegisterRequestHandler(messageGetPath, r.messageGetRequest, rns.AllowAll, nil, false)
 	destination.SetLinkEstablishedCallback(r.propagationLinkEstablished)
 	destination.SetPacketCallback(r.propagationPacket)
-
-	r.propagationDestination = destination
 
 	return destination, nil
 }
@@ -3697,6 +3760,7 @@ func (r *Router) EnablePropagation() {
 	r.mu.Lock()
 	r.propagationEnabled = true
 	r.propagationNodeStart = r.now()
+	r.refreshPropagationDefaultAppDataLocked()
 	r.mu.Unlock()
 	r.activateStaticPeers()
 	if err := r.LoadNodeStats(); err != nil {
@@ -3729,11 +3793,21 @@ func (r *Router) activateStaticPeers() {
 	}
 }
 
-// DisablePropagation gracefully withdraws the router from participating as an active propagation node in the network.
+// DisablePropagation gracefully withdraws the router from participating as an active propagation node in the network, announcing the withdrawal.
+//
+// Mirroring Python's LXMRouter.disable_propagation (LXMF/LXMRouter.py:692-694,
+// v1.1.1), the state change is followed by a propagation-node announce so peers
+// learn that this router's propagation address exists but is no longer serving
+// (the announce's node_state element is false). That declaration is what makes a
+// node's `lxmf.propagation` address a real, announced destination — without it
+// the address a client derives from a node's identity (nomadnet's KnownNodeInfo,
+// Network.py:629) refers to nothing at all.
 func (r *Router) DisablePropagation() {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	r.propagationEnabled = false
+	r.refreshPropagationDefaultAppDataLocked()
+	r.mu.Unlock()
+	r.AnnouncePropagationNode()
 }
 
 // PropagationEnabled reports whether the router is actively participating as a propagation node within the network.
@@ -5059,6 +5133,18 @@ func (r *Router) PropagationDestination() *rns.Destination {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.propagationDestination
+}
+
+// PropagationDestinationHash returns this router's lxmf.propagation address —
+// the destination hash derived from the router identity that DisablePropagation
+// and AnnouncePropagationNode declare — or nil when it is not yet created. Since
+// the destination exists from construction (LXMRouter.__init__, LXMRouter.py:190)
+// it is nil only for a zero-value Router.
+func (r *Router) PropagationDestinationHash() []byte {
+	if destination := r.PropagationDestination(); destination != nil {
+		return destination.Hash
+	}
+	return nil
 }
 
 // MaxPeers returns the upper limit on the number of concurrent propagation peers this router will actively maintain.

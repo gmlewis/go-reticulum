@@ -101,6 +101,53 @@ func StampCostFromAppData(appData []byte) (int, bool, error) {
 	return stampCost, ok, nil
 }
 
+// PropagationNodeStateFromAppData reports whether a `lxmf.propagation` announce
+// declares the announcing router as an active propagation node, reading the
+// node-state element of the propagation announce payload.
+//
+// The payload is Python's get_propagation_node_app_data list
+// (LXMF/LXMRouter.py:324-336, v1.1.1):
+//
+//	[ legacy_flag, timebase, node_state, per_transfer_limit,
+//	  per_sync_limit, stamp_cost, metadata ]
+//
+// where element 2 (node_state) is the boolean "this node serves propagation"
+// flag, and element 6 is the metadata map carrying the node name. A router that
+// announces with node_state false still declares its propagation address — it
+// says the address exists but is not serving, which is exactly what Python's
+// disable_propagation announces (LXMRouter.py:692-694) and what every NomadNet
+// node announce declares for its own address (Node.py:216-220).
+//
+// It returns (serving, ok): ok is false when the payload is missing, not a
+// MessagePack list, or too short/invalid to carry a state — the same acceptance
+// rules decodePropagationAnnounceData applies (Python pn_announce_data_is_valid
+// requires all seven elements). Callers must treat ok=false as "no declaration"
+// rather than "not serving".
+func PropagationNodeStateFromAppData(appData []byte) (bool, bool) {
+	if len(appData) == 0 {
+		return false, false
+	}
+	// Propagation announce payloads are always non-empty MessagePack arrays
+	// (fixarray 0x90-0x9f or array16 0xdc); anything else is a different
+	// (legacy or foreign) format with no node-state element.
+	if (appData[0] < 0x90 || appData[0] > 0x9f) && appData[0] != 0xdc {
+		return false, false
+	}
+	result, err := msgpack.Unpack(appData)
+	if err != nil {
+		return false, false
+	}
+	items, ok := result.([]any)
+	if !ok || len(items) < 7 {
+		return false, false
+	}
+	serving, ok := items[2].(bool)
+	if !ok {
+		return false, false
+	}
+	return serving, true
+}
+
 // CompressionSupportFromAppData reports whether an LXMF peer's announce app-data
 // signals support for auto-compressed message resources, mirroring Python
 // LXMF.compression_support_from_app_data (lxmf/LXMF.py:154-166, v0.9.5).
