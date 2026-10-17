@@ -6932,6 +6932,25 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 	}
 
 	if hasPath && packet.PacketType != PacketAnnounce && packet.DestinationType != DestinationPlain && packet.DestinationType != DestinationGroup && pathEntry != nil && pathEntry.Interface != nil {
+		// Python inserts a transport header ONLY into a Header1 packet — both
+		// insert branches open with
+		// `if packet.header_type == RNS.Packet.HEADER_1` (Transport.py:1149,
+		// 1174) — and for a HEADER_2 packet it inserts nothing and transmits
+		// nothing at all: `sent` stays False and the function returns.
+		//
+		// The reason is that a Reticulum frame carries exactly ONE transport id,
+		// the immediate next hop. A HEADER_2 packet already carries the transport
+		// header of the hop it was addressed to, so prepending this node's next
+		// hop put TWO transport ids in one frame; the next hop then read the
+		// second id as the destination hash, found no route for it and dropped
+		// the packet. A co-located client's link requests (how an appliance
+		// messages a peer two hops away) and every packet of a multi-hop link
+		// travel this way, so unicast died two hops out while announces — which
+		// never enter this branch — kept flowing, and messages fell back to the
+		// propagation node, arriving hours later or not at all.
+		if packet.HeaderType == Header2 {
+			return nil
+		}
 		raw := packet.Raw
 		if pathEntry.Hops > 1 && len(pathEntry.NextHop) == TruncatedHashLength/8 {
 			newFlags := byte((Header2 << 6) | (packet.ContextFlag << 5) | (TransportForward << 4) | (packet.DestinationType << 2) | packet.PacketType)

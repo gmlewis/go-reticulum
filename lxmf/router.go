@@ -5521,30 +5521,52 @@ func (r *Router) requestMessagesFromPropagationNodeWithIdentity(identity *rns.Id
 	}
 }
 
+// requestMessagesPathJob waits for a path to the default propagation node and
+// resumes the sync once one exists, mirroring Python's
+// LXMRouter.__request_messages_path_job (LXMRouter.py:1461-1470).
+//
+// The ORDER of the two tests matters, and Python's is load-bearing: the loop
+// condition is `while not RNS.Transport.has_path(...) and time.time() <
+// path_timeout` (LXMRouter.py:1463) and the path is tested AGAIN after the loop
+// (LXMRouter.py:1466), so PR_PATH_TIMEOUT bounds only how long the job waits — it
+// never discards a path that has arrived. Testing the deadline first, and not
+// re-testing after the loop, threw away any path response that landed as the last
+// wait elapsed: on this fleet, shared-instance responses for 4-6 hop peers take
+// longer than the 10 s PR_PATH_TIMEOUT, so syncs read "No path to node" and then
+// succeeded on a manual retry.
 func (r *Router) requestMessagesPathJob() {
+	var from []byte
+	var identity *rns.Identity
+	var maxMessages int
 	for {
 		r.mu.Lock()
-		from := append([]byte{}, r.wantsDownloadOnPathAvailableFrom...)
-		identity := r.wantsDownloadOnPathAvailableTo
+		from = append([]byte{}, r.wantsDownloadOnPathAvailableFrom...)
+		identity = r.wantsDownloadOnPathAvailableTo
 		deadline := r.wantsDownloadOnPathAvailableAt
-		maxMessages := r.propagationTransferMaxMessages
+		maxMessages = r.propagationTransferMaxMessages
 		r.mu.Unlock()
 
 		if len(from) == 0 {
 			return
 		}
+		if r.hasPath != nil && r.hasPath(from) {
+			break
+		}
 		if !deadline.IsZero() && !r.now().Before(deadline) {
 			break
 		}
-		if r.hasPath != nil && r.hasPath(from) {
-			var limit *int
-			if maxMessages != 0 {
-				limit = &maxMessages
-			}
-			r.requestMessagesFromPropagationNodeWithIdentity(identity, limit)
-			return
-		}
 		r.pathWaitSleep(100 * time.Millisecond)
+	}
+
+	// Python re-tests has_path here rather than concluding from the loop's exit
+	// condition, which closes the gap between the last test and the deadline.
+	if len(from) > 0 && r.hasPath != nil && r.hasPath(from) {
+		var limit *int
+		if maxMessages != 0 {
+			limit = &maxMessages
+		}
+		r.requestMessagesFromPropagationNodeWithIdentity(identity, limit)
+		return
 	}
 
 	r.logger().Debug("Propagation node path request timed out")

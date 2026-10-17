@@ -7412,6 +7412,93 @@ func TestRequestMessagesPathJobResumesSyncWhenPathAppears(t *testing.T) {
 	}
 }
 
+// TestRequestMessagesPathJobResumesSyncWhenPathArrivesAsTheDeadlineExpires pins
+// the ORDER of the two tests in the sync's path-wait loop. Python tests has_path
+// first and the timeout second —
+//
+//	while not RNS.Transport.has_path(self.wants_download_on_path_available_from)
+//	      and time.time() < path_timeout:            # LXMRouter.py:1463
+//	    time.sleep(0.1)
+//	if RNS.Transport.has_path(...):                  # LXMRouter.py:1466, re-checked
+//	    self.request_messages_from_propagation_node(...)
+//	else:
+//	    self.acknowledge_sync_completion(failure_state=LXMRouter.PR_NO_PATH)
+//
+// — so PR_PATH_TIMEOUT bounds how long the job WAITS; it never discards a path
+// that has arrived. The port tested the deadline first and never re-tested after
+// the loop, so a path response landing as the last wait elapsed was thrown away
+// and the sync failed with PR_NO_PATH. That is routine here: shared-instance path
+// responses for the fleet's 4-6 hop peers — the clients' own logs are full of
+// "via Local shared instance, 5 hops" / "6 hops" — land later than the 10 s
+// deadline, which is what made syncs read "No path to node" and then succeed on a
+// manual retry.
+func TestRequestMessagesPathJobResumesSyncWhenPathArrivesAsTheDeadlineExpires(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	originalIdentity := router.identity
+	replacementIdentity := mustTestNewIdentity(t, true)
+
+	propNode := make([]byte, 16)
+	for i := range propNode {
+		propNode[i] = byte(i + 1)
+	}
+	if err := router.SetOutboundPropagationNode(propNode); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan struct{})
+	requested := make(chan struct{}, 1)
+	hasPath := false
+	router.hasPath = func(_ []byte) bool { return hasPath }
+	router.requestPath = func(_ []byte) error { return nil }
+	router.linkStatus = func(*rns.Link) int { return rns.LinkActive }
+	// The path arrives while the job is waiting, and by the time the loop comes
+	// round again the deadline has already passed — the shape of a path response
+	// that lands just past PR_PATH_TIMEOUT.
+	router.pathWaitSleep = func(time.Duration) {
+		router.identity = replacementIdentity
+		hasPath = true
+		router.outboundPropagationLink = &rns.Link{}
+		router.mu.Lock()
+		router.wantsDownloadOnPathAvailableAt = router.now().Add(-time.Second)
+		router.mu.Unlock()
+	}
+	router.identifyLink = func(_ *rns.Link, identity *rns.Identity) error {
+		if identity != originalIdentity {
+			t.Fatal("path job resumed sync with wrong identity")
+		}
+		return nil
+	}
+	router.requestLink = func(_ *rns.Link, path string, data any, responseCallback, failedCallback, progressCallback func(*rns.RequestReceipt), _ time.Duration) (*rns.RequestReceipt, error) {
+		if path != messageGetPath {
+			t.Fatalf("request path = %q, want %q", path, messageGetPath)
+		}
+		requested <- struct{}{}
+		return nil, nil
+	}
+	router.startRequestMessagesPathJob = func() {
+		go func() {
+			router.requestMessagesPathJob()
+			close(done)
+		}()
+	}
+
+	router.RequestMessagesFromPropagationNode(nil)
+	select {
+	case <-requested:
+	case <-time.After(5 * time.Second):
+		t.Fatal("sync did not resume although the propagation node path had arrived; the " +
+			"path-wait job must test has_path once the wait elapses (LXMRouter.py:1463,1466)")
+	}
+	<-done
+
+	if state := router.PropagationTransferState(); state != PRRequestSent {
+		t.Fatalf("state = %v, want PRRequestSent", state)
+	}
+}
+
 func TestCancelPropagationNodeRequestsPreventsPathJobResume(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
