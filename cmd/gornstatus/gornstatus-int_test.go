@@ -453,7 +453,7 @@ func TestIntegration_Discovered(t *testing.T) {
 	tmpDir := testutils.TempDir(t, "gornstatus-int-disc-")
 
 	// Setup mock discovery data in shared storage
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}

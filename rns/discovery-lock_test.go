@@ -22,7 +22,7 @@ import (
 func TestDiscoveryLoadHoldsDiscoveryLock(t *testing.T) {
 	t.Parallel()
 	tmpDir := testutils.TempDir(t, "rns-discovery-lock-load-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}

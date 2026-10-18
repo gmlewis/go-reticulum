@@ -249,7 +249,7 @@ func (i *panicTargetHostTestInterface) TargetPort() int    { return 0 }
 func TestListDiscoveredInterfaces(t *testing.T) {
 	t.Parallel()
 	tmpDir := testutils.TempDir(t, "rns-discovery-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -351,7 +351,7 @@ func discoverySurvivorFixtureMap(overrides map[string]any) map[string]any {
 func TestListDiscoveredInterfaces_StatusThresholds(t *testing.T) {
 	t.Parallel()
 	tmpDir := testutils.TempDir(t, "rns-discovery-status-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -433,7 +433,7 @@ func TestListDiscoveredInterfaces_SourceAndReachableFiltering(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-filter-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -511,7 +511,7 @@ func TestListDiscoveredInterfaces_CorruptNonMapFileLogsAndRemains(t *testing.T) 
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-corrupt-list-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -570,7 +570,7 @@ func TestListDiscoveredInterfaces_CorruptDirectoryLogsAndRemains(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-corrupt-dir-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -629,7 +629,7 @@ func TestListDiscoveredInterfaces_MissingLastHeardLogsAndRemains(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-missing-last-heard-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -690,7 +690,7 @@ func TestListDiscoveredInterfaces_BinaryMapKeysLogKeyErrorAndRemain(t *testing.T
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-bytes-map-keys-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -750,7 +750,7 @@ func TestListDiscoveredInterfaces_TrailingGarbageLoadsPerSpec(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-trailing-garbage-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -797,7 +797,7 @@ func TestListDiscoveredInterfaces_InvalidMsgpackLogsErrorsAndRemains(t *testing.
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tmpDir := testutils.TempDir(t, "rns-discovery-invalid-msgpack-")
-			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+			storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 			if err := os.MkdirAll(storagePath, 0o755); err != nil {
 				t.Fatalf("failed to create storage path: %v", err)
 			}
@@ -843,7 +843,7 @@ func TestListDiscoveredInterfaces_BoolLastHeardExpiresAndRemoves(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-bool-last-heard-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -901,7 +901,7 @@ func TestListDiscoveredInterfaces_BoolValueSortsPerSpec(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-bool-value-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -953,7 +953,7 @@ func TestListDiscoveredInterfaces_FloatValueSortsPerSpec(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-float-value-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -1000,7 +1000,7 @@ func TestListDiscoveredInterfaces_BytesValueSortsPerSpec(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-bytes-value-sort-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -1047,7 +1047,7 @@ func TestListDiscoveredInterfaces_ListValueSortsPerSpec(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-list-value-sort-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -1094,7 +1094,7 @@ func TestListDiscoveredInterfaces_StringValueSingleEntryDoesNotFail(t *testing.T
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-string-value-single-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -1142,7 +1142,7 @@ func TestListDiscoveredInterfaces_StringValueSortsPerSpec(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-string-value-sort-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -1189,7 +1189,7 @@ func TestListDiscoveredInterfaces_MixedStringAndIntegerValueReturnsError(t *test
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-mixed-value-sort-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -1226,7 +1226,7 @@ func TestListDiscoveredInterfaces_MixedBytesAndStringValueReturnsError(t *testin
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-mixed-bytes-string-sort-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -1266,7 +1266,7 @@ func TestListDiscoveredInterfaces_DictValuePairReturnsError(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-dict-value-sort-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -1358,7 +1358,7 @@ func TestListDiscoveredInterfaces_MoreMixedValueErrorsMatchesSpec(t *testing.T) 
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tmpDir := testutils.TempDir(t, "rns-discovery-more-mixed-value-sort-")
-			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+			storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 			if err := os.MkdirAll(storagePath, 0o755); err != nil {
 				t.Fatalf("failed to create storage path: %v", err)
 			}
@@ -1389,7 +1389,7 @@ func TestListDiscoveredInterfaces_NilValueSortsByLastHeard(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-nil-value-sort-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -1436,7 +1436,7 @@ func TestListDiscoveredInterfaces_BoolDiscoveredUsesNumericSemantics(t *testing.
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-bool-discovered-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -1470,7 +1470,7 @@ func TestListDiscoveredInterfaces_BoolPortUsesNumericSemantics(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-bool-port-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -1509,7 +1509,7 @@ func TestListDiscoveredInterfaces_NonIntegralFloatPortDoesNotDeduplicateAgainstI
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-float-port-dedupe-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -1549,7 +1549,7 @@ func TestListDiscoveredInterfaces_EmptyReachableOnLogsAndRemains(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-empty-reachable-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -1613,7 +1613,7 @@ func TestListDiscoveredInterfaces_BytesReachableOnLogsAndRemains(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-bytes-reachable-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -1691,7 +1691,7 @@ func TestListDiscoveredInterfaces_MoreInvalidReachableOnLogsErrorsAndRemains(t *
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			tmpDir := testutils.TempDir(t, "rns-discovery-invalid-reachable-")
-			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+			storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 			if err := os.MkdirAll(storagePath, 0o755); err != nil {
 				t.Fatalf("failed to create storage path: %v", err)
 			}
@@ -1757,7 +1757,7 @@ func TestListDiscoveredInterfaces_IntegerReachableOnRemainsAvailable(t *testing.
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-int-reachable-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -1798,7 +1798,7 @@ func TestListDiscoveredInterfaces_BoolReachableOnRemainsAvailable(t *testing.T) 
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-bool-reachable-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -1839,7 +1839,7 @@ func TestListDiscoveredInterfaces_InvalidNetworkIDTypeLogsAndRemains(t *testing.
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-network-id-type-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -1907,7 +1907,7 @@ func TestListDiscoveredInterfaces_BytesNetworkIDLogsTypeErrorAndRemains(t *testi
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-network-id-bytes-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -1987,7 +1987,7 @@ func TestListDiscoveredInterfaces_InvalidNetworkIDHexLogsValueErrorsAndRemains(t
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			tmpDir := testutils.TempDir(t, "rns-discovery-network-id-hex-")
-			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+			storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 			if err := os.MkdirAll(storagePath, 0o755); err != nil {
 				t.Fatalf("failed to create storage path: %v", err)
 			}
@@ -2057,7 +2057,7 @@ func TestListDiscoveredInterfaces_OnlyTransportMissingTransportLogsAndRemains(t 
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-missing-transport-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -2123,7 +2123,7 @@ func TestListDiscoveredInterfaces_OnlyAvailableMissingTransportLogsAndRemains(t 
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-only-available-transport-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -2191,7 +2191,7 @@ func TestListDiscoveredInterfaces_OnlyAvailableIgnoresFalseyTransportValues(t *t
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			tmpDir := testutils.TempDir(t, "rns-discovery-only-available-falsey-")
-			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+			storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 			if err := os.MkdirAll(storagePath, 0o755); err != nil {
 				t.Fatalf("failed to create storage path: %v", err)
 			}
@@ -2242,7 +2242,7 @@ func TestListDiscoveredInterfaces_OnlyAvailableAllowsNilTransport(t *testing.T) 
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-only-available-nil-transport-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -2297,7 +2297,7 @@ func TestListDiscoveredInterfaces_OnlyTransportNilTransportSkipsWithoutLog(t *te
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-only-transport-nil-transport-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -2346,7 +2346,7 @@ func TestListDiscoveredInterfaces_OnlyTransportIncludesTruthyStringTransport(t *
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-string-transport-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -2383,7 +2383,7 @@ func TestListDiscoveredInterfaces_OnlyTransportUsesContainerTruthiness(t *testin
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-container-transport-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -2431,7 +2431,7 @@ func TestListDiscoveredInterfaces_MissingValueReturnsErrorAndRemains(t *testing.
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-missing-value-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -2471,7 +2471,7 @@ func TestListDiscoveredInterfaces_PresentNilNameDisplaysAsNone(t *testing.T) {
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-none-name-")
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -2504,7 +2504,7 @@ func TestListDiscoveredInterfaces_MissingNameAndTypeDisplayAsEmptyStrings(t *tes
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-missing-name-type-")
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -2547,7 +2547,7 @@ func TestListDiscoveredInterfaces_NilTypeAndConfigEntryDisplayAsNone(t *testing.
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-none-type-config-")
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -2587,7 +2587,7 @@ func TestListDiscoveredInterfaces_BytesNameAndTypeDisplayAsBytes(t *testing.T) {
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-bytes-name-type-")
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -2626,7 +2626,7 @@ func TestListDiscoveredInterfaces_ListTransportIDDisplaysAsList(t *testing.T) {
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-list-transport-id-")
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -2665,7 +2665,7 @@ func TestListDiscoveredInterfaces_CompositeNameAndTypeDisplayAsRepr(t *testing.T
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-composite-name-type-")
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -2705,7 +2705,7 @@ func TestListDiscoveredInterfaces_BytesTransportIDDisplaysAsBytes(t *testing.T) 
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-bytes-transport-id-")
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -2744,7 +2744,7 @@ func TestListDiscoveredInterfaces_BytesConfigEntryDisplaysAsBytes(t *testing.T) 
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-bytes-config-entry-")
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -2779,7 +2779,7 @@ func TestListDiscoveredInterfaces_BytesNetworkIDDisplaysAsBytes(t *testing.T) {
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-bytes-network-id-")
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -2818,7 +2818,7 @@ func TestListDiscoveredInterfaces_BytesIFACFieldsDisplayAsBytes(t *testing.T) {
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-bytes-ifac-fields-")
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -2857,7 +2857,7 @@ func TestListDiscoveredInterfaces_BytesModulationDisplaysAsBytes(t *testing.T) {
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-bytes-modulation-")
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -2917,7 +2917,7 @@ func TestListDiscoveredInterfaces_SortsPerSpec(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-sort-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -3009,7 +3009,7 @@ func TestPersistDiscoveredInterface_NewEntry(t *testing.T) {
 		t.Fatalf("persistDiscoveredInterface failed: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", "aabbcc.data"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, "storage", "discovery", "interfaces", "aabbcc"))
 	if err != nil {
 		t.Fatalf("failed to read persisted discovery file: %v", err)
 	}
@@ -3052,7 +3052,7 @@ func TestPersistDiscoveredInterface_NewEntryAllowsZeroReceived(t *testing.T) {
 		t.Fatalf("persistDiscoveredInterface failed: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", "aabbcc.data"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, "storage", "discovery", "interfaces", "aabbcc"))
 	if err != nil {
 		t.Fatalf("failed to read persisted discovery file: %v", err)
 	}
@@ -3107,7 +3107,7 @@ func TestPersistDiscoveredInterface_ExistingEntryPreservesDiscoveryTime(t *testi
 		t.Fatalf("second persistDiscoveredInterface failed: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", "aabbcc.data"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, "storage", "discovery", "interfaces", "aabbcc"))
 	if err != nil {
 		t.Fatalf("failed to read persisted discovery file: %v", err)
 	}
@@ -3163,7 +3163,7 @@ func TestPersistDiscoveredInterface_ExistingEntryAllowsZeroReceived(t *testing.T
 		t.Fatalf("second persistDiscoveredInterface failed: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", "aabbcc.data"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, "storage", "discovery", "interfaces", "aabbcc"))
 	if err != nil {
 		t.Fatalf("failed to read persisted discovery file: %v", err)
 	}
@@ -3219,7 +3219,7 @@ func TestPersistDiscoveredInterface_NewEntryMissingReceivedLeavesEmptyFile(t *te
 		t.Fatalf("info[\"heard_count\"] unexpectedly set: %v", info["heard_count"])
 	}
 
-	path := filepath.Join(tmpDir, "discovery", "interfaces", "aabbcc.data")
+	path := filepath.Join(tmpDir, "storage", "discovery", "interfaces", "aabbcc")
 	fi, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("expected empty persisted discovery file: %v", err)
@@ -3248,7 +3248,7 @@ func TestPersistDiscoveredInterface_NewEntryAllowsNilReceived(t *testing.T) {
 		t.Fatalf("persistDiscoveredInterface failed: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", "aabbcc.data"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, "storage", "discovery", "interfaces", "aabbcc"))
 	if err != nil {
 		t.Fatalf("failed to read persisted discovery file: %v", err)
 	}
@@ -3291,7 +3291,7 @@ func TestPersistDiscoveredInterface_NewEntryAllowsStringReceived(t *testing.T) {
 		t.Fatalf("persistDiscoveredInterface failed: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", "aabbcc.data"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, "storage", "discovery", "interfaces", "aabbcc"))
 	if err != nil {
 		t.Fatalf("failed to read persisted discovery file: %v", err)
 	}
@@ -3343,7 +3343,7 @@ func TestPersistDiscoveredInterface_NewEntryAllowsBoolReceived(t *testing.T) {
 				t.Fatalf("persistDiscoveredInterface failed: %v", err)
 			}
 
-			data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", "aabbcc.data"))
+			data, err := os.ReadFile(filepath.Join(tmpDir, "storage", "discovery", "interfaces", "aabbcc"))
 			if err != nil {
 				t.Fatalf("failed to read persisted discovery file: %v", err)
 			}
@@ -3398,7 +3398,7 @@ func TestPersistDiscoveredInterface_NewEntryAllowsCompositeReceived(t *testing.T
 				t.Fatalf("persistDiscoveredInterface failed: %v", err)
 			}
 
-			data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", "aabbcc.data"))
+			data, err := os.ReadFile(filepath.Join(tmpDir, "storage", "discovery", "interfaces", "aabbcc"))
 			if err != nil {
 				t.Fatalf("failed to read persisted discovery file: %v", err)
 			}
@@ -3443,7 +3443,7 @@ func TestPersistDiscoveredInterface_NewEntryAllowsIntegerDiscoveryHash(t *testin
 		t.Fatalf("persistDiscoveredInterface failed: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", "7b.data"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, "storage", "discovery", "interfaces", "7b"))
 	if err != nil {
 		t.Fatalf("failed to read persisted discovery file: %v", err)
 	}
@@ -3486,7 +3486,7 @@ func TestPersistDiscoveredInterface_NewEntryAllowsBoolDiscoveryHash(t *testing.T
 		t.Fatalf("persistDiscoveredInterface failed: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", "01.data"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, "storage", "discovery", "interfaces", "01"))
 	if err != nil {
 		t.Fatalf("failed to read persisted discovery file: %v", err)
 	}
@@ -3525,11 +3525,11 @@ func TestPersistDiscoveredInterface_ExistingEntryMissingReceivedMutatesDiscovere
 		t.Run(tc.name, func(t *testing.T) {
 			tmpDir := testutils.TempDir(t, "rns-discovery-persist-truncate-received-")
 
-			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+			storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 			if err := os.MkdirAll(storagePath, 0o755); err != nil {
 				t.Fatalf("failed to create storage path: %v", err)
 			}
-			path := filepath.Join(storagePath, "aabbcc.data")
+			path := filepath.Join(storagePath, "aabbcc")
 			if err := os.WriteFile(path, mustMsgpackPack(map[string]any{
 				"discovered":  tc.seedDiscovered,
 				"heard_count": 2,
@@ -3604,7 +3604,7 @@ func TestPersistDiscoveredInterface_ExistingEntryAllowsNilReceived(t *testing.T)
 		t.Fatalf("second persistDiscoveredInterface failed: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", "aabbcc.data"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, "storage", "discovery", "interfaces", "aabbcc"))
 	if err != nil {
 		t.Fatalf("failed to read persisted discovery file: %v", err)
 	}
@@ -3660,7 +3660,7 @@ func TestPersistDiscoveredInterface_ExistingEntryAllowsStringReceived(t *testing
 		t.Fatalf("second persistDiscoveredInterface failed: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", "aabbcc.data"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, "storage", "discovery", "interfaces", "aabbcc"))
 	if err != nil {
 		t.Fatalf("failed to read persisted discovery file: %v", err)
 	}
@@ -3725,7 +3725,7 @@ func TestPersistDiscoveredInterface_ExistingEntryAllowsBoolReceived(t *testing.T
 				t.Fatalf("second persistDiscoveredInterface failed: %v", err)
 			}
 
-			data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", "aabbcc.data"))
+			data, err := os.ReadFile(filepath.Join(tmpDir, "storage", "discovery", "interfaces", "aabbcc"))
 			if err != nil {
 				t.Fatalf("failed to read persisted discovery file: %v", err)
 			}
@@ -3793,7 +3793,7 @@ func TestPersistDiscoveredInterface_ExistingEntryAllowsCompositeReceived(t *test
 				t.Fatalf("second persistDiscoveredInterface failed: %v", err)
 			}
 
-			data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", "aabbcc.data"))
+			data, err := os.ReadFile(filepath.Join(tmpDir, "storage", "discovery", "interfaces", "aabbcc"))
 			if err != nil {
 				t.Fatalf("failed to read persisted discovery file: %v", err)
 			}
@@ -3851,7 +3851,7 @@ func TestPersistDiscoveredInterface_ExistingEntryAllowsIntegerDiscoveryHash(t *t
 		t.Fatalf("second persistDiscoveredInterface failed: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", "7b.data"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, "storage", "discovery", "interfaces", "7b"))
 	if err != nil {
 		t.Fatalf("failed to read persisted discovery file: %v", err)
 	}
@@ -3883,11 +3883,11 @@ func TestPersistDiscoveredInterface_ExistingEntryBoolTrueHeardCountBecomesTwo(t 
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-persist-bool-heard-count-")
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
-	filePath := filepath.Join(storagePath, "aabbcc.data")
+	filePath := filepath.Join(storagePath, "aabbcc")
 	if err := os.WriteFile(filePath, mustMsgpackPack(map[string]any{
 		"discovered":  5.0,
 		"heard_count": true,
@@ -3929,11 +3929,11 @@ func TestPersistDiscoveredInterface_ExistingEntryBoolFalseHeardCountBecomesOne(t
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-persist-bool-false-heard-count-")
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
-	filePath := filepath.Join(storagePath, "aabbcc.data")
+	filePath := filepath.Join(storagePath, "aabbcc")
 	if err := os.WriteFile(filePath, mustMsgpackPack(map[string]any{
 		"discovered":  5.0,
 		"heard_count": false,
@@ -3975,11 +3975,11 @@ func TestPersistDiscoveredInterface_ExistingEntryFloatHeardCountPreservesFractio
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-persist-float-heard-count-")
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
-	filePath := filepath.Join(storagePath, "aabbcc.data")
+	filePath := filepath.Join(storagePath, "aabbcc")
 	if err := os.WriteFile(filePath, mustMsgpackPack(map[string]any{
 		"discovered":  5.0,
 		"heard_count": 7.5,
@@ -4022,11 +4022,11 @@ func TestPersistDiscoveredInterface_ExistingEntryNilDiscoveredUsesIncomingDiscov
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-persist-nil-discovered-")
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
-	filePath := filepath.Join(storagePath, "aabbcc.data")
+	filePath := filepath.Join(storagePath, "aabbcc")
 	if err := os.WriteFile(filePath, mustMsgpackPack(map[string]any{
 		"discovered":  nil,
 		"heard_count": 2,
@@ -4085,11 +4085,11 @@ func TestPersistDiscoveredInterface_ExistingEntryStringHeardCountTruncatesFile(t
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-persist-string-heard-count-")
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
-	filePath := filepath.Join(storagePath, "aabbcc.data")
+	filePath := filepath.Join(storagePath, "aabbcc")
 	if err := os.WriteFile(filePath, mustMsgpackPack(map[string]any{
 		"discovered":  5.0,
 		"heard_count": "7",
@@ -4138,11 +4138,11 @@ func TestPersistDiscoveredInterface_CorruptExistingEntryMissingHeardCountFailsCl
 	r := &Reticulum{configDir: tmpDir}
 	discovery := NewInterfaceDiscovery(r)
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
-	filePath := filepath.Join(storagePath, "aabbcc.data")
+	filePath := filepath.Join(storagePath, "aabbcc")
 	original := map[string]any{
 		"name":         "Persisted",
 		"type":         "TCPServerInterface",
@@ -4849,7 +4849,7 @@ func TestInterfaceDiscoveryReceiveAndPersistPlainTCPClientOmitsConfigEntry(t *te
 		t.Fatalf("callback unexpectedly included reachable_on %#v", got)
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", hex.EncodeToString(FullHash([]byte(discoveryTestTransportIDHex+"Discovered TCP Client")))+".data"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, "storage", "discovery", "interfaces", hex.EncodeToString(FullHash([]byte(discoveryTestTransportIDHex+"Discovered TCP Client")))+""))
 	if err != nil {
 		t.Fatalf("failed to read persisted discovery file: %v", err)
 	}
@@ -4936,7 +4936,7 @@ func TestInterfaceDiscoveryReceiveAndPersistRejectsNonBoolTransport(t *testing.T
 	if callbackCalled {
 		t.Fatal("expected non-bool transport announce to be rejected (callback fired)")
 	}
-	if _, err := os.Stat(filepath.Join(tmpDir, "discovery", "interfaces", hex.EncodeToString(FullHash([]byte(discoveryTestTransportIDHex+"String Transport")))+".data")); err == nil {
+	if _, err := os.Stat(filepath.Join(tmpDir, "storage", "discovery", "interfaces", hex.EncodeToString(FullHash([]byte(discoveryTestTransportIDHex+"String Transport")))+"")); err == nil {
 		t.Fatal("expected no persisted file for rejected non-bool transport announce")
 	}
 }
@@ -4986,7 +4986,7 @@ func TestInterfaceDiscoveryReceiveAndPersistPreservesEmptyIFACFields(t *testing.
 		t.Fatalf("callback ifac_netkey = %#v, present=%v, want empty string present", got, ok)
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", hex.EncodeToString(FullHash([]byte(discoveryTestTransportIDHex+"Empty IFAC")))+".data"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, "storage", "discovery", "interfaces", hex.EncodeToString(FullHash([]byte(discoveryTestTransportIDHex+"Empty IFAC")))+""))
 	if err != nil {
 		t.Fatalf("failed to read persisted discovery file: %v", err)
 	}
@@ -5049,7 +5049,7 @@ func TestInterfaceDiscoveryReceiveAndPersistPreservesRawPortValue(t *testing.T) 
 		t.Fatalf("config_entry = %q, want Python-shaped bool port", asString(got))
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", hex.EncodeToString(FullHash([]byte(discoveryTestTransportIDHex+"Bool Port")))+".data"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, "storage", "discovery", "interfaces", hex.EncodeToString(FullHash([]byte(discoveryTestTransportIDHex+"Bool Port")))+""))
 	if err != nil {
 		t.Fatalf("failed to read persisted discovery file: %v", err)
 	}
@@ -5109,7 +5109,7 @@ func TestInterfaceDiscoveryReceiveAndPersistFormatsIterablePortPerSpec(t *testin
 		t.Fatalf("config_entry = %q, want Python-shaped iterable port", asString(got))
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", hex.EncodeToString(FullHash([]byte(discoveryTestTransportIDHex+"Iterable Port")))+".data"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, "storage", "discovery", "interfaces", hex.EncodeToString(FullHash([]byte(discoveryTestTransportIDHex+"Iterable Port")))+""))
 	if err != nil {
 		t.Fatalf("failed to read persisted discovery file: %v", err)
 	}
@@ -5169,7 +5169,7 @@ func TestInterfaceDiscoveryReceiveAndPersistFormatsMapPortPerSpec(t *testing.T) 
 		t.Fatalf("config_entry = %q, want Python-shaped map port", asString(got))
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", hex.EncodeToString(FullHash([]byte(discoveryTestTransportIDHex+"Map Port")))+".data"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, "storage", "discovery", "interfaces", hex.EncodeToString(FullHash([]byte(discoveryTestTransportIDHex+"Map Port")))+""))
 	if err != nil {
 		t.Fatalf("failed to read persisted discovery file: %v", err)
 	}
@@ -5229,7 +5229,7 @@ func TestInterfaceDiscoveryReceiveAndPersistFormatsWholeFloatPortPerSpec(t *test
 		t.Fatalf("config_entry = %q, want Python-shaped whole float port", asString(got))
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", hex.EncodeToString(FullHash([]byte(discoveryTestTransportIDHex+"Float Port")))+".data"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, "storage", "discovery", "interfaces", hex.EncodeToString(FullHash([]byte(discoveryTestTransportIDHex+"Float Port")))+""))
 	if err != nil {
 		t.Fatalf("failed to read persisted discovery file: %v", err)
 	}
@@ -5292,7 +5292,7 @@ func TestInterfaceDiscoveryReceiveAndPersistAcceptsIntegerReachableOn(t *testing
 		t.Fatalf("config_entry = %q, want integer reachable_on", asString(got))
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", hex.EncodeToString(FullHash([]byte(discoveryTestTransportIDHex+"Integer Reachable")))+".data"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, "storage", "discovery", "interfaces", hex.EncodeToString(FullHash([]byte(discoveryTestTransportIDHex+"Integer Reachable")))+""))
 	if err != nil {
 		t.Fatalf("failed to read persisted discovery file: %v", err)
 	}
@@ -5532,7 +5532,7 @@ func TestInterfaceDiscoveryReceiveAndPersistIgnoresFieldsFromOtherInterfaceTypes
 		}
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", hex.EncodeToString(FullHash([]byte(discoveryTestTransportIDHex+"Extra Fields TCP")))+".data"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, "storage", "discovery", "interfaces", hex.EncodeToString(FullHash([]byte(discoveryTestTransportIDHex+"Extra Fields TCP")))+""))
 	if err != nil {
 		t.Fatalf("failed to read persisted discovery file: %v", err)
 	}
@@ -5608,7 +5608,7 @@ func TestInterfaceDiscoveryStartReconnectsCachedBackbone(t *testing.T) {
 		accepted <- conn
 	}()
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -5736,7 +5736,7 @@ func TestInterfaceDiscoveryConnectDiscoveredMissingConfigEntrySkipsAutoconnect(t
 		}
 	}()
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -5806,7 +5806,7 @@ func TestInterfaceDiscoveryConnectDiscoveredBytesTypeSkipsAutoconnectPerSpec(t *
 		}
 	}()
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -5871,7 +5871,7 @@ func TestInterfaceDiscoveryConnectDiscoveredSkipsWhenAutoconnectDisabled(t *test
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-disabled-")
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -5915,7 +5915,7 @@ func TestInterfaceDiscoveryConnectDiscoveredLogsReconnectError(t *testing.T) {
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-connect-load-error-")
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -5969,7 +5969,7 @@ func TestInterfaceDiscoveryConnectDiscoveredStopsAtAutoconnectLimitInDiscoveryOr
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-connect-limit-order-")
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -6034,7 +6034,7 @@ func TestInterfaceDiscoveryConnectDiscoveredMarksInitialRunWhenAlreadyAtLimit(t 
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-connect-already-full-")
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -7359,7 +7359,7 @@ func TestInterfaceDiscoveryConnectDiscoveredPassesRawEndpointValuesToConstructor
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-connect-raw-constructor-")
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -7432,7 +7432,7 @@ func TestInterfaceDiscoveryConnectDiscoveredNilPortLogsTypeError(t *testing.T) {
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-connect-nil-port-")
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -8074,11 +8074,11 @@ func TestInterfaceDiscoveryStartCallbackReceivesRediscoveryMetadataForNilAndStri
 				t.Fatalf("Start() error = %v", err)
 			}
 
-			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+			storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 			if err := os.MkdirAll(storagePath, 0o755); err != nil {
 				t.Fatalf("failed to create storage path: %v", err)
 			}
-			filePath := filepath.Join(storagePath, "aabbcc.data")
+			filePath := filepath.Join(storagePath, "aabbcc")
 			if err := os.WriteFile(filePath, mustMsgpackPack(map[string]any{
 				"discovered":  7.0,
 				"heard_count": 2,
@@ -8197,11 +8197,11 @@ func TestInterfaceDiscoveryStartCallbackReceivesRediscoveryMetadataForBoolReceiv
 				t.Fatalf("Start() error = %v", err)
 			}
 
-			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+			storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 			if err := os.MkdirAll(storagePath, 0o755); err != nil {
 				t.Fatalf("failed to create storage path: %v", err)
 			}
-			filePath := filepath.Join(storagePath, "aabbcc.data")
+			filePath := filepath.Join(storagePath, "aabbcc")
 			if err := os.WriteFile(filePath, mustMsgpackPack(map[string]any{
 				"discovered":  7.0,
 				"heard_count": 2,
@@ -8293,11 +8293,11 @@ func TestInterfaceDiscoveryStartCallbackReceivesRediscoveryMetadataForCompositeR
 				t.Fatalf("Start() error = %v", err)
 			}
 
-			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+			storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 			if err := os.MkdirAll(storagePath, 0o755); err != nil {
 				t.Fatalf("failed to create storage path: %v", err)
 			}
-			filePath := filepath.Join(storagePath, "aabbcc.data")
+			filePath := filepath.Join(storagePath, "aabbcc")
 			if err := os.WriteFile(filePath, mustMsgpackPack(map[string]any{
 				"discovered":  7.0,
 				"heard_count": 2,
@@ -8398,11 +8398,11 @@ func TestInterfaceDiscoveryStartCallbackReceivesRediscoveryMetadataForNilHeardCo
 		t.Fatalf("Start() error = %v", err)
 	}
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
-	filePath := filepath.Join(storagePath, "aabbcc.data")
+	filePath := filepath.Join(storagePath, "aabbcc")
 	if err := os.WriteFile(filePath, mustMsgpackPack(map[string]any{
 		"discovered":  7.0,
 		"heard_count": nil,
@@ -8546,11 +8546,11 @@ func TestInterfaceDiscoveryStartCallbackReceivesRediscoveryMetadataForLiveDiscov
 				t.Fatalf("Start() error = %v", err)
 			}
 
-			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+			storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 			if err := os.MkdirAll(storagePath, 0o755); err != nil {
 				t.Fatalf("failed to create storage path: %v", err)
 			}
-			filePath := filepath.Join(storagePath, "aabbcc.data")
+			filePath := filepath.Join(storagePath, "aabbcc")
 			if err := os.WriteFile(filePath, mustMsgpackPack(map[string]any{
 				"discovered":  nil,
 				"heard_count": nil,
@@ -8713,11 +8713,11 @@ func TestInterfaceDiscoveryStartCallbackReceivesRediscoveryMetadataForNilCachedD
 				t.Fatalf("Start() error = %v", err)
 			}
 
-			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+			storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 			if err := os.MkdirAll(storagePath, 0o755); err != nil {
 				t.Fatalf("failed to create storage path: %v", err)
 			}
-			filePath := filepath.Join(storagePath, "aabbcc.data")
+			filePath := filepath.Join(storagePath, "aabbcc")
 			if err := os.WriteFile(filePath, mustMsgpackPack(map[string]any{
 				"discovered":  nil,
 				"heard_count": 2,
@@ -8849,11 +8849,11 @@ func TestInterfaceDiscoveryStartCallbackPreservesExoticCachedDiscoveredValues(t 
 				t.Fatalf("Start() error = %v", err)
 			}
 
-			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+			storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 			if err := os.MkdirAll(storagePath, 0o755); err != nil {
 				t.Fatalf("failed to create storage path: %v", err)
 			}
-			filePath := filepath.Join(storagePath, "aabbcc.data")
+			filePath := filepath.Join(storagePath, "aabbcc")
 			if err := os.WriteFile(filePath, mustMsgpackPack(map[string]any{
 				"discovered":  tc.discovered,
 				"heard_count": 2,
@@ -8948,11 +8948,11 @@ func TestInterfaceDiscoveryStartCallbackPreservesFalsishRediscoveryValues(t *tes
 				t.Fatalf("Start() error = %v", err)
 			}
 
-			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+			storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 			if err := os.MkdirAll(storagePath, 0o755); err != nil {
 				t.Fatalf("failed to create storage path: %v", err)
 			}
-			filePath := filepath.Join(storagePath, "aabbcc.data")
+			filePath := filepath.Join(storagePath, "aabbcc")
 			if err := os.WriteFile(filePath, mustMsgpackPack(map[string]any{
 				"discovered":  tc.seedDiscovered,
 				"heard_count": tc.seedHeardCount,
@@ -9233,7 +9233,7 @@ func TestInterfaceDiscoveryStartCallbackMissingValueFailsBeforePersist(t *testin
 	if _, ok := info["last_heard"]; ok {
 		t.Fatalf("info[\"last_heard\"] unexpectedly set: %v", info["last_heard"])
 	}
-	if _, err := os.Stat(filepath.Join(tmpDir, "discovery", "interfaces", "aabbccdd.data")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(tmpDir, "storage", "discovery", "interfaces", "aabbccdd")); !os.IsNotExist(err) {
 		t.Fatalf("expected malformed discovered info not to be persisted, stat err=%v", err)
 	}
 	want := "Error processing discovered interface data: 'value'"
@@ -9293,7 +9293,7 @@ func TestInterfaceDiscoveryStartCallbackStringDiscoveryHashFailsBeforePersist(t 
 	if _, ok := info["last_heard"]; ok {
 		t.Fatalf("info[\"last_heard\"] unexpectedly set: %v", info["last_heard"])
 	}
-	if _, err := os.Stat(filepath.Join(tmpDir, "discovery", "interfaces", "aabbccdd.data")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(tmpDir, "storage", "discovery", "interfaces", "aabbccdd")); !os.IsNotExist(err) {
 		t.Fatalf("expected string discovery hash not to be persisted, stat err=%v", err)
 	}
 	want := "Error processing discovered interface data: Unknown format code 'x' for object of type 'str'"
@@ -9353,7 +9353,7 @@ func TestInterfaceDiscoveryStartCallbackFloatDiscoveryHashLogsError(t *testing.T
 	if _, ok := info["last_heard"]; ok {
 		t.Fatalf("info[\"last_heard\"] unexpectedly set: %v", info["last_heard"])
 	}
-	matches, err := filepath.Glob(filepath.Join(tmpDir, "discovery", "interfaces", "*.data"))
+	matches, err := filepath.Glob(filepath.Join(tmpDir, "storage", "discovery", "interfaces", "*"))
 	if err != nil {
 		t.Fatalf("Glob() error = %v", err)
 	}
@@ -9411,7 +9411,7 @@ func TestInterfaceDiscoveryStartCallbackNilDiscoveryHashLogsError(t *testing.T) 
 	if callbackCalled {
 		t.Fatal("expected external discovery callback not to run for nil discovery hash")
 	}
-	matches, err := filepath.Glob(filepath.Join(tmpDir, "discovery", "interfaces", "*.data"))
+	matches, err := filepath.Glob(filepath.Join(tmpDir, "storage", "discovery", "interfaces", "*"))
 	if err != nil {
 		t.Fatalf("Glob() error = %v", err)
 	}
@@ -9475,7 +9475,7 @@ func TestInterfaceDiscoveryStartCallbackMissingHopsLogsError(t *testing.T) {
 	if _, ok := info["last_heard"]; ok {
 		t.Fatalf("info[\"last_heard\"] unexpectedly set: %v", info["last_heard"])
 	}
-	if _, err := os.Stat(filepath.Join(tmpDir, "discovery", "interfaces", "aabbccdd.data")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(tmpDir, "storage", "discovery", "interfaces", "aabbccdd")); !os.IsNotExist(err) {
 		t.Fatalf("expected missing hops discovered info not to be persisted, stat err=%v", err)
 	}
 	want := "Error processing discovered interface data: 'hops'"
@@ -9522,7 +9522,7 @@ func TestInterfaceDiscoveryStartCallbackNilInfoLogsError(t *testing.T) {
 	if callbackCalled {
 		t.Fatal("expected external discovery callback not to run for nil info")
 	}
-	matches, err := filepath.Glob(filepath.Join(tmpDir, "discovery", "interfaces", "*.data"))
+	matches, err := filepath.Glob(filepath.Join(tmpDir, "storage", "discovery", "interfaces", "*"))
 	if err != nil {
 		t.Fatalf("Glob() error = %v", err)
 	}
@@ -9582,7 +9582,7 @@ func TestInterfaceDiscoveryStartCallbackBoolDiscoveryHashPersists(t *testing.T) 
 	if got := asInt(info["heard_count"]); got != 0 {
 		t.Fatalf("info[\"heard_count\"] = %v, want 0", got)
 	}
-	if _, err := os.Stat(filepath.Join(tmpDir, "discovery", "interfaces", "01.data")); err != nil {
+	if _, err := os.Stat(filepath.Join(tmpDir, "storage", "discovery", "interfaces", "01")); err != nil {
 		t.Fatalf("expected bool discovery hash to be persisted: %v", err)
 	}
 }
@@ -9631,7 +9631,7 @@ func TestInterfaceDiscoveryStartCallbackIterableDiscoveryHashPersists(t *testing
 	if got := asInt(info["heard_count"]); got != 0 {
 		t.Fatalf("info[\"heard_count\"] = %v, want 0", got)
 	}
-	if _, err := os.Stat(filepath.Join(tmpDir, "discovery", "interfaces", "deadbeef.data")); err != nil {
+	if _, err := os.Stat(filepath.Join(tmpDir, "storage", "discovery", "interfaces", "deadbeef")); err != nil {
 		t.Fatalf("expected iterable discovery hash to be persisted: %v", err)
 	}
 }
@@ -9680,7 +9680,7 @@ func TestInterfaceDiscoveryStartCallbackIterableMapDiscoveryHashPersists(t *test
 	if got := asInt(info["heard_count"]); got != 0 {
 		t.Fatalf("info[\"heard_count\"] = %v, want 0", got)
 	}
-	if _, err := os.Stat(filepath.Join(tmpDir, "discovery", "interfaces", "01.data")); err != nil {
+	if _, err := os.Stat(filepath.Join(tmpDir, "storage", "discovery", "interfaces", "01")); err != nil {
 		t.Fatalf("expected iterable map discovery hash to be persisted: %v", err)
 	}
 }
@@ -9778,7 +9778,7 @@ func TestInterfaceDiscoveryStartCallbackIterableDiscoveryHashLogsFormatErrors(t 
 			if _, ok := info["last_heard"]; ok {
 				t.Fatalf("info[\"last_heard\"] unexpectedly set: %v", info["last_heard"])
 			}
-			matches, err := filepath.Glob(filepath.Join(tmpDir, "discovery", "interfaces", "*.data"))
+			matches, err := filepath.Glob(filepath.Join(tmpDir, "storage", "discovery", "interfaces", "*"))
 			if err != nil {
 				t.Fatalf("Glob() error = %v", err)
 			}
@@ -9927,7 +9927,7 @@ func TestInterfaceDiscoveryStartLogsCallbackErrorMessage(t *testing.T) {
 		})
 	}()
 
-	if _, err := os.Stat(filepath.Join(tmpDir, "discovery", "interfaces", "aacf20.data")); err != nil {
+	if _, err := os.Stat(filepath.Join(tmpDir, "storage", "discovery", "interfaces", "aacf20")); err != nil {
 		t.Fatalf("expected persisted discovery cache file before callback failure: %v", err)
 	}
 
@@ -10226,7 +10226,7 @@ func TestInterfaceDiscoveryStartCallbackBytesTypeSkipsAutoconnectPerSpec(t *test
 		t.Fatalf("expected 0 auto-connected interfaces, got %v", got)
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", "aacf.data"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, "storage", "discovery", "interfaces", "aacf"))
 	if err != nil {
 		t.Fatalf("failed to read persisted discovery file: %v", err)
 	}
@@ -10652,8 +10652,8 @@ func TestInterfaceDiscoveryStartLogsPersistTypeErrorForListCache(t *testing.T) {
 		t.Fatalf("Start() error = %v", err)
 	}
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
-	filePath := filepath.Join(storagePath, "aabbccdd.data")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
+	filePath := filepath.Join(storagePath, "aabbccdd")
 	original := mustMsgpackPack([]any{1, 2, 3})
 	if err := os.WriteFile(filePath, original, 0o644); err != nil {
 		t.Fatalf("failed to seed cached discovery file: %v", err)
@@ -10724,8 +10724,8 @@ func TestInterfaceDiscoveryStartLogsPersistTypeErrorForStringCache(t *testing.T)
 		t.Fatalf("Start() error = %v", err)
 	}
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
-	filePath := filepath.Join(storagePath, "aabbccdd.data")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
+	filePath := filepath.Join(storagePath, "aabbccdd")
 	original := mustMsgpackPack("abc")
 	if err := os.WriteFile(filePath, original, 0o644); err != nil {
 		t.Fatalf("failed to seed cached discovery file: %v", err)
@@ -10796,8 +10796,8 @@ func TestInterfaceDiscoveryStartLogsPersistExtraDataForInvalidMsgpackCache(t *te
 		t.Fatalf("Start() error = %v", err)
 	}
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
-	filePath := filepath.Join(storagePath, "aabbccdd.data")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
+	filePath := filepath.Join(storagePath, "aabbccdd")
 	original := []byte("not-msgpack")
 	if err := os.WriteFile(filePath, original, 0o644); err != nil {
 		t.Fatalf("failed to seed cached discovery file: %v", err)
@@ -10868,8 +10868,8 @@ func TestInterfaceDiscoveryStartLogsPersistFormatErrorForInvalidTypeCodeCache(t 
 		t.Fatalf("Start() error = %v", err)
 	}
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
-	filePath := filepath.Join(storagePath, "aabbccdd.data")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
+	filePath := filepath.Join(storagePath, "aabbccdd")
 	original := []byte{0xc1}
 	if err := os.WriteFile(filePath, original, 0o644); err != nil {
 		t.Fatalf("failed to seed cached discovery file: %v", err)
@@ -10940,8 +10940,8 @@ func TestInterfaceDiscoveryStartLogsPersistValueErrorForIncompleteMsgpackCache(t
 		t.Fatalf("Start() error = %v", err)
 	}
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
-	filePath := filepath.Join(storagePath, "aabbccdd.data")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
+	filePath := filepath.Join(storagePath, "aabbccdd")
 	original := []byte{0x81, 0xa1, 'a'}
 	if err := os.WriteFile(filePath, original, 0o644); err != nil {
 		t.Fatalf("failed to seed cached discovery file: %v", err)
@@ -11012,8 +11012,8 @@ func TestInterfaceDiscoveryStartLogsPersistValueErrorForIntKeyCache(t *testing.T
 		t.Fatalf("Start() error = %v", err)
 	}
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
-	filePath := filepath.Join(storagePath, "aabbccdd.data")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
+	filePath := filepath.Join(storagePath, "aabbccdd")
 	original := []byte{0x82, 0x01, 0x02, 0x03, 0x04}
 	if err := os.WriteFile(filePath, original, 0o644); err != nil {
 		t.Fatalf("failed to seed cached discovery file: %v", err)
@@ -11084,8 +11084,8 @@ func TestInterfaceDiscoveryStartLogsPersistKeyErrorForBinaryKeyCache(t *testing.
 		t.Fatalf("Start() error = %v", err)
 	}
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
-	filePath := filepath.Join(storagePath, "aabbccdd.data")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
+	filePath := filepath.Join(storagePath, "aabbccdd")
 	original, err := hex.DecodeString("82c40a646973636f766572656401c40b68656172645f636f756e7402")
 	if err != nil {
 		t.Fatalf("hex.DecodeString() error = %v", err)
@@ -11233,7 +11233,7 @@ func TestInterfaceDiscoveryStartSkipsAutoconnectWhenPersistFails(t *testing.T) {
 		t.Fatalf("Start() error = %v", err)
 	}
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.RemoveAll(storagePath); err != nil {
 		t.Fatalf("RemoveAll(storagePath) error = %v", err)
 	}
@@ -11291,7 +11291,7 @@ func TestInterfaceDiscoveryStartLogsPersistFailureMessage(t *testing.T) {
 		t.Fatalf("Start() error = %v", err)
 	}
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.RemoveAll(storagePath); err != nil {
 		t.Fatalf("RemoveAll(storagePath) error = %v", err)
 	}
@@ -11361,8 +11361,8 @@ func TestInterfaceDiscoveryStartLogsPersistKeyErrorForNilCachedDiscovered(t *tes
 		t.Fatalf("Start() error = %v", err)
 	}
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
-	filePath := filepath.Join(storagePath, "aabbccdd.data")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
+	filePath := filepath.Join(storagePath, "aabbccdd")
 	if err := os.WriteFile(filePath, mustMsgpackPack(map[string]any{
 		"discovered":  nil,
 		"heard_count": nil,
@@ -11446,8 +11446,8 @@ func TestInterfaceDiscoveryStartLogsPersistTypeErrorForStringHeardCount(t *testi
 		t.Fatalf("Start() error = %v", err)
 	}
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
-	filePath := filepath.Join(storagePath, "aabbccdd.data")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
+	filePath := filepath.Join(storagePath, "aabbccdd")
 	if err := os.WriteFile(filePath, mustMsgpackPack(map[string]any{
 		"discovered":  5.0,
 		"heard_count": "7",
@@ -11530,8 +11530,8 @@ func TestInterfaceDiscoveryStartLogsPersistTypeErrorForBytesHeardCount(t *testin
 		t.Fatalf("Start() error = %v", err)
 	}
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
-	filePath := filepath.Join(storagePath, "aabbccdd.data")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
+	filePath := filepath.Join(storagePath, "aabbccdd")
 	if err := os.WriteFile(filePath, mustMsgpackPack(map[string]any{
 		"discovered":  5.0,
 		"heard_count": []byte("x"),
@@ -11633,8 +11633,8 @@ func TestInterfaceDiscoveryStartLogsPersistTypeErrorForCompositeHeardCount(t *te
 				t.Fatalf("Start() error = %v", err)
 			}
 
-			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
-			filePath := filepath.Join(storagePath, "aabbccdd.data")
+			storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
+			filePath := filepath.Join(storagePath, "aabbccdd")
 
 			var heardCount any
 			switch tc.name {
@@ -11741,8 +11741,8 @@ func TestInterfaceDiscoveryStartLogsPersistKeyErrorForMissingReceived(t *testing
 				t.Fatalf("Start() error = %v", err)
 			}
 
-			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
-			filePath := filepath.Join(storagePath, "aabbccdd.data")
+			storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
+			filePath := filepath.Join(storagePath, "aabbccdd")
 			if tc.seedExisting {
 				if err := os.WriteFile(filePath, mustMsgpackPack(map[string]any{
 					"discovered":  tc.seedDiscovered,
@@ -12100,7 +12100,7 @@ func TestInterfaceDiscoveryMonitorDoesNotAutoconnectBeforeInitialPass(t *testing
 		}
 	}()
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -12169,7 +12169,7 @@ func TestInterfaceDiscoveryMonitorAutoconnectsAvailableCandidate(t *testing.T) {
 		accepted <- conn
 	}()
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -12254,7 +12254,7 @@ func TestInterfaceDiscoveryMonitorDoesNotAutoconnectWhenFreeSlotsEqualReservedSl
 		}
 	}()
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -12345,7 +12345,7 @@ func TestInterfaceDiscoveryMonitorAutoconnectUsesShuffledCandidateOrder(t *testi
 		}
 	}()
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}
@@ -12453,7 +12453,7 @@ func TestInterfaceDiscoveryMonitorDoesNotFallbackPastSelectedExistingCandidate(t
 		}
 	}()
 
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}

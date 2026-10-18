@@ -21,7 +21,7 @@ import (
 func TestDiscoveryLoadRemovesBogusType(t *testing.T) {
 	t.Parallel()
 	tmpDir := testutils.TempDir(t, "rns-discovery-bogus-type-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestDiscoveryLoadRemovesBogusType(t *testing.T) {
 func TestDiscoveryLoadRemovesMissingType(t *testing.T) {
 	t.Parallel()
 	tmpDir := testutils.TempDir(t, "rns-discovery-missing-type-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestDiscoveryLoadRemovesMissingType(t *testing.T) {
 func TestDiscoveryLoadKeepsValidType(t *testing.T) {
 	t.Parallel()
 	tmpDir := testutils.TempDir(t, "rns-discovery-valid-type-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestDiscoveryLoadKeepsValidType(t *testing.T) {
 func TestDiscoveryLoadRejectsTCPClientType(t *testing.T) {
 	t.Parallel()
 	tmpDir := testutils.TempDir(t, "rns-discovery-tcpclient-type-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}

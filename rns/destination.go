@@ -328,6 +328,15 @@ func (d *Destination) EnableRatchets(path string) error {
 	return d.reloadRatchets(path)
 }
 
+// RatchetsPath returns the file the destination's ratchet state is persisted to,
+// or an empty string when ratchets are not enabled. It mirrors the public
+// `ratchets_path` attribute Python callers read (RNS/Destination.py).
+func (d *Destination) RatchetsPath() string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.ratchetsPath
+}
+
 func (d *Destination) reloadRatchets(path string) error {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		d.logger.Debug("No existing ratchet data found, initializing new ratchet file for %v", d.name)

@@ -1336,7 +1336,7 @@ func (id *InterfaceDiscovery) Start(requiredValue int) error {
 		return fmt.Errorf("no Reticulum instance")
 	}
 
-	storagePath := filepath.Join(id.owner.configDir, "discovery", "interfaces")
+	storagePath := id.discoveryStoragePath()
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		return err
 	}
@@ -1396,6 +1396,24 @@ func (id *InterfaceDiscovery) Stop() {
 	}
 }
 
+// discoveryStoragePath returns the directory holding the discovered-interface
+// store. Python computes the identical path as
+// `os.path.join(RNS.Reticulum.storagepath, "discovery", "interfaces")`
+// (RNS/Discovery.py:462), where `Reticulum.storagepath = configdir+"/storage"`
+// (RNS/Reticulum.py:249) — so the store lives under the STORAGE root, not
+// directly under the config directory. Getting this wrong puts the cache
+// somewhere the other implementation never looks, so discovered interfaces are
+// lost whenever a user switches between them.
+//
+// The file NAME is the bare lowercase hex of the discovery hash, with no
+// extension, mirroring `filename = RNS.hexrep(discovery_hash, delimit=False)`
+// (RNS/Discovery.py:539-540). The re-hear stat guard keys on that same name
+// (:543), so an extension makes a re-announce create a duplicate file instead
+// of updating the existing one.
+func (id *InterfaceDiscovery) discoveryStoragePath() string {
+	return filepath.Join(id.owner.StoragePath(), "discovery", "interfaces")
+}
+
 func (id *InterfaceDiscovery) persistDiscoveredInterface(info map[string]any) error {
 	if id.owner == nil {
 		return fmt.Errorf("no Reticulum instance")
@@ -1406,12 +1424,12 @@ func (id *InterfaceDiscovery) persistDiscoveredInterface(info map[string]any) er
 		return err
 	}
 
-	storagePath := filepath.Join(id.owner.configDir, "discovery", "interfaces")
+	storagePath := id.discoveryStoragePath()
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		return err
 	}
 
-	filePath := filepath.Join(storagePath, discoveryHash+".data")
+	filePath := filepath.Join(storagePath, discoveryHash)
 	persisted := cloneStringAnyMap(info)
 	receivedValue, receivedPresent := info["received"]
 	receivedAt, receivedOK := discoveryReceivedTimestamp(receivedValue)
@@ -1601,7 +1619,7 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 		return nil, fmt.Errorf("no Reticulum instance")
 	}
 
-	storagePath := filepath.Join(id.owner.configDir, "discovery", "interfaces")
+	storagePath := id.discoveryStoragePath()
 	if _, err := os.Stat(storagePath); os.IsNotExist(err) {
 		return nil, nil
 	}

@@ -34,7 +34,7 @@ func TestProgramSetupDiscovery(t *testing.T) {
 	})
 
 	// Setup mock discovery data
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}

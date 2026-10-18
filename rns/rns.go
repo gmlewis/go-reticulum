@@ -317,10 +317,18 @@ func (r *Reticulum) reenableBootstrapInterfaces() {
 	}
 }
 
-// Transport returns the transport system for this Reticulum instance.
 // Transport returns the transport system instance associated with this Reticulum stack.
 func (r *Reticulum) Transport() Transport {
 	return r.transport
+}
+
+// StoragePath returns the root of this instance's on-disk storage tree. Python
+// computes the identical value as `Reticulum.storagepath = configdir+"/storage"`
+// (RNS/Reticulum.py:249), and every store that both implementations share lives
+// beneath it. Use this rather than rebuilding the path from ConfigDir, so a
+// store cannot accidentally land outside the storage tree.
+func (r *Reticulum) StoragePath() string {
+	return filepath.Join(r.configDir, "storage")
 }
 
 // Logger returns the logger associated with this Reticulum instance.
@@ -566,7 +574,7 @@ func NewReticulumWithLogger(ts Transport, configDir string, logger *Logger, opts
 			setter.SetPublishBlackhole(true)
 		}
 	}
-	storagePath := filepath.Join(configDir, "storage")
+	storagePath := r.StoragePath()
 	if err := r.transport.Start(storagePath); err != nil {
 		return nil, err
 	}

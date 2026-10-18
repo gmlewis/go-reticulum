@@ -42,7 +42,7 @@ const discoveryValidNetworkIDHex = "0a0b0c0d0e0f10111213141516171819"
 func newDiscoveryLoadRemovalTestReticulum(t *testing.T) (*Reticulum, *TransportSystem, string) {
 	t.Helper()
 	tmpDir := testutils.TempDir(t, "rns-discovery-blackhole-")
-	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	storagePath := filepath.Join(tmpDir, "storage", "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
 	}

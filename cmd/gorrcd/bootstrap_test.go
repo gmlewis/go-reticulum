@@ -9,7 +9,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
-	"os/exec"
 	"strings"
 	"testing"
 
@@ -56,13 +55,7 @@ func TestRoomsTemplateGolden(t *testing.T) {
 // home-directory-derived paths Python would interpolate.
 func TestConfigTemplateRenderGolden(t *testing.T) {
 	t.Parallel()
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not available; skipping live first-run template capture")
-	}
-	probe := exec.Command("python3", "-c", "import RNS")
-	if err := probe.Run(); err != nil {
-		t.Skip("python3 RNS not available; skipping live first-run template capture")
-	}
+	testutils.SkipIfNoPythonRNS(t)
 
 	home := testutils.TempDir(t, "gorrcd-first-run-")
 	out := testutils.RunPython(t, firstRunCaptureScript, home, testutils.PythonRRCDRepoDir(t))

@@ -75,7 +75,7 @@ func TestDiscoveryReceiveAppliesSanitizeName(t *testing.T) {
 func TestDiscoveryLoadAppliesSanitizeName(t *testing.T) {
 	t.Parallel()
 	tmpDir := testutils.TempDir(t, "rns-discovery-sanitize-load-")
-	storagePath := tmpDir + "/discovery/interfaces"
+	storagePath := tmpDir + "/storage/discovery/interfaces"
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}

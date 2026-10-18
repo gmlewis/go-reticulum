@@ -12,11 +12,13 @@ import (
 
 // fakeTB is a minimal testing.TB used to observe helper behavior without
 // failing the surrounding test. Embedding the interface supplies every TB
-// method; only the error-recording ones are overridden (calling anything else
-// on a fakeTB nil-panics, which is a loud misuse).
+// method; the recording ones are overridden so a helper's failures and warnings
+// can be inspected (calling anything else on a fakeTB nil-panics, which is a
+// loud misuse).
 type fakeTB struct {
 	testing.TB
 	errors []string
+	logs   []string
 }
 
 func (f *fakeTB) Helper() {}
@@ -27,4 +29,8 @@ func (f *fakeTB) Errorf(format string, args ...any) {
 
 func (f *fakeTB) Fatalf(format string, args ...any) {
 	f.Errorf(format, args...)
+}
+
+func (f *fakeTB) Logf(format string, args ...any) {
+	f.logs = append(f.logs, fmt.Sprintf(format, args...))
 }

@@ -1323,7 +1323,7 @@ loglevel = 4
 	if handlers[0].AspectFilter != discoveryAppName+".discovery.interface" {
 		t.Fatalf("AspectFilter = %q, want %q", handlers[0].AspectFilter, discoveryAppName+".discovery.interface")
 	}
-	if _, err := os.Stat(filepath.Join(configDir, "discovery", "interfaces")); err != nil {
+	if _, err := os.Stat(filepath.Join(configDir, "storage", "discovery", "interfaces")); err != nil {
 		t.Fatalf("expected discovery storage path to exist: %v", err)
 	}
 
