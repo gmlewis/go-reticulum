@@ -11,7 +11,7 @@
 // no syntax highlighter is configured.
 //
 // Micron is a lightweight rich-text format used by Reticulum terminals.
-// It encodes formatting (bold, italic, underline), colours
+// It encodes formatting (bold, italic, underline), colors
 // (foreground/background), alignment, links, literal blocks and box-drawn
 // tables using backtick-prefixed control sequences.
 //
@@ -43,13 +43,13 @@ const (
 	// UnderlineEnd is the micron underline toggle (same sequence toggles off).
 	UnderlineEnd = "`_"
 
-	// CodeBG is the background colour sequence for fenced code blocks.
+	// CodeBG is the background color sequence for fenced code blocks.
 	CodeBG = "`BT282828"
-	// CodeBGInline is the background colour sequence for inline code.
+	// CodeBGInline is the background color sequence for inline code.
 	CodeBGInline = "`BT383838"
-	// CodeFG is the foreground colour sequence for code blocks.
+	// CodeFG is the foreground color sequence for code blocks.
 	CodeFG = "`Fddd"
-	// CodeReset closes foreground and background colour tags for code.
+	// CodeReset closes foreground and background color tags for code.
 	CodeReset = "`f`b"
 
 	// LiteralStart opens a micron literal block (raw, unformatted text).
@@ -136,8 +136,8 @@ type Converter struct {
 	BoldLinks bool
 	// UnderlineLinks controls whether link text is rendered underlined.
 	UnderlineLinks bool
-	// LinkColor, when set to a 3- or 6-digit hex colour, applies a
-	// foreground colour to link text. A 3-digit value uses the `F form
+	// LinkColor, when set to a 3- or 6-digit hex color, applies a
+	// foreground color to link text. A 3-digit value uses the `F form
 	// while a 6-digit value uses the `FT form.
 	LinkColor string
 }
@@ -154,13 +154,13 @@ func WithURLScope(scope string) Option { return func(c *Converter) { c.LocalURLS
 // WithHighlighter sets the syntax highlighter used for fenced code blocks.
 func WithHighlighter(h *Highlighter) Option { return func(c *Converter) { c.Highlighter = h } }
 
-// WithLinkColor sets a foreground colour applied to link text. Pass a
-// 3-digit or 6-digit hex colour string.
+// WithLinkColor sets a foreground color applied to link text. Pass a
+// 3-digit or 6-digit hex color string.
 func WithLinkColor(color string) Option { return func(c *Converter) { c.LinkColor = color } }
 
 // NewConverter returns a Converter configured with the given options. It
 // mirrors the defaults of Python's MarkdownToMicron: max width 100, URL
-// scope ":/page/", bold and underlined links, no link colour and no
+// scope ":/page/", bold and underlined links, no link color and no
 // syntax highlighter.
 func NewConverter(opts ...Option) *Converter {
 	c := &Converter{

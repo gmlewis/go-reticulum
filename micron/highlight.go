@@ -10,7 +10,7 @@ import (
 )
 
 // Highlighter applies syntax highlighting to source code, emitting micron
-// colour sequences. It is a Go port of Python's SyntaxHighlighter
+// color sequences. It is a Go port of Python's SyntaxHighlighter
 // (highlight.py). Unlike the Python implementation, which delegates
 // tokenisation to the third-party Pygments library, this port uses
 // hand-written, stdlib-only tokenisers for a small set of languages.
@@ -18,9 +18,9 @@ import (
 // The plain-text fallback path (used when no language is supplied or the
 // language is not supported by a hand-written tokeniser) is
 // byte-comparable to Python's SyntaxHighlighter with Pygments unavailable.
-// The coloured paths are a stdlib reimplementation: they emit the same
-// micron colour codes as Python's MicronFormatter for the same token
-// kinds, but token boundaries may differ from Pygments, so coloured
+// The colored paths are a stdlib reimplementation: they emit the same
+// micron color codes as Python's MicronFormatter for the same token
+// kinds, but token boundaries may differ from Pygments, so colored
 // output is not guaranteed to be byte-identical to a Pygments-equipped
 // Python runtime.
 type Highlighter struct {
@@ -30,7 +30,7 @@ type Highlighter struct {
 // HighlightOption configures a Highlighter at construction time.
 type HighlightOption func(*Highlighter)
 
-// WithTheme replaces the default colour theme.
+// WithTheme replaces the default color theme.
 func WithTheme(theme map[string]string) HighlightOption {
 	return func(h *Highlighter) { h.Theme = theme }
 }
@@ -133,8 +133,8 @@ func lowerExt(filename string) string {
 	return strings.ToLower(filename[i:])
 }
 
-// color returns the hex colour for a theme key, or "" when the key maps
-// to None (no colour) or is absent.
+// color returns the hex color for a theme key, or "" when the key maps
+// to None (no color) or is absent.
 func (h *Highlighter) color(key string) string {
 	if key == "" {
 		return ""
@@ -145,17 +145,17 @@ func (h *Highlighter) color(key string) string {
 	return ""
 }
 
-// token is a single tokenised span with a theme colour key and raw value.
+// token is a single tokenised span with a theme color key and raw value.
 type token struct {
 	colorKey string
 	value    string
 }
 
-// formatTokens renders tokens to micron, mirroring the colour-emission
-// logic of Python's MicronFormatter.format. Coloured tokens are wrapped in
+// formatTokens renders tokens to micron, mirroring the color-emission
+// logic of Python's MicronFormatter.format. Colored tokens are wrapped in
 // `FT{color}...`f with leading/trailing newlines extracted outside the
-// colour span; uncoloured tokens are emitted raw (escaped). A name token
-// immediately following a "." operator is coloured as an attribute call.
+// color span; uncolored tokens are emitted raw (escaped). A name token
+// immediately following a "." operator is colored as an attribute call.
 func (h *Highlighter) formatTokens(tokens []token) string {
 	var b strings.Builder
 	prevDot := false
@@ -254,8 +254,8 @@ func tokenizerFor(lang string) func(string) []token {
 	}
 }
 
-// defaultTheme returns the default colour theme, mirroring Python's
-// SyntaxHighlighter._get_default_theme. Keys with no colour (None in
+// defaultTheme returns the default color theme, mirroring Python's
+// SyntaxHighlighter._get_default_theme. Keys with no color (None in
 // Python) are omitted from the map so that color() returns "".
 func defaultTheme() map[string]string {
 	return map[string]string{

@@ -84,9 +84,9 @@ var goldenPlain = []struct{ name, content string }{
 	{"plain_trailing_nl", "with newline\n"},
 }
 
-// goldenColoredRef holds inputs for the coloured-reference structural check.
+// goldenColoredRef holds inputs for the colored-reference structural check.
 // The Pygments reference output is captured live from Python
-// highlight_code(content, None, language); the test asserts every colour code
+// highlight_code(content, None, language); the test asserts every color code
 // in the reference also appears in the Go hand-tokenised output (structural,
 // not byte-for-byte, since hand tokenisation differs from Pygments).
 var goldenColoredRef = []struct{ name, content, language string }{

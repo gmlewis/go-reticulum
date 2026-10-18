@@ -11,8 +11,8 @@ import "strings"
 // the tokenisation that Pygments performs in Python's highlight.py. They
 // aim to classify the common token kinds (keywords, strings, comments,
 // numbers, identifiers, operators, punctuation) so that the MicronFormatter
-// emits the same colour codes Pygments would for those kinds. They do NOT
-// replicate Pygments' exact token boundaries, so coloured output is not
+// emits the same color codes Pygments would for those kinds. They do NOT
+// replicate Pygments' exact token boundaries, so colored output is not
 // guaranteed to be byte-identical to a Pygments-equipped Python runtime.
 
 // pythonKeywords are Python language keywords.
@@ -27,7 +27,7 @@ var pythonKeywords = map[string]bool{
 	"yield": true,
 }
 
-// pythonBuiltins are commonly-used Python builtins coloured as
+// pythonBuiltins are commonly-used Python builtins colored as
 // function_builtin (amber).
 var pythonBuiltins = map[string]bool{
 	"print": true, "len": true, "range": true, "int": true, "str": true,
@@ -175,7 +175,7 @@ var goKeywords = map[string]bool{
 	"switch": true, "type": true, "var": true,
 }
 
-// goBuiltins are Go builtins coloured as function_builtin (amber).
+// goBuiltins are Go builtins colored as function_builtin (amber).
 var goBuiltins = map[string]bool{
 	"make": true, "new": true, "len": true, "cap": true, "copy": true,
 	"append": true, "panic": true, "recover": true, "print": true,
@@ -183,7 +183,7 @@ var goBuiltins = map[string]bool{
 	"close": true, "delete": true, "clear": true, "max": true, "min": true,
 }
 
-// goTypes are Go built-in types coloured as type_builtin (amber).
+// goTypes are Go built-in types colored as type_builtin (amber).
 var goTypes = map[string]bool{
 	"int": true, "int8": true, "int16": true, "int32": true, "int64": true,
 	"uint": true, "uint8": true, "uint16": true, "uint32": true, "uint64": true,
@@ -303,7 +303,7 @@ func tokenizeGo(src string) []token {
 			default:
 				// Pygments' GoLexer tokenises function names after `func`
 				// as plain Name (not Name.Function), so they share the
-				// default name colour here.
+				// default name color here.
 				push("name", word)
 			}
 		case c == '\n' || c == ' ' || c == '\t':
@@ -337,7 +337,7 @@ func tokenizeGo(src string) []token {
 	return out
 }
 
-// bashKeywords are Bash keywords coloured as keyword (coral).
+// bashKeywords are Bash keywords colored as keyword (coral).
 var bashKeywords = map[string]bool{
 	"if": true, "then": true, "else": true, "elif": true, "fi": true,
 	"for": true, "while": true, "until": true, "do": true, "done": true,
@@ -346,7 +346,7 @@ var bashKeywords = map[string]bool{
 	"declare": true, "typeset": true,
 }
 
-// bashBuiltins are Bash builtins coloured as function_builtin (amber).
+// bashBuiltins are Bash builtins colored as function_builtin (amber).
 var bashBuiltins = map[string]bool{
 	"echo": true, "export": true, "cd": true, "pwd": true, "exit": true,
 	"set": true, "unset": true, "shift": true, "source": true, "alias": true,

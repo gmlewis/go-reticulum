@@ -135,7 +135,7 @@ func TestFormatTabs(t *testing.T) {
 	}
 }
 
-// TestFormatDiff verifies colour-coded diff rendering against the golden
+// TestFormatDiff verifies color-coded diff rendering against the golden
 // value captured from pages.py format_diff.
 func TestFormatDiff(t *testing.T) {
 	t.Parallel()

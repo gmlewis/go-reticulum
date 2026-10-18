@@ -440,7 +440,7 @@ func TestStripEscapes(t *testing.T) {
 		want string
 	}{
 		{name: "plain text", in: "London: Sunny", want: "London: Sunny"},
-		{name: "colour sequence", in: "\x1b[31mSunny\x1b[0m", want: "Sunny"},
+		{name: "color sequence", in: "\x1b[31mSunny\x1b[0m", want: "Sunny"},
 		{name: "unterminated CSI", in: "Sunny\x1b[31", want: "Sunny"},
 		{name: "OSC title with BEL", in: "\x1b]0;evil\aSunny", want: "Sunny"},
 		{name: "OSC title with ST", in: "\x1b]0;evil\x1b\\Sunny", want: "Sunny"},

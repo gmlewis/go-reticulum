@@ -61,8 +61,8 @@ func TestHighlightEmptyContent(t *testing.T) {
 }
 
 // TestHighlightColoredColors asserts that the hand-written tokenisers emit
-// every micron colour code that a live Pygments run emits for each fixture.
-// The expected colour set is captured fresh from Python highlight_code (gated
+// every micron color code that a live Pygments run emits for each fixture.
+// The expected color set is captured fresh from Python highlight_code (gated
 // on Pygments availability); equality is structural (each `FT{color}` from the
 // Pygments reference must appear in the Go output), not byte-for-byte, because
 // hand tokenisation does not replicate Pygments' exact token boundaries.
@@ -93,7 +93,7 @@ func TestHighlightColoredColors(t *testing.T) {
 				t.Fatalf("Highlight error: %v", err)
 			}
 			if len(wantColors) == 0 {
-				t.Fatalf("Pygments reference for %q produced no colours; expected a non-empty colour set", tc.content)
+				t.Fatalf("Pygments reference for %q produced no colors; expected a non-empty color set", tc.content)
 			}
 			for c := range wantColors {
 				if !strings.Contains(got, c) {
@@ -106,9 +106,9 @@ func TestHighlightColoredColors(t *testing.T) {
 }
 
 // TestHighlightColoredRefStructure compares the Go hand-tokenised output
-// against a live Pygments reference capture. It asserts that every colour
+// against a live Pygments reference capture. It asserts that every color
 // code appearing in the Pygments reference also appears in the Go output
-// (no missing colour kinds), while tolerating differences in token
+// (no missing color kinds), while tolerating differences in token
 // boundaries and span grouping.
 func TestHighlightColoredRefStructure(t *testing.T) {
 	skipIfNoPygments(t)
@@ -133,7 +133,7 @@ func TestHighlightColoredRefStructure(t *testing.T) {
 }
 
 // TestHighlightFilenameInference verifies that a recognised filename
-// extension routes to the matching tokeniser (coloured output), while an
+// extension routes to the matching tokeniser (colored output), while an
 // unrecognised extension falls back to plain text.
 func TestHighlightFilenameInference(t *testing.T) {
 	h := NewHighlighter()
@@ -173,7 +173,7 @@ func TestHighlightRawmuPassthrough(t *testing.T) {
 }
 
 // TestHighlightWithHighlighter verifies that a converter with a
-// highlighter produces coloured output for a fenced Go block, and that the
+// highlighter produces colored output for a fenced Go block, and that the
 // result is wrapped in the code background/foreground sequences.
 func TestHighlightWithHighlighter(t *testing.T) {
 	c := NewConverter(WithHighlighter(NewHighlighter()))
@@ -190,7 +190,7 @@ func TestHighlightWithHighlighter(t *testing.T) {
 }
 
 // extractColors returns the set of `FT{color}` sequences in s. All theme
-// colours are 6-digit hex, so exactly six hex digits are read after `FT.
+// colors are 6-digit hex, so exactly six hex digits are read after `FT.
 func extractColors(s string) map[string]bool {
 	out := map[string]bool{}
 	i := 0

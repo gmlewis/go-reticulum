@@ -5,7 +5,7 @@
 
 // pages_render.go implements the pure rendering helpers used by the
 // nomadnetwork page-node handlers, mirroring the m_* helpers, icons,
-// colours, formatters, default templates and chart renderers of
+// colors, formatters, default templates and chart renderers of
 // RNS/Utilities/rngit/pages.py (NomadNetworkNode, rngit v1.4.2). These
 // functions are pure (no I/O) so they can be unit-tested directly against
 // golden values captured from the Python source.
@@ -90,7 +90,7 @@ const (
 	nfIconWork    = "󱌣"
 )
 
-// UI colours, mirroring CLR_* (pages.py:101-108).
+// UI colors, mirroring CLR_* (pages.py:101-108).
 const (
 	clrFolder = "`Ffe6"
 	clrFile   = "`F66d"
@@ -102,7 +102,7 @@ const (
 	clrDiffP  = "`F0aa"
 )
 
-// Chart colours, mirroring RCLR_* (pages.py:110-117).
+// Chart colors, mirroring RCLR_* (pages.py:110-117).
 const (
 	rclrPush      = "B9A810"
 	rclrPushG     = "791212"
@@ -189,7 +189,7 @@ func mUnderline(text string) string {
 	return "`_" + text + "`_"
 }
 
-// mColorFG renders foreground-coloured micron text, mirroring m_color_fg
+// mColorFG renders foreground-colored micron text, mirroring m_color_fg
 // (pages.py:307).
 func mColorFG(text, color string) string {
 	return "`F" + color + text + "`f"
@@ -348,7 +348,7 @@ func formatTabs(text string) string {
 	return strings.ReplaceAll(text, "\t", pageTabWidth)
 }
 
-// formatDiff colour-codes a unified diff for micron display, mirroring
+// formatDiff color-codes a unified diff for micron display, mirroring
 // format_diff (pages.py:2418-2439).
 func formatDiff(diffText string) string {
 	diffText = strings.ReplaceAll(diffText, "\\", "\\\\")

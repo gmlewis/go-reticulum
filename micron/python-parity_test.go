@@ -18,7 +18,7 @@ import (
 // and highlight.highlight_code), captured fresh from the installed RNS at test
 // time. They replace the prior committed "DO NOT EDIT" golden snapshots with a
 // real Go↔Python diff, gated on testutils.SkipIfNoPythonRNS (and Pygments for
-// the coloured-reference structural check) so they skip cleanly in a
+// the colored-reference structural check) so they skip cleanly in a
 // Python-less environment and fail hard when Go diverges from Python.
 
 // pythonCache memoizes live Python captures across tests so the convert and
@@ -75,8 +75,8 @@ sys.stdout.write(highlight_code(sys.argv[1], sys.argv[2] or None, sys.argv[3] or
 }
 
 // pythonHighlightColored captures Python's highlight_code with Pygments ON,
-// producing the reference coloured output the Go hand-tokenisers are checked
-// against (structurally — every reference colour must appear in Go output).
+// producing the reference colored output the Go hand-tokenisers are checked
+// against (structurally — every reference color must appear in Go output).
 func pythonHighlightColored(t *testing.T, content, filename, language string) string {
 	t.Helper()
 	testutils.SkipIfNoPythonRNS(t)
@@ -96,8 +96,8 @@ sys.stdout.write(highlight_code(sys.argv[1], sys.argv[2] or None, sys.argv[3] or
 }
 
 // pythonPygmentsAvailable reports whether the Pygments package is importable,
-// which the coloured-reference structural check requires (without Pygments,
-// highlight_code emits no colours and the colour-set comparison is vacuous).
+// which the colored-reference structural check requires (without Pygments,
+// highlight_code emits no colors and the color-set comparison is vacuous).
 func pythonPygmentsAvailable() bool {
 	return exec.Command("python3", "-c", "import pygments").Run() == nil
 }
@@ -105,6 +105,6 @@ func pythonPygmentsAvailable() bool {
 func skipIfNoPygments(t *testing.T) {
 	t.Helper()
 	if !pythonPygmentsAvailable() {
-		t.Skip("pygments not available; skipping coloured-reference cross-check")
+		t.Skip("pygments not available; skipping colored-reference cross-check")
 	}
 }
