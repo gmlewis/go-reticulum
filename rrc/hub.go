@@ -2131,6 +2131,43 @@ func (h *RRCHub) GetEffectiveNick() string {
 	return ""
 }
 
+// flagMention marks msg as a mention of the local user when it is an inbound
+// message whose body names the effective nick, mirroring Python's T_MSG and
+// T_ACTION tail (RRC.py:1086-1091, 1119-1124):
+//
+//	is_own = bytes(src) == own_hash
+//	if not is_own:
+//	    pat = _mention_re(self.get_effective_nick())
+//	    if pat is not None and pat.search(body):
+//	        msg.mention = True
+//
+// The flag is what populates the hub's mention rooms (hub.go recordMessage), which
+// drives the "!" marker on the Channels hub list and the H_MENTION flag in stored
+// history. Nothing set it before, so a mention was never noticed at runtime.
+//
+// The effective nick is the UNtruncated one, as in Python: get_effective_nick
+// returns the override or the manager's nickname, and the byte-limit truncation
+// applies only where an outgoing envelope is built (RRC.py:537-540).
+func (h *RRCHub) flagMention(msg *RRCMessage, src []byte, body string) {
+	if msg == nil || h.isOwnSource(src) {
+		return
+	}
+	if matchMention(h.GetEffectiveNick(), body) {
+		msg.Mention = true
+	}
+}
+
+// isOwnSource reports whether src is this client's own identity hash, mirroring
+// Python's `is_own = isinstance(src, bytes) and own_hash is not None and
+// bytes(src) == own_hash` (RRC.py:1086). An absent manager or an empty src is
+// never own, matching Python's None guards.
+func (h *RRCHub) isOwnSource(src []byte) bool {
+	if h.Manager == nil || len(src) == 0 {
+		return false
+	}
+	return bytes.Equal(src, h.Manager.identityHash())
+}
+
 // effectiveNick returns the effective nick truncated to the hub's active
 // nick byte limit, so every outgoing envelope carries a nick the hub will
 // accept (real hubs silently drop envelopes whose nick exceeds the limit,
@@ -2387,6 +2424,7 @@ func (h *RRCHub) HandleData(data []byte) {
 			Ts:   arrival,
 			ID:   msgIDHex(env),
 		}
+		h.flagMention(msg, src, textStr)
 		if !h.isServerSide() {
 			if h.collapseSelfEcho("msg", roomStr, textStr, ts) || h.collapseFanout("msg", roomStr, textStr, collapseKey, nickStr, msg) {
 				return
@@ -2434,6 +2472,7 @@ func (h *RRCHub) HandleData(data []byte) {
 			Ts:   NowMs(),
 			ID:   msgIDHex(env),
 		}
+		h.flagMention(msg, src, textStr)
 		if !h.isServerSide() {
 			if h.collapseSelfEcho("action", roomStr, textStr, ts) || h.collapseFanout("action", roomStr, textStr, collapseKey, nickStr, msg) {
 				return

@@ -7,6 +7,8 @@ package rrc
 
 import (
 	"fmt"
+	"regexp"
+	"sync"
 
 	"github.com/gmlewis/go-reticulum/rrc/cbor"
 )
@@ -266,8 +268,59 @@ func DecodeEnvelope(data []byte) (map[any]any, error) {
 	return nil, fmt.Errorf("decoding RRC envelope: expected map, got %T", val)
 }
 
-// MentionRegex returns a simple pattern for detecting @mentions.
-// The actual implementation uses word-boundary-aware matching.
+// MentionRegex returns the pattern that detects an "@nick" mention of nick,
+// reproducing Python's _mention_re (nomadnet RRC.py:27-36):
+//
+//	(?<![A-Za-z0-9_])@<re.escape(nick)>(?![A-Za-z0-9_])   with re.IGNORECASE
+//
+// i.e. the nick must not be preceded or followed by an ASCII word character, so
+// "user@nick" and "@nickname" are NOT mentions of "nick", while " @nick" and
+// "@nick," are.
+//
+// Go's regexp is RE2, which has no lookbehind, so the two lookarounds are encoded
+// as single-rune alternatives that consume the boundary character
+// ((?:^|[^A-Za-z0-9_]) and (?:$|[^A-Za-z0-9_])). The consumed rune must itself be
+// a non-word rune (or the start/end of the text), which makes it equivalent to the
+// reference for a boolean match; TestMentionRegexAgainstPython derives the
+// expected answers from the Python reference itself.
 func MentionRegex(nick string) string {
-	return fmt.Sprintf(`(?i)\b@%v\b`, nick)
+	return `(?i)(?:^|[^A-Za-z0-9_])@` + regexp.QuoteMeta(nick) + `(?:$|[^A-Za-z0-9_])`
+}
+
+// mentionCache caches the compiled mention patterns, mirroring Python's
+// _MENTION_RE_CACHE (RRC.py:30-36), which is cleared once it grows past 32
+// entries so a hub cycling through many nicks cannot grow it without bound.
+var (
+	mentionCacheMu sync.Mutex
+	mentionCache   = map[string]*regexp.Regexp{}
+)
+
+// matchMention reports whether body mentions nick. An empty nick never matches,
+// mirroring Python's _mention_re returning None for a falsy nick (RRC.py:28-29).
+func matchMention(nick, body string) bool {
+	pat := mentionPattern(nick)
+	return pat != nil && pat.MatchString(body)
+}
+
+// mentionPattern returns the compiled mention pattern for nick, or nil for an
+// empty nick or an uncompilable pattern. Compiled patterns are cached per nick
+// like the Python reference.
+func mentionPattern(nick string) *regexp.Regexp {
+	if nick == "" {
+		return nil
+	}
+	mentionCacheMu.Lock()
+	defer mentionCacheMu.Unlock()
+	if pat, ok := mentionCache[nick]; ok {
+		return pat
+	}
+	pat, err := regexp.Compile(MentionRegex(nick))
+	if err != nil {
+		return nil
+	}
+	if len(mentionCache) > 32 {
+		mentionCache = map[string]*regexp.Regexp{}
+	}
+	mentionCache[nick] = pat
+	return pat
 }
