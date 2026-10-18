@@ -126,8 +126,12 @@ type Reticulum struct {
 	interfaceDiscovery       *InterfaceDiscovery
 	interfaceAnnouncer       *InterfaceAnnouncer
 
-	mu                 sync.Mutex
-	shareInstance      bool
+	mu            sync.Mutex
+	shareInstance bool
+	// localHopsDelta is the [reticulum] local_hops_delta option: whether this
+	// node disguises the remaining hop count it reports into transport
+	// (RNS/Reticulum.py:256,510-512).
+	localHopsDelta     bool
 	sharedInstanceType string
 	localInterfacePort int
 	localControlPort   int
@@ -696,6 +700,9 @@ func (r *Reticulum) applyConfig() error {
 				r.localInterfacePort = p
 			}
 		}
+		if v, ok := reticulumSection.GetProperty("local_hops_delta"); ok {
+			r.localHopsDelta = parseBoolLike(v)
+		}
 		if v, ok := reticulumSection.GetProperty("instance_control_port"); ok {
 			if p, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && p > 0 {
 				r.localControlPort = p
@@ -921,6 +928,9 @@ func (r *Reticulum) applyConfig() error {
 
 	r.transport.SetLinkMTUDiscovery(r.linkMTUDiscovery)
 	r.transport.SetUseImplicitProof(r.useImplicitProof)
+	// The hop-count disguise is armed here and drawn when the transport starts,
+	// matching Python's Transport.start (Transport.py:240).
+	r.transport.SetLocalHopsDeltaEnabled(r.localHopsDelta)
 
 	return nil
 }

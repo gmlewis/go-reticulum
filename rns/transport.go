@@ -7,6 +7,7 @@ package rns
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -123,6 +124,9 @@ type Transport interface {
 	SetLinkMTUDiscovery(enabled bool)
 	// SetUseImplicitProof enables or disables implicit identity proofs.
 	SetUseImplicitProof(enabled bool)
+	// SetLocalHopsDeltaEnabled turns the local_hops_delta hop-count disguise on
+	// or off (RNS/Reticulum.py:256,510-512).
+	SetLocalHopsDeltaEnabled(enabled bool)
 	// SetNetworkIdentity sets the network identity used by the transport.
 	SetNetworkIdentity(identity *Identity)
 	// Start starts the transport using the provided storage path.
@@ -395,6 +399,12 @@ type TransportSystem struct {
 	// add packets to the on-disk hashlist (Transport.py:1183) or run the
 	// packet filter (Transport.py:1190).
 	connectedToSharedInstance bool
+
+	// localHopsDeltaEnabled is the [reticulum] local_hops_delta option; the
+	// drawn delta and the byte source live beside it (see drawLocalHopsDelta).
+	localHopsDeltaEnabled bool
+	localHopsDelta        int
+	localHopsDeltaRand    func() byte
 
 	mu sync.Mutex
 
@@ -928,6 +938,10 @@ func (ts *TransportSystem) Start(storagePath string) error {
 	// startup window again; it is set true at the end of Start.
 	ts.ready = false
 	ts.startedAt = time.Now()
+	// Python Transport.start draws the hop-count disguise once per transport
+	// (`if RNS.Reticulum.local_hops_delta(): Transport.local_hops_delta =
+	// (ord(os.urandom(1))%6)+2`, Transport.py:240).
+	ts.drawLocalHopsDelta()
 	// Defer the first announce-cache clean by 60s past startup, matching
 	// Python Transport.start (Transport.py:293 sets cache_last_cleaned to
 	// time.time()+60) so a freshly started transport does not immediately sweep.
@@ -4073,7 +4087,11 @@ func (ts *TransportSystem) relayLinkProof(packet *Packet, iface interfaces.Inter
 	}
 	newRaw := make([]byte, len(packet.Raw))
 	copy(newRaw, packet.Raw)
-	newRaw[1] = byte(packet.Hops)
+	// Transport.py:2258: the same disguise rule as the link-transport forward,
+	// with instance_local_link as the exemption.
+	newRaw[1] = ts.forwardedHopByteLocked(packet,
+		ts.isLocalClientInterface(packet.ReceivingInterface),
+		ts.instanceLocalLink(entry))
 	entry.Validated = true
 	// A validated link-request proof is an active use of the proof's
 	// destination: mark it in-use, mirroring Python Transport.py:2263
@@ -5817,6 +5835,18 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 		packet.Hops--
 	}
 
+	// The packet filter runs here, before anything else touches the packet, at
+	// Python's own call site (Transport.py:1525): everything the port does with
+	// an accepted frame is inside Python's `if Transport.packet_filter(packet):`
+	// branch. The deduplication below is the remember half that follows it
+	// (Transport.py:1528-1545).
+	ts.mu.Lock()
+	filterAccepted := ts.packetFilter(packet)
+	ts.mu.Unlock()
+	if !filterAccepted {
+		return
+	}
+
 	// Duplicate detection. Link-request proofs are exempt from remembering
 	// (Python Transport.py:1526-1545 sets remember_packet_hash=False for
 	// packet_type==PROOF && context==LRPROOF): their acceptance is gated
@@ -5968,6 +5998,12 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 		fromLocalClient := ts.isLocalClientInterface(iface)
 		forLocalClient := packet.PacketType != PacketAnnounce && ts.isForLocalClient(packet)
 		forLocalClientLink := packet.PacketType != PacketAnnounce && ts.isForLocalClientLink(packet)
+		// Python computes proof_for_local_client here too (Transport.py:1555); it
+		// is one of the two halves of to_local_client, which the hop-count
+		// disguise consults before it rewrites an outbound hop byte.
+		ts.mu.Lock()
+		proofForLocalClient := ts.proofForLocalClientLocked(packet)
+		ts.mu.Unlock()
 
 		if ts.Enabled() || fromLocalClient || forLocalClient || forLocalClientLink {
 			// Python Transport.py:1576-1582: a packet with no transport id
@@ -6010,6 +6046,17 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 						newFlags := (Header1 << 6) | (packet.Flags & 0b00001111)
 						newRaw = []byte{newFlags, byte(packet.Hops)}
 						newRaw = append(newRaw, packet.Raw[TruncatedHashLength/8+2:]...)
+					} else if ts.localHopsDelta != 0 {
+						// Python strips the transport header here instead of mangling
+						// the hop byte, so the local client sees a direct HEADER_1
+						// packet carrying the real hop count (Transport.py:1620-1632).
+						// The guard is `to_local_client and local_hops_delta != 0`, and
+						// to_local_client is true by construction in this branch: it is
+						// entered because the path entry reports 0 hops, which is
+						// exactly Python's for_local_client.
+						newFlags := byte((Header1 << 6) | (TransportBroadcast << 4) | (packet.Flags & 0b00001111))
+						newRaw = []byte{newFlags, byte(packet.Hops)}
+						newRaw = append(newRaw, packet.Raw[TruncatedHashLength/8+2:]...)
 					} else {
 						newRaw = make([]byte, len(packet.Raw))
 						copy(newRaw, packet.Raw)
@@ -6047,6 +6094,7 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 					}
 
 					ts.mu.Unlock()
+					newRaw = ts.mangleForwardedRaw(newRaw, fromLocalClient, forLocalClient || proofForLocalClient)
 					ts.logger.Debug("Inbound: transmitting forwarded packet on %v", entry.Interface.Name())
 					// A down interface fast-fails Send with "is not running";
 					// that is expected, and the interface reports its own down
@@ -6115,7 +6163,10 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 						newRaw := make([]byte, len(packet.Raw))
 						copy(newRaw, packet.Raw)
 						if len(newRaw) > 1 {
-							newRaw[1] = byte(packet.Hops)
+							// Transport.py:1736: only a packet that arrived from one of
+							// our clients, for a link that is not wholly local to this
+							// instance, is disguised.
+							newRaw[1] = ts.forwardedHopByteLocked(packet, ts.isLocalClientInterface(iface), ts.instanceLocalLink(linkEntry))
 						}
 						linkEntry.Timestamp = time.Now()
 						ts.mu.Unlock()
@@ -6203,6 +6254,9 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 							ts.logger.Debug("Inbound: delivering proof %x to local client interface %v", packet.PacketHash, ifaceEntry.Name())
 							newRaw := make([]byte, len(packet.Raw))
 							copy(newRaw, packet.Raw)
+							// Python hands this copy on unchanged (it is the proof
+							// arriving home, not one being relayed), so no disguise
+							// applies here.
 							newRaw[1] = byte(packet.Hops)
 							ts.mu.Unlock()
 							if err := ifaceEntry.Send(newRaw); err != nil {
@@ -6218,7 +6272,11 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 			if entry, ok := ts.reverseTable[string(packet.DestinationHash)]; ok {
 				newRaw := make([]byte, len(packet.Raw))
 				copy(newRaw, packet.Raw)
-				newRaw[1] = byte(packet.Hops)
+				// Transport.py:2343: disguise the hop count unless the proof came
+				// from the network or is heading for a client of ours.
+				newRaw[1] = ts.forwardedHopByteLocked(packet,
+					ts.isLocalClientInterface(packet.ReceivingInterface),
+					ts.isLocalClientInterface(entry.ReceivedInterface))
 				ts.mu.Unlock()
 				if err := entry.ReceivedInterface.Send(newRaw); err != nil {
 					ts.logger.Error("Failed to forward proof: %v", err)
@@ -6925,7 +6983,7 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 	}
 
 	if attachedIface != nil {
-		raw := packet.Raw
+		raw := ts.disguiseBroadcastRaw(packet, attachedIface)
 		if ifac, ok := attachedIface.(ifacOutboundHook); ok {
 			processed, err := ifac.ApplyIFACOutbound(raw)
 			if err == nil {
@@ -6982,7 +7040,7 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 		if pathEntry.Hops > 1 && len(pathEntry.NextHop) == TruncatedHashLength/8 {
 			newFlags := byte((Header2 << 6) | (packet.ContextFlag << 5) | (TransportForward << 4) | (packet.DestinationType << 2) | packet.PacketType)
 			newRaw := make([]byte, 0, len(packet.Raw)+TruncatedHashLength/8)
-			newRaw = append(newRaw, newFlags, packet.Raw[1])
+			newRaw = append(newRaw, newFlags, ts.insertHopByte(packet, pathEntry.Interface))
 			newRaw = append(newRaw, pathEntry.NextHop...)
 			newRaw = append(newRaw, packet.Raw[2:]...)
 			raw = newRaw
@@ -6995,10 +7053,15 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 			// receives a Header1 packet it cannot route and drops it.
 			newFlags := byte((Header2 << 6) | (packet.ContextFlag << 5) | (TransportForward << 4) | (packet.DestinationType << 2) | packet.PacketType)
 			newRaw := make([]byte, 0, len(packet.Raw)+TruncatedHashLength/8)
-			newRaw = append(newRaw, newFlags, packet.Raw[1])
+			newRaw = append(newRaw, newFlags, ts.insertHopByte(packet, pathEntry.Interface))
 			newRaw = append(newRaw, pathEntry.NextHop...)
 			newRaw = append(newRaw, packet.Raw[2:]...)
 			raw = newRaw
+		} else if ts.shouldApplyDelta(packet, pathEntry.Interface) {
+			// Python's else branch (Transport.py:1184-1193): the destination looks
+			// directly reachable, so the frame goes out unchanged except that the
+			// hop-count disguise rewrites its hop byte.
+			raw = ts.mangleHops(packet.Raw, ts.localHopsDeltaValue(), false)
 		}
 
 		if ifac, ok := pathEntry.Interface.(ifacOutboundHook); ok {
@@ -7100,7 +7163,7 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 			}
 		}
 
-		raw := packet.Raw
+		raw := ts.disguiseBroadcastRaw(packet, iface)
 		if ifac, ok := iface.(ifacOutboundHook); ok {
 			processed, err := ifac.ApplyIFACOutbound(raw)
 			if err != nil {
@@ -8105,4 +8168,308 @@ func announceExclusionReason(outIface, fromIface interfaces.Interface, localDest
 	default:
 		return "RNS/Transport.py:1259-1269: roaming next hop onto a boundary interface"
 	}
+}
+
+// ---------------------------------------------------------------------------
+// local_hops_delta
+//
+// Python's optional hop-count disguise (RNS/Reticulum.py:256,510-512 enables it;
+// RNS/Transport.py:240 draws the delta; :1361-1367 apply it). When the option is
+// on, every packet this node injects into transport reports a random remaining
+// hop count of 2..7 instead of its real one, and a locally-originated announce
+// gains a transport header naming this node — so an observer on the shared
+// medium cannot learn how far away the node's clients really are.
+// ---------------------------------------------------------------------------
+
+// SetLocalHopsDeltaEnabled turns the local_hops_delta disguise on or off. The
+// Reticulum config layer calls it once from the [reticulum] section; the delta
+// itself is drawn when the transport starts, matching Python's Transport.start.
+func (ts *TransportSystem) SetLocalHopsDeltaEnabled(enabled bool) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.localHopsDeltaEnabled = enabled
+	if !enabled {
+		ts.localHopsDelta = 0
+	}
+}
+
+// SetLocalHopsDeltaRand injects the byte source the delta is drawn from. Tests
+// use it to make the delta deterministic; production leaves it nil and Start
+// draws from the system entropy pool as Python's os.urandom does.
+func (ts *TransportSystem) SetLocalHopsDeltaRand(fn func() byte) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.localHopsDeltaRand = fn
+}
+
+// LocalHopsDelta returns the delta this transport is currently reporting
+// (2..7 when the disguise is on, 0 when it is off).
+func (ts *TransportSystem) LocalHopsDelta() int {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return ts.localHopsDelta
+}
+
+// drawLocalHopsDelta draws the per-transport delta, mirroring Python's
+// `(ord(os.urandom(1))%6)+2` (Transport.py:240). Callers must hold ts.mu.
+func (ts *TransportSystem) drawLocalHopsDelta() {
+	if !ts.localHopsDeltaEnabled {
+		ts.localHopsDelta = 0
+		return
+	}
+	draw := ts.localHopsDeltaRand
+	if draw == nil {
+		var b [1]byte
+		if _, err := rand.Read(b[:]); err != nil {
+			// A transport that cannot read entropy keeps the disguise off
+			// rather than reporting a fixed hop count that would be a
+			// fingerprint in itself.
+			ts.localHopsDelta = 0
+			return
+		}
+		ts.localHopsDelta = int(b[0]%6) + 2
+		return
+	}
+	ts.localHopsDelta = int(draw()%6) + 2
+}
+
+// shouldApplyDelta reports whether the hop-count disguise applies to this
+// packet on this interface. It is the port of RNS/Transport.py:1361-1365:
+//
+//	not owner.is_connected_to_shared_instance and packet.hops == 0
+//	and local_hops_delta != 0
+//	and destination.type not in (PLAIN, GROUP)
+//	and interface not in local_client_interfaces
+//	and not is_shared_instance(interface)
+//
+// A client of a shared instance never disguises, because the shared instance is
+// the node that transports on its behalf; and neither the instance's own
+// spawned clients nor its local server socket are disguised, because those
+// planes are host-local.
+func (ts *TransportSystem) shouldApplyDelta(packet *Packet, iface interfaces.Interface) bool {
+	if iface == nil {
+		return false
+	}
+	if _, isServer := iface.(*interfaces.LocalServerInterface); isServer {
+		return false
+	}
+	ts.mu.Lock()
+	delta := ts.localHopsDelta
+	ts.mu.Unlock()
+	return !ts.ConnectedToSharedInstance() &&
+		packet.Hops == 0 &&
+		delta != 0 &&
+		packet.DestinationType != DestinationPlain &&
+		packet.DestinationType != DestinationGroup &&
+		!ts.isLocalClientInterface(iface)
+}
+
+// mangleHops rewrites a frame's hop-count byte, and, when transportInsert is
+// set, additionally inserts a HEADER_2 transport header naming this node. It is
+// the port of RNS/Transport.py:1367:
+//
+//	not transport_insert: raw[0:1] + pack("!B", hops) + raw[2:]
+//	transport_insert:     pack("!B", raw[0] | HEADER_2<<6 | TRANSPORT<<4)
+//	                      + pack("!B", hops) + Transport.identity.hash + raw[2:]
+func (ts *TransportSystem) mangleHops(raw []byte, hops int, transportInsert bool) []byte {
+	if len(raw) < 2 {
+		return append([]byte(nil), raw...)
+	}
+	out := make([]byte, 0, len(raw)+TruncatedHashLength/8)
+	if transportInsert {
+		out = append(out, raw[0]|byte((Header2<<6)|(TransportForward<<4)))
+	} else {
+		out = append(out, raw[0])
+	}
+	out = append(out, byte(hops))
+	if transportInsert && ts.identity != nil {
+		out = append(out, ts.identity.Hash...)
+	}
+	return append(out, raw[2:]...)
+}
+
+// insertHopByte returns the hop-count byte for a transport header this node is
+// inserting. Python writes the packet's own hop byte unless the disguise
+// applies, in which case it writes the delta —
+// `packet.raw[1:2] if not should_apply_delta(packet, outbound_interface) else
+// struct.pack("!B", Transport.local_hops_delta)` (Transport.py:1154,1179).
+func (ts *TransportSystem) insertHopByte(packet *Packet, iface interfaces.Interface) byte {
+	if ts.shouldApplyDelta(packet, iface) {
+		return byte(ts.localHopsDeltaValue())
+	}
+	return packet.Raw[1]
+}
+
+// localHopsDeltaValue reads the drawn delta without re-taking ts.mu, for callers
+// that already know they are outside the lock. It returns 0 when the disguise is
+// off, which is the value that means "no disguise".
+func (ts *TransportSystem) localHopsDeltaValue() int {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return ts.localHopsDelta
+}
+
+// disguiseBroadcastRaw applies the hop-count disguise to a frame leaving by a
+// broadcast or attached interface. Python applies it in the broadcast loop,
+// which is also the path an attached-interface packet takes, and it re-frames a
+// locally-originated HEADER_1 announce rather than merely re-stamping it: the
+// announce gains a HEADER_2 transport header naming this node, so an observer
+// cannot tell the announce came from the node's own destination rather than
+// through it (Transport.py:1344-1352).
+func (ts *TransportSystem) disguiseBroadcastRaw(packet *Packet, iface interfaces.Interface) []byte {
+	if !ts.shouldApplyDelta(packet, iface) {
+		return packet.Raw
+	}
+	delta := ts.localHopsDeltaValue()
+	insert := false
+	if packet.PacketType == PacketAnnounce {
+		insert = packet.HeaderType == Header1 && ts.identity != nil
+	}
+	return ts.mangleHops(packet.Raw, delta, insert)
+}
+
+// packetFilter decides whether a frame off the wire is processed at all. It is
+// the port of Python's Transport.packet_filter (RNS/Transport.py:1377-1428), and
+// the branch order is the contract: the first rule that matches decides, so a
+// keepalive is never reached by the hashlist rule and an announce is exempt from
+// the transport-id rule.
+//
+//	R1 a client of a shared instance filters nothing — the instance does it
+//	   (Transport.py:1379-1381)
+//	R2 a non-announce packet whose transport id names another transport instance
+//	   is dropped (Transport.py:1383-1388). Without this the node processes
+//	   traffic addressed to a peer instance that merely shares the medium with it
+//	R3 keepalive, resource (part, request, proof), cache-request and channel
+//	   contexts always pass (Transport.py:1390-1396)
+//	R4 a PLAIN destination admits only a non-announce with at most one hop
+//	   (Transport.py:1398-1407), which is what bounds PLAIN flooding
+//	R5 a GROUP destination obeys the same rule (Transport.py:1409-1416)
+//	R6 a hash never seen before passes (Transport.py:1417)
+//	R7 a repeated hash passes only for a SINGLE-destination announce, so the
+//	   announce handler's own replay protection can decide (Transport.py:1418-1427)
+//
+// Callers must hold ts.mu.
+func (ts *TransportSystem) packetFilter(packet *Packet) bool {
+	ts.ensureStateLocked()
+
+	if ts.connectedToSharedInstance {
+		return true
+	}
+
+	if packet.TransportID != nil && packet.PacketType != PacketAnnounce && ts.identity != nil &&
+		!bytes.Equal(packet.TransportID, ts.identity.Hash) {
+		ts.logger.Extreme("Ignored packet %x in transport for other transport instance", packet.PacketHash)
+		return false
+	}
+
+	switch packet.Context {
+	case ContextKeepalive, ContextResource, ContextResourceReq, ContextResourcePrf, ContextCacheRequest, ContextChannel:
+		return true
+	}
+
+	switch packet.DestinationType {
+	case DestinationPlain:
+		if packet.PacketType != PacketAnnounce {
+			if packet.Hops > 1 {
+				ts.logger.Debug("Dropped PLAIN packet %x with %v hops", packet.PacketHash, packet.Hops)
+				return false
+			}
+			return true
+		}
+		ts.logger.Debug("Dropped invalid PLAIN announce packet")
+		return false
+	case DestinationGroup:
+		if packet.PacketType != PacketAnnounce {
+			if packet.Hops > 1 {
+				ts.logger.Debug("Dropped GROUP packet %x with %v hops", packet.PacketHash, packet.Hops)
+				return false
+			}
+			return true
+		}
+		ts.logger.Debug("Dropped invalid GROUP announce packet")
+		return false
+	}
+
+	if _, seen := ts.packetHashes[string(packet.PacketHash)]; !seen {
+		if _, seenPrev := ts.packetHashesPrev[string(packet.PacketHash)]; !seenPrev {
+			return true
+		}
+	}
+
+	if packet.PacketType == PacketAnnounce {
+		if packet.DestinationType == DestinationSingle {
+			return true
+		}
+		ts.logger.Debug("Dropped invalid announce packet")
+		return false
+	}
+
+	ts.logger.Extreme("Filtered packet with hash %x", packet.PacketHash)
+	return false
+}
+
+// instanceLocalLink reports Python's instance_local_link (Transport.py:1557):
+// both the next-hop and the received-on interface of a link are clients of this
+// instance, so the link lives entirely on this host and nothing about it may be
+// disguised.
+func (ts *TransportSystem) instanceLocalLink(entry *LinkEntry) bool {
+	if entry == nil {
+		return false
+	}
+	return ts.isLocalClientInterface(entry.ReceivedInterface) && ts.isLocalClientInterface(entry.OutboundInterface)
+}
+
+// proofForLocalClientLocked reports Python's proof_for_local_client
+// (Transport.py:1555): the reverse table has an entry for this destination whose
+// received interface is one of our own clients, so the proof is on its way home
+// and must not be disguised. Callers must hold ts.mu.
+func (ts *TransportSystem) proofForLocalClientLocked(packet *Packet) bool {
+	entry, ok := ts.reverseTable[string(packet.DestinationHash)]
+	if !ok || entry == nil {
+		return false
+	}
+	return ts.isLocalClientInterface(entry.ReceivedInterface)
+}
+
+// forwardedHopByteLocked returns the hop-count byte for a frame this node is
+// forwarding on behalf of a client. It is Python's inline ternary at the
+// link-transport (Transport.py:1736), link-request-proof (:2258) and proof
+// (:2343) sites:
+//
+//	new_raw += struct.pack("!B", packet.hops if not from_local_client
+//	                       or <local_case> or Transport.local_hops_delta == 0
+//	                       else Transport.local_hops_delta)
+//
+// localCase is instance_local_link at the first two sites and
+// proof_for_local_client at the third. The packet is not disguised when it came
+// from the network rather than from a client of ours, when the traffic is
+// host-local anyway, or when the option is off.
+// All three call sites hold ts.mu, so this reads the delta directly rather than
+// through the locked accessor: taking the lock again there would deadlock the
+// interface read loop that is forwarding the packet.
+func (ts *TransportSystem) forwardedHopByteLocked(packet *Packet, fromLocalClient, localCase bool) byte {
+	if !fromLocalClient || localCase {
+		return byte(packet.Hops)
+	}
+	if ts.localHopsDelta != 0 {
+		return byte(ts.localHopsDelta)
+	}
+	return byte(packet.Hops)
+}
+
+// mangleForwardedRaw applies Python's post-forwarding disguise
+// (Transport.py:1692):
+//
+//	if Transport.local_hops_delta != 0 and from_local_client and not to_local_client:
+//	    new_raw = Transport.mangle_hops(new_raw, Transport.local_hops_delta)
+//
+// A frame that arrived from a client of ours, and is not bound for one of our own
+// clients, leaves advertising the delta instead of the hop count it accumulated
+// on the way in.
+func (ts *TransportSystem) mangleForwardedRaw(raw []byte, fromLocalClient, toLocalClient bool) []byte {
+	delta := ts.localHopsDeltaValue()
+	if delta == 0 || !fromLocalClient || toLocalClient {
+		return raw
+	}
+	return ts.mangleHops(raw, delta, false)
 }

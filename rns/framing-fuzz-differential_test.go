@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gmlewis/go-reticulum/testutils"
 )
@@ -349,4 +350,158 @@ func truncateForLog(s string) string {
 		return s
 	}
 	return s[:limit] + fmt.Sprintf("... (%v bytes total)", len(s))
+}
+
+// ---------------------------------------------------------------------------
+// Differential filter fuzzing
+//
+// The parser is only half of the transport boundary: a frame that parses can
+// still be refused, and refusing the wrong one costs a path, a link or a
+// message. This harness feeds the same corpus to Python's Transport.packet_filter
+// and to the port's, in three states — a first sight, a hash already seen, and a
+// client of a shared instance — and requires the same verdict from each.
+//
+// The remaining halves of the boundary the brief asks for (the resulting path and
+// destination tables, and the bytes each side emits in response) still need a
+// full-transport differential; the filter is what decides whether a frame reaches
+// that machinery at all, so it comes first.
+
+// filterFuzzState is one (frame, state) pair's index into the corpus.
+type filterFuzzState struct {
+	Frame  int  `json:"frame"`
+	Seen   bool `json:"seen"`
+	Shared bool `json:"shared"`
+}
+
+// pythonFilterFuzzScript evaluates the reference filter over the corpus.
+const pythonFilterFuzzScript = `
+import json, sys, types
+import RNS
+from RNS import Transport
+from RNS.Packet import Packet as PacketCls
+
+req = json.load(open(sys.argv[1]))
+Transport.identity = RNS.Identity.from_bytes(bytes(range(64)))
+Transport.local_hops_delta = 0
+Transport.local_client_interfaces = []
+
+out = []
+for st in req["states"]:
+    frame = bytes.fromhex(req["frames"][st["frame"]])
+    Transport.owner = types.SimpleNamespace(is_connected_to_shared_instance=st["shared"])
+    p = PacketCls(None, frame)
+    if not p.unpack():
+        out.append({"accepted": None, "err": "unparseable"})
+        continue
+    Transport.packet_hashlist = set()
+    Transport.packet_hashlist_prev = set()
+    if st["seen"]:
+        Transport.packet_hashlist.add(p.packet_hash)
+    try:
+        out.append({"accepted": bool(Transport.packet_filter(p)), "err": ""})
+    except Exception as e:
+        out.append({"accepted": None, "err": "%s: %s" % (type(e).__name__, e)})
+print(json.dumps(out))
+`
+
+// TestFramingDifferentialFilterFuzz requires the port's filter to reach the same
+// verdict as the reference over the whole fuzz corpus, in three states.
+func TestFramingDifferentialFilterFuzz(t *testing.T) {
+	t.Parallel()
+	testutils.SkipIfNoPythonRNS(t)
+
+	corpus := fuzzCorpus(t)
+	frames := make([]string, len(corpus))
+	for i, frame := range corpus {
+		frames[i] = hex.EncodeToString(frame)
+	}
+
+	var states []filterFuzzState
+	for _, seen := range []bool{false, true} {
+		for _, shared := range []bool{false, true} {
+			for i := range corpus {
+				states = append(states, filterFuzzState{Frame: i, Seen: seen, Shared: shared})
+			}
+		}
+	}
+
+	reqData := struct {
+		Frames []string          `json:"frames"`
+		States []filterFuzzState `json:"states"`
+	}{Frames: frames, States: states}
+	var pyStates []struct {
+		Accepted *bool  `json:"accepted"`
+		Err      string `json:"err"`
+	}
+	runPythonFilterFuzz(t, pythonFilterFuzzScript, reqData, &pyStates)
+	if len(pyStates) != len(states) {
+		t.Fatalf("python returned %v verdicts for %v states", len(pyStates), len(states))
+	}
+
+	compared, refused := 0, 0
+	for i, st := range states {
+		if pyStates[i].Accepted == nil {
+			// The frame does not parse at all, which the parser harness above
+			// already compares field by field; nothing reaches the filter.
+			if pyStates[i].Err != "unparseable" {
+				t.Fatalf("python failed on corpus frame %v: %v", st.Frame, pyStates[i].Err)
+			}
+			continue
+		}
+		ts := NewTransportSystem(nil)
+		ts.identity = mustTestNewIdentity(t, true)
+		ts.identity.Hash = filterFuzzIdentityHash
+		ts.SetConnectedToSharedInstance(st.Shared)
+		packet := NewPacketFromRaw(append([]byte(nil), corpus[st.Frame]...))
+		if err := packet.Unpack(); err != nil {
+			continue
+		}
+		ts.mu.Lock()
+		ts.ensureStateLocked()
+		if st.Seen {
+			ts.packetHashes[string(packet.PacketHash)] = time.Now()
+		}
+		got := ts.packetFilter(packet)
+		ts.mu.Unlock()
+
+		if got != *pyStates[i].Accepted {
+			t.Errorf("filter verdict differs for corpus frame %v (seen=%v shared=%v):\n  go     = %v\n  python = %v\n  frame  = %x",
+				st.Frame, st.Seen, st.Shared, got, *pyStates[i].Accepted, corpus[st.Frame])
+			continue
+		}
+		compared++
+		if !got {
+			refused++
+		}
+	}
+	t.Logf("filter fuzz: %v verdicts compared (%v refusals) across a %v-frame corpus in 4 states",
+		compared, refused, len(corpus))
+}
+
+// filterFuzzIdentityHash is the identity whose hash the Python script uses, so
+// that "the transport id is ours" means the same thing on both sides.
+var filterFuzzIdentityHash = func() []byte {
+	h, err := hex.DecodeString("8f40c5adb68f25624ae5b214ea767a6ec94d829d3d7b5e1ad1ba6f3e2138285f")
+	if err != nil {
+		panic(err)
+	}
+	return h
+}()
+
+// runPythonFilterFuzz runs the filter script over a corpus and decodes its verdicts.
+func runPythonFilterFuzz(t *testing.T, script string, req any, out any) {
+	t.Helper()
+	dir := testutils.TempDir(t, tempDirPrefix)
+	path := filepath.Join(dir, "filter-fuzz.json")
+	data, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal filter fuzz request: %v", err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("write filter fuzz request: %v", err)
+	}
+	stdout := testutils.RunPython(t, script, path)
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), out); err != nil {
+		t.Fatalf("decode python filter verdicts: %v\nraw stdout:\n%s", err, truncateForLog(stdout))
+	}
 }
