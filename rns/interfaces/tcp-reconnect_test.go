@@ -82,10 +82,23 @@ func reconnectScenario(t *testing.T) bool {
 	})
 
 	// While no listener is up, every reconnect attempt fails and onConnect
-	// must not fire.
+	// must not fire. The reservation can still be lost in this window — the
+	// port was released to the kernel's ephemeral pool by
+	// reserveUnboundTCPPort, so a parallel test's probe or bind can be handed
+	// it — and the client's own state tells the two cases apart: the hook is
+	// only ever invoked after a successful dial (reconnectLoop), so a hook
+	// that fires with the client still down is a broken re-announce contract
+	// and stays fatal, while a hook that fires with the client up means a
+	// stranger is listening on the reserved port and the scenario restarts on
+	// a fresh one. CI failed on exactly this: three refused dials, then a
+	// fourth that connected 150ms in, while this test's listener was still
+	// 100ms away from binding.
 	select {
 	case <-connected:
-		t.Fatalf("onConnect fired before the interface was connected")
+		if !client.Status() {
+			t.Fatalf("onConnect fired before the interface was connected")
+		}
+		return false
 	case <-time.After(250 * time.Millisecond):
 	}
 
