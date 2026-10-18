@@ -32,6 +32,13 @@ type RRCManager struct {
 	historyPerRoomCap    int
 	filterLoadedHistory  bool
 	ephemeralNoticesSecs int
+	// maxAcceptedResourceBytes is the largest incoming resource this client will
+	// accept, from the application's [rrc] max_accepted_resource_size. Python reads
+	// the app's rrc_max_accepted_resource_size at advertisement time
+	// (RRCHub._resource_advertised), so the value lives on the manager and is read
+	// per advertisement — which also means a hub created later inherits it.
+	maxAcceptedResourceBytes    int
+	maxAcceptedResourceBytesSet bool
 
 	lock            sync.Mutex
 	changeCallback  func()
@@ -52,11 +59,12 @@ type RRCManager struct {
 // NewManager creates a new RRCManager rooted at the given storage path.
 func NewManager(storagePath string, identityHashFn func() []byte) *RRCManager {
 	return &RRCManager{
-		storagePath:          storagePath,
-		identityHashFn:       identityHashFn,
-		Hubs:                 make([]*RRCHub, 0),
-		filterLoadedHistory:  true,
-		ephemeralNoticesSecs: NoticeTimeout,
+		storagePath:              storagePath,
+		identityHashFn:           identityHashFn,
+		Hubs:                     make([]*RRCHub, 0),
+		filterLoadedHistory:      true,
+		ephemeralNoticesSecs:     NoticeTimeout,
+		maxAcceptedResourceBytes: DefaultMaxAcceptedResourceBytes,
 	}
 }
 
@@ -97,6 +105,39 @@ func (m *RRCManager) EphemeralNotices() int {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 	return m.ephemeralNoticesSecs
+}
+
+// DefaultMaxAcceptedResourceBytes is the incoming-resource cap a client uses when
+// the application configures none. Python's fallback is the same literal
+// (RRC.py:1215: getattr(app, "rrc_max_accepted_resource_size", 262144)), and the
+// shipped [rrc] max_accepted_resource_size = 256 (KB) resolves to it.
+const DefaultMaxAcceptedResourceBytes = 262144
+
+// MaxAcceptedResourceBytes returns the largest incoming resource this client will
+// accept, in bytes. A non-positive value means every resource is refused, which is
+// Python's rule too (RRC.py:1215-1218).
+//
+// The configured-ness is tracked separately from the value because zero is itself a
+// meaningful configuration: `max_accepted_resource_size = 0` resolves to a zero-byte
+// cap that refuses everything (NomadNetworkApp.py:998-1002), while an unset manager
+// takes the reference default.
+func (m *RRCManager) MaxAcceptedResourceBytes() int {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	if !m.maxAcceptedResourceBytesSet {
+		return DefaultMaxAcceptedResourceBytes
+	}
+	return m.maxAcceptedResourceBytes
+}
+
+// SetMaxAcceptedResourceBytes sets the incoming-resource cap in bytes. The
+// application derives it from [rrc] max_accepted_resource_size, which Python reads
+// in kilobytes and multiplies by 1024 (NomadNetworkApp.py:998-1002).
+func (m *RRCManager) SetMaxAcceptedResourceBytes(bytes int) {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	m.maxAcceptedResourceBytes = bytes
+	m.maxAcceptedResourceBytesSet = true
 }
 
 // SetTransport stamps the RNS transport onto the manager and all existing

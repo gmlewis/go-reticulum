@@ -2342,7 +2342,6 @@ func (h *RRCHub) logSendDrop(what string, err error) {
 // HandleData decodes a CBOR-encoded RRC envelope and dispatches it
 // to the appropriate handler based on the message type.
 func (h *RRCHub) HandleData(data []byte) {
-	log.Printf("DEBUG gorrcd HandleData: %v bytes: %x", len(data), data[:min(len(data), 40)])
 	// Any inbound envelope is proof the hub link is alive; the hub-liveness
 	// watchdog (startHubLivenessLoop) reads this clock, and it also clears any
 	// outstanding probe: whatever the hub just said, it is answering.
@@ -2350,7 +2349,10 @@ func (h *RRCHub) HandleData(data []byte) {
 	h.livenessProbeSent.Store(0)
 	env, err := DecodeEnvelope(data)
 	if err != nil {
-		log.Printf("DEBUG gorrcd HandleData decode failed: %v", err)
+		// A malformed envelope is worth reporting — it means the peer sent bytes
+		// this client cannot read — but it is a client-side decode failure, not a
+		// protocol event the hub will resend.
+		log.Printf("[RRC %v] could not decode envelope: %v", h.Name, err)
 		return
 	}
 
@@ -4016,8 +4018,12 @@ type resourceExpectation struct {
 }
 
 // resourceAdvertised mirrors Python RRCHub._resource_advertised: it accepts an
-// incoming resource advertisement when its data size is within the 262144-byte
-// cap, and rejects larger transfers.
+// incoming resource advertisement when its data size is within the cap the
+// application configured, and rejects larger transfers. The cap is
+// [rrc] max_accepted_resource_size, read per advertisement so a hub created after
+// the config was applied still honours it (Python reads
+// app.rrc_max_accepted_resource_size at this same point, RRC.py:1206-1223). A
+// non-positive cap refuses every resource, as Python's does.
 func (h *RRCHub) resourceAdvertised(adv *rns.ResourceAdvertisement) bool {
 	if adv == nil {
 		return false
@@ -4026,7 +4032,15 @@ func (h *RRCHub) resourceAdvertised(adv *rns.ResourceAdvertisement) bool {
 	if size == 0 {
 		size = adv.T
 	}
-	return size <= 262144
+	maxSize := int64(DefaultMaxAcceptedResourceBytes)
+	if mgr := h.Manager; mgr != nil {
+		maxSize = int64(mgr.MaxAcceptedResourceBytes())
+	}
+	if maxSize <= 0 || size > maxSize {
+		log.Printf("[RRC %v] Rejecting resource transfer of %v bytes (max accepted is %v bytes)", h.Name, size, maxSize)
+		return false
+	}
+	return true
 }
 
 // resourceConcluded mirrors Python RRCHub._resource_concluded: on a completed
