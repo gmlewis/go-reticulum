@@ -56,6 +56,8 @@ func receiverFromSender(t *testing.T, sender *Resource, link *Link) *Resource {
 		timeoutFactor:     link.trafficTimeoutFactor,
 		partTimeoutFactor: ResourcePartTimeoutFactor,
 		senderGraceTime:   ResourceSenderGraceTime,
+
+		consecutiveCompletedHeight: -1,
 	}
 	r.parts = make([]*ResourcePart, r.totalParts)
 	r.hashmap = make([][]byte, r.totalParts)
@@ -85,6 +87,15 @@ func deliverPart(t *testing.T, r, sender *Resource, idx int, now time.Time) {
 			if r.parts[i] != nil && r.parts[i].ReceivedData == nil {
 				r.parts[i].ReceivedData = partData
 				r.receivedCount++
+				if i == r.consecutiveCompletedHeight+1 {
+					r.consecutiveCompletedHeight = i
+				}
+				for cp := r.consecutiveCompletedHeight + 1; cp < len(r.parts); cp++ {
+					if r.parts[cp] == nil || r.parts[cp].ReceivedData == nil {
+						break
+					}
+					r.consecutiveCompletedHeight = cp
+				}
 			}
 			break
 		}

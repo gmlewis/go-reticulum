@@ -381,6 +381,10 @@ func Accept(packet *Packet, callback func(*Resource), startedCallback func(*Reso
 		windowFlexibility: ResourceWindowFlexibility,
 		hasMetadata:       adv.HasMetadata,
 
+		// Python Resource.accept (Resource.py:211,214): the map starts as the
+		// advertisement's one segment and no part has arrived yet.
+		consecutiveCompletedHeight: -1,
+
 		// Watchdog / loss-recovery state (Python Resource.accept
 		// Resource.py:172-197 + __init__ Resource.py:341-365).
 		maxRetries:          ResourceMaxRetries,
@@ -418,6 +422,9 @@ func Accept(packet *Packet, callback func(*Resource), startedCallback func(*Reso
 		mh := copyBytes(adv.M[i : i+ResourceMapHashLen])
 		r.hashmap[idx] = mh
 		r.parts[idx].MapHash = mh
+		// Python accept fills the map through hashmap_update (Resource.py:232),
+		// which counts each slot that was previously unknown.
+		r.hashmapHeight++
 	}
 
 	l.mu.Lock()
@@ -464,6 +471,19 @@ type Resource struct {
 	hashmap       [][]byte
 	totalParts    int
 	receivedCount int
+
+	// hashmapHeight is how many hashmap entries are known to the receiver. A
+	// resource advertisement carries one segment of the map, so the entries
+	// beyond it stay nil until the sender answers a HASHMAP_IS_EXHAUSTED
+	// request with RESOURCE_HMU. The value is also the index+1 of the last
+	// known map hash that an exhausted request quotes to the sender
+	// (Python Resource.hashmap_height, Resource.py:211,494,966).
+	hashmapHeight int
+	// consecutiveCompletedHeight is the highest part index from a run of
+	// parts received without a gap, or -1 when none has arrived. request_next
+	// starts its scan just past it, so a transfer never re-requests the prefix
+	// it already holds (Python consecutive_completed_height, Resource.py:214).
+	consecutiveCompletedHeight int
 
 	window int
 	// receiverMinConsecutiveHeight is the sender's record of how far the receiver has
@@ -957,40 +977,151 @@ func (r *Resource) requestNextLockedAt(now time.Time) error {
 		return nil
 	}
 
-	requestedHashes := make([]byte, 0, r.window*ResourceMapHashLen)
-	requestedParts := 0
-	for i := 0; i < r.totalParts && requestedParts < r.window; i++ {
-		if r.parts[i] == nil || r.parts[i].ReceivedData != nil {
-			continue
-		}
-		if len(r.hashmap[i]) != ResourceMapHashLen {
-			continue
-		}
-		requestedHashes = append(requestedHashes, r.hashmap[i]...)
-		requestedParts++
-	}
-
-	if len(requestedHashes) == 0 {
+	// Python Resource.request_next (Resource.py:941) does nothing while a
+	// hashmap update is outstanding: the parts past the advertised segment
+	// cannot be named until the sender answers.
+	if r.waitingForHmu {
 		return nil
 	}
 
-	requestData := make([]byte, 0, 1+len(r.hash)+len(requestedHashes))
-	requestData = append(requestData, 0x00)
+	// Scan at most one window of part positions, starting at the first
+	// position that has not been received yet (Resource.py:944-961). An
+	// unknown map hash means the advertised segment ended here: quote the
+	// last known hash and ask the sender for the next segment instead of
+	// silently skipping past it, which used to stall the transfer.
+	r.outstandingParts = 0
+	hashmapExhausted := false
+	requestedHashes := make([]byte, 0, r.window*ResourceMapHashLen)
+	requestedParts := 0
+	start := r.consecutiveCompletedHeight + 1
+	if start < 0 {
+		start = 0
+	}
+	end := min(start+r.window, len(r.parts))
+	for i := start; i < end; i++ {
+		if r.parts[i] == nil || r.parts[i].ReceivedData == nil {
+			if i < len(r.hashmap) && len(r.hashmap[i]) == ResourceMapHashLen {
+				requestedHashes = append(requestedHashes, r.hashmap[i]...)
+				r.outstandingParts++
+				requestedParts++
+			} else {
+				hashmapExhausted = true
+			}
+		}
+		if requestedParts >= r.window || hashmapExhausted {
+			break
+		}
+	}
+
+	if len(requestedHashes) == 0 && !hashmapExhausted {
+		return nil
+	}
+
+	marker := byte(0x00) // HASHMAP_IS_NOT_EXHAUSTED
+	var lastMapHash []byte
+	if hashmapExhausted {
+		marker = 0xFF // HASHMAP_IS_EXHAUSTED
+		if r.hashmapHeight < 1 || r.hashmapHeight > len(r.hashmap) || len(r.hashmap[r.hashmapHeight-1]) != ResourceMapHashLen {
+			return fmt.Errorf("resource HMU: no known map hash to resume from")
+		}
+		lastMapHash = r.hashmap[r.hashmapHeight-1]
+		r.waitingForHmu = true
+	}
+
+	requestData := make([]byte, 0, 1+len(lastMapHash)+len(r.hash)+len(requestedHashes))
+	requestData = append(requestData, marker)
+	requestData = append(requestData, lastMapHash...)
 	requestData = append(requestData, r.hash...)
 	requestData = append(requestData, requestedHashes...)
 
 	p := NewPacket(r.link, requestData)
 	p.Context = ContextResourceReq
 	if err := p.Send(); err != nil {
+		r.waitingForHmu = false
 		return err
 	}
 
 	// Python request_next records how many parts it just asked for (Resource.py:942
 	// resets outstanding_parts, :955 increments it per wanted hash). ReceivePart's
 	// gate reads it to send one request per round instead of one per part.
-	r.outstandingParts = requestedParts
 	r.lastActivity = now
 	return nil
+}
+
+// HashmapUpdate applies a RESOURCE_HMU payload: the resource hash followed by
+// the msgpack encoding of [segment, hashmap-segment-bytes]
+// (Resource.py:483-505). The update names the parts the receiver could not see
+// past the advertisement's one map segment, so it extends the local hashmap and
+// immediately asks for the newly named parts.
+func (r *Resource) HashmapUpdate(plaintext []byte) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.hashmapUpdateLocked(plaintext, time.Now())
+}
+
+// hashmapUpdateLocked is HashmapUpdate's core assuming r.mu is held.
+func (r *Resource) hashmapUpdateLocked(plaintext []byte, now time.Time) error {
+	// Python Resource.hashmap_update_packet (Resource.py:481-488): a response to
+	// an update this side never asked for, or one arriving for a failed
+	// transfer, is ignored.
+	if r.status == ResourceStatusFailed || !r.waitingForHmu {
+		return nil
+	}
+	hashLen := HashLength / 8
+	if len(plaintext) < hashLen+1 {
+		return fmt.Errorf("resource HMU packet too short")
+	}
+	r.lastActivity = now
+	r.retriesLeft = r.maxRetries
+
+	unpacked, err := msgpack.Unpack(plaintext[hashLen:])
+	if err != nil {
+		return fmt.Errorf("failed to unpack resource HMU: %w", err)
+	}
+	update, ok := unpacked.([]any)
+	if !ok || len(update) < 2 {
+		return fmt.Errorf("malformed resource HMU")
+	}
+	var segment int
+	switch v := update[0].(type) {
+	case int:
+		segment = v
+	case int64:
+		segment = int(v)
+	case uint64:
+		segment = int(v)
+	default:
+		return fmt.Errorf("malformed resource HMU segment")
+	}
+	hashmap, ok := update[1].([]byte)
+	if !ok {
+		return fmt.Errorf("malformed resource HMU hashmap")
+	}
+
+	// Python hashmap_update (Resource.py:490-505): apply the segment, count
+	// each previously unknown slot, and refuse an empty update.
+	r.status = ResourceStatusTransferring
+	hashes := len(hashmap) / ResourceMapHashLen
+	for i := 0; i < hashes; i++ {
+		idx := i + segment*hashmapMaxLen
+		if idx < 0 || idx >= len(r.hashmap) {
+			break
+		}
+		if r.hashmap[idx] == nil {
+			r.hashmapHeight++
+		}
+		r.hashmap[idx] = copyBytes(hashmap[i*ResourceMapHashLen : (i+1)*ResourceMapHashLen])
+	}
+	if hashes < 1 {
+		if r.link != nil && r.link.logger != nil {
+			r.link.logger.Error("Invalid HMU received, cancelling transfer for %x", r.hash)
+		}
+		r.cancelLocked()
+		return fmt.Errorf("empty resource hashmap update")
+	}
+
+	r.waitingForHmu = false
+	return r.requestNextLockedAt(now)
 }
 
 // hmuSegmentForMapHash locates the hashmap segment to reply with, mirroring the sender
@@ -1270,13 +1401,33 @@ func (r *Resource) ReceivePart(packet *Packet) error {
 	newlyFilled := false
 	var progressCB func(*Resource)
 
-	// Check if part matches any in our hashmap
-	for i, mh := range r.hashmap {
-		if bytes.Equal(mh, partHash) {
+	// Check the window of map hashes Python checks (Resource.py:868-878):
+	// from the first still-missing position, at most one window wide. Bounding
+	// the scan both matches the reference and stops an already-received part
+	// whose map hash appears again later (a repeated chunk in the payload) from
+	// capturing the match and leaving the real part unfillable.
+	searchStart := r.consecutiveCompletedHeight
+	if searchStart < 0 {
+		searchStart = 0
+	}
+	for i := searchStart; i < min(searchStart+r.window, len(r.hashmap)); i++ {
+		if bytes.Equal(r.hashmap[i], partHash) {
 			matched = true
 			if r.parts[i] != nil && r.parts[i].ReceivedData == nil {
 				r.parts[i].ReceivedData = partData
 				r.receivedCount++
+				// Advance the consecutive-completion pointer exactly as Python
+				// receive_part does (Resource.py:881-887): a gap-free run from
+				// the height is what request_next starts its scan after.
+				if i == r.consecutiveCompletedHeight+1 {
+					r.consecutiveCompletedHeight = i
+				}
+				for cp := r.consecutiveCompletedHeight + 1; cp < len(r.parts); cp++ {
+					if r.parts[cp] == nil || r.parts[cp].ReceivedData == nil {
+						break
+					}
+					r.consecutiveCompletedHeight = cp
+				}
 				// A part that was actually outstanding has arrived, so one
 				// fewer request is in flight. Python does the same subtraction
 				// in receive_part (Resource.py:880) and it is what makes the
@@ -1551,8 +1702,16 @@ func hashmapSegment(hashmap [][]byte, segment int) [][]byte {
 // construction Python uses both in __advertise_job and in the ADVERTISED
 // watchdog resend (Resource.py:521, 584).
 func (r *Resource) buildAdvertisementPacket() (*Packet, error) {
-	hashmapRaw := make([]byte, 0, len(r.hashmap)*ResourceMapHashLen)
-	for _, mh := range r.hashmap {
+	// An advertisement carries only the first hashmap segment (Python
+	// ResourceAdvertisement.pack with its default segment=0,
+	// Resource.py:1319-1324). A resource of more than HASHMAP_MAX_LEN parts
+	// therefore advertises at most HASHMAP_MAX_LEN map hashes; the receiver
+	// asks for the rest with a HASHMAP_IS_EXHAUSTED request and the sender
+	// answers with RESOURCE_HMU. Emitting the whole map, as this port did,
+	// made an advertisement far larger than the link MDU allows.
+	segment := hashmapSegment(r.hashmap, 0)
+	hashmapRaw := make([]byte, 0, len(segment)*ResourceMapHashLen)
+	for _, mh := range segment {
 		hashmapRaw = append(hashmapRaw, mh...)
 	}
 
@@ -1561,9 +1720,9 @@ func (r *Resource) buildAdvertisementPacket() (*Packet, error) {
 		D:           r.uncompressedSize,
 		H:           r.hash,
 		R:           r.randomHash,
-		O:           r.hash, // Single segment for now
+		O:           r.originalHash,
 		N:           r.totalParts,
-		L:           1, // Total segments
+		L:           1, // Byte payloads are a single segment (Resource.py:319-323)
 		I:           1, // Segment index
 		Q:           r.requestID,
 		M:           hashmapRaw,

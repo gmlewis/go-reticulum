@@ -878,6 +878,29 @@ func (l *Link) receive(packet *Packet) {
 		}
 		l.mu.Unlock()
 
+	case ContextResourceHmu:
+		// Python Link.receive (Link.py:1096-1102): a hashmap update names the
+		// resource with its leading hash and is applied to the matching
+		// incoming resource.
+		hashLen := HashLength / 8
+		if len(packet.Data) < hashLen {
+			return
+		}
+		resourceHash := packet.Data[:hashLen]
+		l.mu.Lock()
+		for _, r := range l.incomingResources {
+			if !bytes.Equal(r.hash, resourceHash) {
+				continue
+			}
+			go func(resource *Resource, data []byte) {
+				if err := resource.HashmapUpdate(data); err != nil {
+					l.logger.Debug("Failed to apply resource HMU: %v", err)
+				}
+			}(r, append([]byte(nil), packet.Data...))
+			break
+		}
+		l.mu.Unlock()
+
 	case ContextResource:
 		l.mu.Lock()
 		for _, r := range l.incomingResources {
