@@ -1406,6 +1406,44 @@ func (r *Resource) prove() error {
 	return p.Send()
 }
 
+// resourceAdvertisementOverhead mirrors ResourceAdvertisement.OVERHEAD
+// (Resource.py:1245): the per-advertisement overhead subtracted from the MDU before
+// dividing it into map-hash slots.
+const resourceAdvertisementOverhead = 134
+
+// linkMDUConstant is Python's Link.MDU class attribute (Link.py:73): the MDU derived from
+// the STATIC Reticulum MTU, not from a negotiated or per-interface MTU. It is what sizes a
+// resource advertisement's hashmap segment, so the port has to use the same constant to
+// segment identically.
+const linkMDUConstant = (MTU-IFACMinSize-HeaderMinSize-TokenOverhead)/AES128BlockSize*AES128BlockSize - 1
+
+// hashmapMaxLen is the number of map hashes one resource advertisement carries:
+// floor((Link.MDU - OVERHEAD) / MAPHASH_LEN) (Resource.py:1246). With the shipped
+// constants this is 74, matching the reference.
+const hashmapMaxLen = (linkMDUConstant - resourceAdvertisementOverhead) / ResourceMapHashLen
+
+// hashmapSegment returns the hashes advertisement segment carries, mirroring
+// ResourceAdvertisement.pack's slice (Resource.py:1319-1324):
+//
+//	start = segment*HASHMAP_MAX_LEN
+//	end   = min((segment+1)*HASHMAP_MAX_LEN, totalParts)
+//
+// A segment past the end yields nothing. The full multi-segment protocol (the receiver
+// asking for a later segment via RESOURCE_HMU) is not implemented yet; this is the
+// arithmetic that advertisement building will use, pinned against the reference so the
+// wire change cannot land on a mistaken slice.
+func hashmapSegment(hashmap [][]byte, segment int) [][]byte {
+	if segment < 0 {
+		return nil
+	}
+	start := segment * hashmapMaxLen
+	if start >= len(hashmap) {
+		return nil
+	}
+	end := min((segment+1)*hashmapMaxLen, len(hashmap))
+	return hashmap[start:end]
+}
+
 // buildAdvertisementPacket constructs (without sending) the resource
 // advertisement packet, mirroring the ResourceAdvertisement(self).pack()
 // construction Python uses both in __advertise_job and in the ADVERTISED
