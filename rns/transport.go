@@ -8188,9 +8188,13 @@ func (ts *TransportSystem) SetLocalHopsDeltaEnabled(enabled bool) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	ts.localHopsDeltaEnabled = enabled
-	if !enabled {
-		ts.localHopsDelta = 0
-	}
+	// Draw (or clear) the delta here as well as at Start. The config layer applies
+	// [reticulum] local_hops_delta from applyConfig, which runs AFTER Start has already
+	// drawn, so drawing only in Start left the disguise inert: the flag was on, the
+	// delta stayed 0, and shouldApplyDelta — which requires a non-zero delta — never
+	// fired. Python draws once at start because it reads the option there; a setter that
+	// can be called later has to draw when it turns the option on.
+	ts.drawLocalHopsDelta()
 }
 
 // SetLocalHopsDeltaRand injects the byte source the delta is drawn from. Tests
