@@ -1978,23 +1978,36 @@ func (l *Link) handleRequest(requestID []byte, unpackedRequest []any) {
 
 			if response != nil {
 				l.logger.Verbose("Sending response for request %x", requestID)
+				// Python Link.handle_request (Link.py:837-846): a [data, metadata]
+				// response is sent as a Resource carrying that metadata, whatever
+				// its size. The nomadnet node uses this to attach {"name": ...} to
+				// a served file so the browser can save it under the name the
+				// server chose rather than the request path.
+				var responseMetadata map[string][]byte
+				if pair, ok := response.([]any); ok && len(pair) == 2 {
+					if m, ok := pair[1].(map[string][]byte); ok {
+						responseMetadata = m
+						response = pair[0]
+					}
+				}
 				packedResponse, err := msgpack.Pack([]any{requestID, response})
 				if err != nil {
 					l.logger.Error("Failed to pack response: %v", err)
 					return
 				}
 
-				if len(packedResponse) <= l.mdu {
+				if responseMetadata == nil && len(packedResponse) <= l.mdu {
 					p := NewPacketWithTransport(l.transport, l, packedResponse)
 					p.Context = ContextResponse
 					if err := l.send(p); err != nil {
 						l.logger.Error("Failed to send response packet: %v", err)
 					}
 				} else {
-					// Send as resource
+					// Send as resource (a metadata-bearing response always is one).
 					r, err := NewResourceWithOptions(packedResponse, l, ResourceOptions{
 						AutoCompress:      handler.AutoCompress,
 						AutoCompressLimit: handler.AutoCompressLimit,
+						Metadata:          responseMetadata,
 					})
 					if err != nil {
 						l.logger.Error("Failed to create response resource: %v", err)

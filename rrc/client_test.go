@@ -2465,3 +2465,48 @@ func TestRRCManagerSetTransportStampsHubs(t *testing.T) {
 		t.Error("hub added after SetTransport lost the transport")
 	}
 }
+
+// TestClearMessagesDropsHistoryAndMarkers pins Python RRCHub.clear_messages
+// (RRC.py:296-304): /clear empties the buffer, drops the room's unread and
+// mention markers, and deletes its on-disk history so the next restart does not
+// reload the cleared lines.
+func TestClearMessagesDropsHistoryAndMarkers(t *testing.T) {
+	t.Parallel()
+
+	dir := tempDir(t)
+	hub := NewHub(nil, []byte{0x01, 0x02, 0x03, 0x04}, "", "")
+	hub.savedHistoryPath = dir
+
+	hub.SendMessage("general", "keep me")
+	hub.lock.Lock()
+	hub.UnreadRooms["general"] = true
+	hub.MentionRooms["general"] = true
+	hub.lock.Unlock()
+
+	// Write a history file with the room's line.
+	hub.appendHistory("general", hub.Messages["general"][0])
+	path := hub.historyPath("general")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("history file was not written: %v", err)
+	}
+
+	hub.ClearMessages("general")
+
+	hub.lock.Lock()
+	msgs := len(hub.Messages["general"])
+	unread := hub.UnreadRooms["general"]
+	mention := hub.MentionRooms["general"]
+	hub.lock.Unlock()
+	if msgs != 0 {
+		t.Errorf("messages after clear = %v, want 0", msgs)
+	}
+	if unread {
+		t.Error("unread marker survived /clear")
+	}
+	if mention {
+		t.Error("mention marker survived /clear")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("history file survived /clear: stat err = %v", err)
+	}
+}

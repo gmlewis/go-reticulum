@@ -52,7 +52,7 @@ func newHMUReceiver(t *testing.T, data []byte, knownParts, window int) (*Resourc
 	r.hashmap = make([][]byte, parts)
 
 	plaintext := make([][]byte, parts)
-	for i := 0; i < parts; i++ {
+	for i := range parts {
 		start := i * sdu
 		end := min((i+1)*sdu, len(stream))
 		plaintext[i] = copyBytes(stream[start:end])
@@ -193,7 +193,7 @@ func TestReceiverAssemblesAfterHashmapUpdate(t *testing.T) {
 	}
 	// The first advertised segment has already been received: that is what
 	// puts the receiver at the point where the map runs out.
-	for i := 0; i < knownParts; i++ {
+	for i := range knownParts {
 		r.parts[i].ReceivedData = plaintext[i]
 	}
 	r.receivedCount = knownParts

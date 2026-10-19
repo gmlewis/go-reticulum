@@ -31,7 +31,7 @@ func advertisedResource(t *testing.T, parts int) *Resource {
 		originalHash: bytes.Repeat([]byte{0xA5}, 32),
 	}
 	r.hash = bytes.Repeat([]byte{0x5A}, 32)
-	for i := 0; i < parts; i++ {
+	for i := range parts {
 		mh := []byte{byte(i), byte(i >> 8), byte(i >> 16), 0xC3}
 		r.hashmap[i] = mh
 		r.parts[i] = &ResourcePart{Index: i, MapHash: mh}

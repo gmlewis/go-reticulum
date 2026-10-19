@@ -437,11 +437,14 @@ func Accept(packet *Packet, callback func(*Resource), startedCallback func(*Reso
 		go startedCallback(r)
 	}
 
-	go func() {
-		if err := r.RequestNext(); err != nil {
-			r.link.logger.Debug("Failed to request initial resource parts: %v", err)
-		}
-	}()
+	// Python Resource.accept requests the initial parts synchronously — the
+	// hashmap update and __watchdog_job both run inside accept
+	// (Resource.py:232-234) — so the resource's outstanding_parts is already
+	// set when Accept returns. Spawning this on a goroutine made the state
+	// racy for any caller that inspected the resource right away.
+	if err := r.RequestNext(); err != nil {
+		r.link.logger.Debug("Failed to request initial resource parts: %v", err)
+	}
 
 	// Mirror Python Resource.accept (Resource.py:234): launch the watchdog
 	// job so receiver-side loss recovery (part-request retry, window
@@ -993,10 +996,7 @@ func (r *Resource) requestNextLockedAt(now time.Time) error {
 	hashmapExhausted := false
 	requestedHashes := make([]byte, 0, r.window*ResourceMapHashLen)
 	requestedParts := 0
-	start := r.consecutiveCompletedHeight + 1
-	if start < 0 {
-		start = 0
-	}
+	start := max(r.consecutiveCompletedHeight+1, 0)
 	end := min(start+r.window, len(r.parts))
 	for i := start; i < end; i++ {
 		if r.parts[i] == nil || r.parts[i].ReceivedData == nil {
@@ -1102,7 +1102,7 @@ func (r *Resource) hashmapUpdateLocked(plaintext []byte, now time.Time) error {
 	// each previously unknown slot, and refuse an empty update.
 	r.status = ResourceStatusTransferring
 	hashes := len(hashmap) / ResourceMapHashLen
-	for i := 0; i < hashes; i++ {
+	for i := range hashes {
 		idx := i + segment*hashmapMaxLen
 		if idx < 0 || idx >= len(r.hashmap) {
 			break
@@ -1406,10 +1406,7 @@ func (r *Resource) ReceivePart(packet *Packet) error {
 	// the scan both matches the reference and stops an already-received part
 	// whose map hash appears again later (a repeated chunk in the payload) from
 	// capturing the match and leaving the real part unfillable.
-	searchStart := r.consecutiveCompletedHeight
-	if searchStart < 0 {
-		searchStart = 0
-	}
+	searchStart := max(r.consecutiveCompletedHeight, 0)
 	for i := searchStart; i < min(searchStart+r.window, len(r.hashmap)); i++ {
 		if bytes.Equal(r.hashmap[i], partHash) {
 			matched = true

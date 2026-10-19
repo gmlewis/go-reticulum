@@ -1326,12 +1326,32 @@ func (h *RRCHub) RemoveRoom(room string) {
 	h.deleteHistory(room)
 }
 
-// ClearMessages clears the message buffer for a room.
+// ClearMessages clears a room's message buffer, drops its unread and mention
+// markers, and deletes its on-disk history, mirroring Python
+// RRCHub.clear_messages (RRC.py:296-304):
+//
+//	if r in self.messages: self.messages[r] = []
+//	self.unread_rooms.discard(r)
+//	self.mention_rooms.discard(r)
+//	self._delete_history(r)
+//	self.manager._notify_change(self)
+//
+// Without the history deletion and marker clearing, /clear looked empty until
+// the next restart reloaded the room log, and the unread badge survived.
 func (h *RRCHub) ClearMessages(room string) {
 	room = strings.ToLower(room)
 	h.lock.Lock()
-	defer h.lock.Unlock()
-	h.Messages[room] = make([]*RRCMessage, 0)
+	if _, ok := h.Messages[room]; ok {
+		h.Messages[room] = make([]*RRCMessage, 0)
+	}
+	delete(h.UnreadRooms, room)
+	delete(h.MentionRooms, room)
+	h.lock.Unlock()
+
+	h.deleteHistory(room)
+	if h.Manager != nil {
+		h.Manager.NotifyChange(h)
+	}
 }
 
 // AddLocalMessage appends a client-only row to the room buffer without
@@ -3844,7 +3864,7 @@ func (h *RRCHub) appendHistory(room string, msg *RRCMessage) {
 }
 
 func (h *RRCHub) deleteHistory(room string) {
-	if h.savedHistoryPath == "" {
+	if h.savedHistoryPath == "" || !persistableRoom(room) {
 		return
 	}
 	path := h.historyPath(room)
@@ -4249,4 +4269,20 @@ func (h *RRCHub) GetAvailableRoomList() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// GetAvailableRoomTopics returns each advertised room's topic, keyed by room
+// name. A room with no topic (Python's nil entry) is absent from the map. The
+// hub-info panel renders the topic under the room name, as Python's
+// "Available rooms" list does (Channels.py:1806-1824).
+func (h *RRCHub) GetAvailableRoomTopics() map[string]string {
+	h.lock.Lock()
+	defer h.lock.Unlock()
+	topics := make(map[string]string, len(h.AvailableRooms))
+	for name, topic := range h.AvailableRooms {
+		if topic != nil && *topic != "" {
+			topics[name] = *topic
+		}
+	}
+	return topics
 }

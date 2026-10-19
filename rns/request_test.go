@@ -656,3 +656,62 @@ func TestRequestReceiptConvenience(t *testing.T) {
 		t.Fatal("Concluded() should be false for fresh receipt")
 	}
 }
+
+// TestRequestResponseMetadata pins Python Link.handle_request's
+// [data, metadata] response form (Link.py:837-846): the response is sent as a
+// Resource carrying that metadata whatever its size, and the requester sees it
+// in RequestReceipt.Metadata. The nomadnet node uses this to name a served file.
+func TestRequestResponseMetadata(t *testing.T) {
+	t.Parallel()
+	tsInitiator := newTestTransportSystem(t)
+	tsReceiver := newTestTransportSystem(t)
+
+	pipeInitiator, pipeReceiver, cleanup := newTestPipes(t, tsInitiator, tsReceiver)
+	defer cleanup()
+	tsInitiator.RegisterInterface(pipeInitiator)
+	tsReceiver.RegisterInterface(pipeReceiver)
+
+	receiverDest := mustTestNewDestination(t, tsReceiver, tsReceiver.identity, DestinationIn, DestinationSingle, "receiver")
+
+	payload := []byte("file bytes")
+	receiverDest.RegisterRequestHandler("/file/report.txt", func(path string, data any, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
+		return []any{payload, map[string][]byte{"name": []byte("docs/report.txt")}}
+	}, AllowAll, nil, true)
+
+	link := mustTestNewLink(t, tsInitiator, receiverDest)
+	established := make(chan struct{}, 1)
+	link.callbacks.LinkEstablished = func(l *Link) { established <- struct{}{} }
+	if err := link.Establish(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-established:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Timeout waiting for link establishment")
+	}
+
+	type outcome struct {
+		data     []byte
+		metadata map[string][]byte
+	}
+	got := make(chan outcome, 1)
+	if _, err := link.Request("/file/report.txt", nil, func(rr *RequestReceipt) {
+		data, _ := rr.Response.([]byte)
+		metadata, _ := rr.Metadata.(map[string][]byte)
+		got <- outcome{data: data, metadata: metadata}
+	}, nil, nil, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case o := <-got:
+		if !bytes.Equal(o.data, payload) {
+			t.Errorf("response payload = %q, want %q", o.data, payload)
+		}
+		if got := string(o.metadata["name"]); got != "docs/report.txt" {
+			t.Errorf("response metadata name = %q, want %q", got, "docs/report.txt")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Timeout waiting for the metadata-bearing response")
+	}
+}

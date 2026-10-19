@@ -168,8 +168,12 @@ func TestResourceStateInitiator(t *testing.T) {
 	if r.sdu != MDU {
 		t.Fatalf("sdu = %v, want %v (MDU, link with mtu=0,mdu=MDU)", r.sdu, MDU)
 	}
-	if r.outstandingParts != 0 {
-		t.Fatalf("outstandingParts = %v, want 0", r.outstandingParts)
+	// Python's accept requests the initial parts synchronously
+	// (Resource.py:232), so outstanding_parts already counts the first window
+	// when accept returns; this helper's advertisement has fewer parts than a
+	// full window, so every part is outstanding.
+	if want := min(r.window, r.totalParts); r.outstandingParts != want {
+		t.Fatalf("outstandingParts = %v, want %v (the initial request)", r.outstandingParts, want)
 	}
 	if r.waitingForHmu {
 		t.Fatalf("waitingForHmu = true, want false")
@@ -238,8 +242,12 @@ func TestResourceStateReceiver(t *testing.T) {
 	if r.sdu != MDU {
 		t.Fatalf("sdu = %v, want %v", r.sdu, MDU)
 	}
-	if r.outstandingParts != 0 {
-		t.Fatalf("outstandingParts = %v, want 0", r.outstandingParts)
+	// Python's accept requests the initial parts synchronously
+	// (Resource.py:232), so outstanding_parts already counts the first window
+	// when accept returns; this helper's advertisement has fewer parts than a
+	// full window, so every part is outstanding.
+	if want := min(r.window, r.totalParts); r.outstandingParts != want {
+		t.Fatalf("outstandingParts = %v, want %v (the initial request)", r.outstandingParts, want)
 	}
 	if r.waitingForHmu {
 		t.Fatalf("waitingForHmu = true, want false")
