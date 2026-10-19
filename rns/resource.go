@@ -465,10 +465,14 @@ type Resource struct {
 	totalParts    int
 	receivedCount int
 
-	window            int
-	windowMax         int
-	windowMin         int
-	windowFlexibility int
+	window int
+	// receiverMinConsecutiveHeight is the sender's record of how far the receiver has
+	// received consecutively, which the hashmap-update reply starts its collision-guard
+	// scan from (Python self.receiver_min_consecutive_height, Resource.py:1003-1007).
+	receiverMinConsecutiveHeight int
+	windowMax                    int
+	windowMin                    int
+	windowFlexibility            int
 
 	lastActivity        time.Time
 	startedTransferring time.Time
@@ -989,6 +993,60 @@ func (r *Resource) requestNextLockedAt(now time.Time) error {
 	return nil
 }
 
+// hmuSegmentForMapHash locates the hashmap segment to reply with, mirroring the sender
+// half of Python Resource.request (Resource.py:1002-1012):
+//
+//	part_index = receiver_min_consecutive_height
+//	for part in parts[part_index : part_index+COLLISION_GUARD_SIZE]:
+//	    part_index += 1
+//	    if part.map_hash == last_map_hash: break
+//
+// It returns the new receiver_min_consecutive_height (max(part_index-1-WINDOW_MAX, 0)),
+// the segment (part_index // HASHMAP_MAX_LEN) and whether the sequencing check passed —
+// Python cancels the transfer unless part_index is an exact multiple of HASHMAP_MAX_LEN,
+// because anything else means the hash maps to a position the segment boundaries cannot
+// describe.
+func hmuSegmentForMapHash(parts []*ResourcePart, lastMapHash []byte, startHeight int) (newHeight, segment int, ok bool) {
+	if startHeight < 0 {
+		startHeight = 0
+	}
+	partIndex := startHeight
+	end := min(startHeight+collisionGuardSize, len(parts))
+	for i := startHeight; i < end; i++ {
+		partIndex++
+		if parts[i] != nil && bytes.Equal(parts[i].MapHash, lastMapHash) {
+			break
+		}
+	}
+	newHeight = max(partIndex-1-resourceWindowMax, 0)
+	if partIndex%hashmapMaxLen != 0 {
+		return newHeight, 0, false
+	}
+	return newHeight, partIndex / hashmapMaxLen, true
+}
+
+// hmuPacketData builds the RESOURCE_HMU payload: the resource hash followed by the
+// msgpack encoding of [segment, hashmap-segment-bytes] (Resource.py:1058-1059). The map
+// hashes come from hashmapSegment, so a reply can only ever carry one advertisement
+// segment's worth.
+func (r *Resource) hmuPacketData(segment int) ([]byte, error) {
+	hashes := hashmapSegment(r.hashmap, segment)
+	if len(hashes) == 0 {
+		return nil, errors.New("resource HMU: empty hashmap segment")
+	}
+	flat := make([]byte, 0, len(hashes)*ResourceMapHashLen)
+	for _, h := range hashes {
+		flat = append(flat, h...)
+	}
+	packed, err := msgpack.Pack([]any{segment, flat})
+	if err != nil {
+		return nil, err
+	}
+	data := make([]byte, 0, len(r.hash)+len(packed))
+	data = append(data, r.hash...)
+	return append(data, packed...), nil
+}
+
 // Request processes an inbound packet requesting specific missing data parts and dispatches them directly over the link.
 func (r *Resource) Request(requestData []byte) error {
 	r.mu.Lock()
@@ -1021,8 +1079,9 @@ func (r *Resource) Request(requestData []byte) error {
 	}
 	r.retriesLeft = r.maxRetries
 
+	wantsMoreHashmap := requestData[0] == 0xFF
 	offset := 1
-	if requestData[0] == 0xFF {
+	if wantsMoreHashmap {
 		offset += ResourceMapHashLen
 	}
 
@@ -1059,6 +1118,38 @@ func (r *Resource) Request(requestData []byte) error {
 			r.lastPartSent = time.Now()
 			break
 		}
+	}
+
+	// A request that carries HASHMAP_IS_EXHAUSTED (0xFF) also asks for the next segment of
+	// the map: without it the receiver cannot request parts beyond the one segment the
+	// advertisement carried. Python replies with a RESOURCE_HMU packet holding
+	// [segment, hashmap bytes] (Resource.py:1030-1062); a hash that does not sit on a
+	// segment boundary is a sequencing error that cancels the transfer.
+	if wantsMoreHashmap {
+		lastMapHash := requestData[1 : 1+ResourceMapHashLen]
+		newHeight, segment, ok := hmuSegmentForMapHash(r.parts, lastMapHash, r.receiverMinConsecutiveHeight)
+		r.receiverMinConsecutiveHeight = newHeight
+		if !ok {
+			if r.link != nil && r.link.logger != nil {
+				r.link.logger.Error("Resource sequencing error, cancelling transfer for %x", r.hash)
+			}
+			r.cancelLocked()
+			return fmt.Errorf("resource sequencing error: map hash is not on a segment boundary")
+		}
+		data, err := r.hmuPacketData(segment)
+		if err != nil {
+			if r.link != nil && r.link.logger != nil {
+				r.link.logger.Error("Resource HMU error, cancelling transfer for %x: %v", r.hash, err)
+			}
+			r.cancelLocked()
+			return err
+		}
+		hmu := NewPacket(r.link, data)
+		hmu.Context = ContextResourceHmu
+		if err := hmu.Send(); err != nil {
+			return err
+		}
+		r.lastActivity = time.Now()
 	}
 
 	if r.sentParts >= r.totalParts {
@@ -1421,6 +1512,17 @@ const linkMDUConstant = (MTU-IFACMinSize-HeaderMinSize-TokenOverhead)/AES128Bloc
 // floor((Link.MDU - OVERHEAD) / MAPHASH_LEN) (Resource.py:1246). With the shipped
 // constants this is 74, matching the reference.
 const hashmapMaxLen = (linkMDUConstant - resourceAdvertisementOverhead) / ResourceMapHashLen
+
+// resourceWindowMax mirrors Resource.WINDOW_MAX (Resource.py:74): the largest window a
+// resource uses, and the constant the collision-guard scan and the receiver-height
+// bookkeeping are expressed in.
+const resourceWindowMax = 75
+
+// collisionGuardSize mirrors ResourceAdvertisement.COLLISION_GUARD_SIZE
+// (Resource.py:1247: 2*WINDOW_MAX + HASHMAP_MAX_LEN) — how many parts the sender scans to
+// locate the last map hash a receiver asked about. With the shipped constants this is 224,
+// matching the reference.
+const collisionGuardSize = 2*resourceWindowMax + hashmapMaxLen
 
 // hashmapSegment returns the hashes advertisement segment carries, mirroring
 // ResourceAdvertisement.pack's slice (Resource.py:1319-1324):
