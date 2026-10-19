@@ -16,7 +16,7 @@ import (
 // and the receiver destination. It is the two-link variant of
 // establishLoopbackLink (which only returns the initiator + destination) so
 // traffic-counter tests can assert on the receiver's rx counters too.
-func establishLoopbackLinkPair(t *testing.T) (initiator, receiver *Link, receiverDest *Destination) {
+func establishLoopbackLinkPair(t *testing.T) (initiator, receiver *Link, receiverDest *Destination, stop func()) {
 	t.Helper()
 	tsInitiator := newTestTransportSystem(t)
 	tsReceiver := newTestTransportSystem(t)
@@ -62,7 +62,16 @@ func establishLoopbackLinkPair(t *testing.T) (initiator, receiver *Link, receive
 	if initiator.status.Load() != LinkActive {
 		t.Fatalf("initiator link not active: %v", initiator.status.Load())
 	}
-	return initiator, receiver, receiverDest
+	// stop tears both links down and detaches the pipe workers. Tests that run
+	// inside a synctest bubble must call it (and Wait) before the bubble closes:
+	// the pipe workers and link watchdogs are bubble goroutines.
+	stop = func() {
+		initiator.Teardown()
+		receiver.Teardown()
+		cleanup()
+	}
+	t.Cleanup(stop)
+	return initiator, receiver, receiverDest, stop
 }
 
 // TestLinkTrafficCountersZero covers the zero-value contract: a freshly
@@ -100,7 +109,7 @@ func TestLinkTrafficCountersZero(t *testing.T) {
 func TestLinkTrafficCountersWired(t *testing.T) {
 	t.Parallel()
 
-	initiator, receiver, _ := establishLoopbackLinkPair(t)
+	initiator, receiver, _, _ := establishLoopbackLinkPair(t)
 
 	// After establishment the handshake (link request, proof, RTT) must
 	// have bumped every counter on both ends.
@@ -175,7 +184,7 @@ func TestLinkTrafficCountersWired(t *testing.T) {
 func TestLinkPacketSendUpdatesLastOutbound(t *testing.T) {
 	t.Parallel()
 
-	initiator, _, _ := establishLoopbackLinkPair(t)
+	initiator, _, _, _ := establishLoopbackLinkPair(t)
 
 	// Artificially age the timestamps so we can reliably detect their update.
 	staleTime := time.Now().Add(-10 * time.Second)

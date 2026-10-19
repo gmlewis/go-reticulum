@@ -38,49 +38,57 @@ func readyWaitDest(t *testing.T, ts *TransportSystem, aspect string, payload str
 func TestInboundWaitsForReadyDuringStart(t *testing.T) {
 	t.Parallel()
 
-	ts := NewTransportSystem(nil)
-	_, raw, got := readyWaitDest(t, ts, "readywait", "hello-ready")
-	iface := &dummyInterface{name: "dummy"}
+	// A bubble makes the negative half exact: Wait() returns only once Inbound
+	// is durably blocked in the ready-wait loop, and it does not advance the
+	// clock past the poll timer, so "not processed yet" is a fact rather than a
+	// 60 ms window. Setting ready then lets the poll fire on virtual time.
+	testutils.RunInBubble(t, func(t *testing.T) {
+		ts := NewTransportSystem(nil)
+		_, raw, got := readyWaitDest(t, ts, "readywait", "hello-ready")
+		iface := &dummyInterface{name: "dummy"}
 
-	// Simulate "Start in progress": running=true, ready=false. Shorten the
-	// poll interval and timeout so the test runs fast.
-	ts.mu.Lock()
-	ts.running = true
-	ts.ready = false
-	ts.readyPollInterval = 10 * time.Millisecond
-	ts.readyWaitTimeout = 500 * time.Millisecond
-	ts.mu.Unlock()
+		// Simulate "Start in progress": running=true, ready=false. Shorten the
+		// poll interval and timeout so the test runs fast.
+		ts.mu.Lock()
+		ts.running = true
+		ts.ready = false
+		ts.readyPollInterval = 10 * time.Millisecond
+		ts.readyWaitTimeout = 500 * time.Millisecond
+		ts.mu.Unlock()
 
-	done := make(chan struct{})
-	go func() {
-		ts.Inbound(raw, iface)
-		close(done)
-	}()
+		done := make(chan struct{})
+		go func() {
+			ts.Inbound(raw, iface)
+			close(done)
+		}()
 
-	// While ready is false, Inbound must block: the callback has not fired.
-	time.Sleep(60 * time.Millisecond)
-	if got.Load() != 0 {
-		t.Fatalf("packet processed before ready (got=%v, want 0)", got.Load())
-	}
+		// Quiescence while ready is false: Inbound is blocked on its poll timer
+		// (durable), so the callback cannot have fired.
+		testutils.Wait()
+		if got.Load() != 0 {
+			t.Errorf("packet processed before ready (got=%v, want 0)", got.Load())
+		}
 
-	// Start completes -> ready=true. Inbound must now process the packet.
-	ts.mu.Lock()
-	ts.ready = true
-	ts.mu.Unlock()
+		// Start completes -> ready=true. Inbound must now process the packet.
+		ts.mu.Lock()
+		ts.ready = true
+		ts.mu.Unlock()
 
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("Inbound did not return after ready was set")
-	}
-	if got.Load() != 1 {
-		t.Fatalf("packet not processed after ready (got=%v, want 1)", got.Load())
-	}
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Errorf("Inbound did not return after ready was set")
+			return
+		}
+		if got.Load() != 1 {
+			t.Errorf("packet not processed after ready (got=%v, want 1)", got.Load())
+		}
 
-	ts.mu.Lock()
-	ts.running = false
-	ts.ready = false
-	ts.mu.Unlock()
+		ts.mu.Lock()
+		ts.running = false
+		ts.ready = false
+		ts.mu.Unlock()
+	})
 }
 
 // TestInboundDropsOnReadyTimeout verifies the drop path: if the
@@ -90,32 +98,36 @@ func TestInboundWaitsForReadyDuringStart(t *testing.T) {
 func TestInboundDropsOnReadyTimeout(t *testing.T) {
 	t.Parallel()
 
-	ts := NewTransportSystem(nil)
-	_, raw, got := readyWaitDest(t, ts, "readydrop", "hello-drop")
-	iface := &dummyInterface{name: "dummy"}
+	// The 80 ms timeout and its 10 ms polls run on the bubble clock: the test
+	// spends no wall-clock time, and elapsed is exactly the virtual duration.
+	testutils.RunInBubble(t, func(t *testing.T) {
+		ts := NewTransportSystem(nil)
+		_, raw, got := readyWaitDest(t, ts, "readydrop", "hello-drop")
+		iface := &dummyInterface{name: "dummy"}
 
-	ts.mu.Lock()
-	ts.running = true
-	ts.ready = false
-	ts.readyPollInterval = 10 * time.Millisecond
-	ts.readyWaitTimeout = 80 * time.Millisecond
-	ts.mu.Unlock()
+		ts.mu.Lock()
+		ts.running = true
+		ts.ready = false
+		ts.readyPollInterval = 10 * time.Millisecond
+		ts.readyWaitTimeout = 80 * time.Millisecond
+		ts.mu.Unlock()
 
-	start := time.Now()
-	ts.Inbound(raw, iface) // never becomes ready -> times out and drops
-	elapsed := time.Since(start)
+		start := time.Now()
+		ts.Inbound(raw, iface) // never becomes ready -> times out and drops
+		elapsed := time.Since(start)
 
-	if got.Load() != 0 {
-		t.Fatalf("packet processed on ready timeout (got=%v, want 0)", got.Load())
-	}
-	if elapsed < ts.readyWaitTimeout {
-		t.Fatalf("Inbound returned %v before readyWaitTimeout %v", elapsed, ts.readyWaitTimeout)
-	}
+		if got.Load() != 0 {
+			t.Errorf("packet processed on ready timeout (got=%v, want 0)", got.Load())
+		}
+		if elapsed < ts.readyWaitTimeout {
+			t.Errorf("Inbound returned %v before readyWaitTimeout %v", elapsed, ts.readyWaitTimeout)
+		}
 
-	ts.mu.Lock()
-	ts.running = false
-	ts.ready = false
-	ts.mu.Unlock()
+		ts.mu.Lock()
+		ts.running = false
+		ts.ready = false
+		ts.mu.Unlock()
+	})
 }
 
 // TestInboundProcessesImmediatelyWhenNotStarted asserts the READY_WAIT gate

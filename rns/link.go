@@ -1355,6 +1355,7 @@ func (l *Link) watchdogJob() {
 
 func (l *Link) watchdogStep(now time.Time) time.Duration {
 	var callback func(*Link)
+	var watchdogStop chan struct{}
 
 	l.mu.Lock()
 	switch l.status.Load() {
@@ -1372,9 +1373,11 @@ func (l *Link) watchdogStep(now time.Time) time.Duration {
 				l.channel.Shutdown()
 			}
 			callback = l.callbacks.LinkClosed
+			watchdogStop = l.watchdogStop
 			sleep = time.Millisecond
 		}
 		l.mu.Unlock()
+		stopWatchdogChannel(watchdogStop)
 		if callback != nil {
 			go callback(l)
 		}
@@ -1453,7 +1456,9 @@ func (l *Link) watchdogStep(now time.Time) time.Duration {
 			l.channel.Shutdown()
 		}
 		callback = l.callbacks.LinkClosed
+		watchdogStop = l.watchdogStop
 		l.mu.Unlock()
+		stopWatchdogChannel(watchdogStop)
 		if callback != nil {
 			go callback(l)
 		}
@@ -1769,6 +1774,21 @@ func (l *Link) Teardown() {
 	l.teardown(TeardownDestinationClosed)
 }
 
+// stopWatchdogChannel closes a link's watchdog-stop channel exactly once. Every
+// link-close path uses it: a watchdog parked in its timer select wakes at once
+// instead of waiting for its next tick, and the double-close panic of a manual
+// step racing the teardown is avoided.
+func stopWatchdogChannel(ch chan struct{}) {
+	if ch == nil {
+		return
+	}
+	select {
+	case <-ch:
+	default:
+		close(ch)
+	}
+}
+
 func (l *Link) teardown(reason int) {
 	l.mu.Lock()
 	if l.status.Load() == LinkClosed {
@@ -1785,13 +1805,7 @@ func (l *Link) teardown(reason int) {
 	watchdogStop := l.watchdogStop
 	l.mu.Unlock()
 
-	if watchdogStop != nil {
-		select {
-		case <-watchdogStop:
-		default:
-			close(watchdogStop)
-		}
-	}
+	stopWatchdogChannel(watchdogStop)
 
 	if callback != nil {
 		go callback(l)

@@ -26,7 +26,7 @@ import (
 func TestStopTearsDownLinksBeforeDetach(t *testing.T) {
 	t.Parallel()
 
-	initiator, receiver, _ := establishLoopbackLinkPair(t)
+	initiator, receiver, _, _ := establishLoopbackLinkPair(t)
 	tsInit, ok := initiator.transport.(*TransportSystem)
 	if !ok {
 		t.Fatalf("initiator.transport = %T, want *TransportSystem", initiator.transport)

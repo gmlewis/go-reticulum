@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 // TestBlackholeUpdaterConstants asserts the BlackholeUpdater timing
@@ -203,55 +204,60 @@ func assertPersistedSourceList(t *testing.T, blackholePath string, source []byte
 }
 
 // TestBlackholeUpdaterStartStop exercises the production loop with a fake
-// source and a controllable clock, asserting Start runs passes and Stop
-// halts them. It uses a shortened jobInterval via a real-time ticker, so it
-// keeps the wall-clock cost bounded.
+// source, asserting Start runs passes and Stop halts them. It runs on a
+// synctest bubble clock: the fetch signals a channel, so the first pass is
+// awaited rather than polled, and Stop is a join — after it returns there is no
+// goroutine left to fetch, so the "no fetch after Stop" assertion is exact.
 func TestBlackholeUpdaterStartStop(t *testing.T) {
 	t.Parallel()
 
 	own := mustHexDecode(t, "aabbccddeeff00112233445566778899")
 	srcA := mustHexDecode(t, "11111111111111111111111111111111")
 	ih2 := mustHexDecode(t, "cafebabecafebabecafebabecafebabe")
+	// Create the directory before the bubble: the first TempDir call installs
+	// a signal handler, which synctest cannot run inside the bubble.
+	tmpDir := testutils.TempDir(t, "rns-test-blackhole-updater-*")
 
-	ts := NewTransportSystem(testSilentLogger())
-	ts.identity = &Identity{Hash: own}
-	ts.blackholePath = t.TempDir()
+	testutils.RunInBubble(t, func(t *testing.T) {
+		ts := NewTransportSystem(testSilentLogger())
+		ts.identity = &Identity{Hash: own}
+		ts.blackholePath = tmpDir
 
-	var calls atomic.Int32
-	fetch := func(sourceIdentityHash []byte) ([]blackholeListEntry, error) {
-		calls.Add(1)
-		return []blackholeListEntry{{identityHash: ih2, source: srcA, until: nil, reason: "srcA-ih2"}}, nil
-	}
-
-	updater := NewBlackholeUpdater(ts, func() [][]byte { return [][]byte{srcA} }, fetch)
-	// Shorten the waits so the test runs in well under a second.
-	updater.initialWait = 20 * time.Millisecond
-	updater.jobInterval = 20 * time.Millisecond
-	updater.updateInterval = 1 * time.Millisecond
-
-	updater.Start()
-	// Wait for at least one fetch to occur.
-	deadline := time.After(2 * time.Second)
-	for {
-		if calls.Load() > 0 {
-			break
+		var calls atomic.Int32
+		fetched := make(chan struct{}, 1)
+		fetch := func(sourceIdentityHash []byte) ([]blackholeListEntry, error) {
+			calls.Add(1)
+			select {
+			case fetched <- struct{}{}:
+			default:
+			}
+			return []blackholeListEntry{{identityHash: ih2, source: srcA, until: nil, reason: "srcA-ih2"}}, nil
 		}
+
+		updater := NewBlackholeUpdater(ts, func() [][]byte { return [][]byte{srcA} }, fetch)
+		updater.initialWait = 20 * time.Millisecond
+		updater.jobInterval = 20 * time.Millisecond
+		updater.updateInterval = 1 * time.Millisecond
+
+		updater.Start()
+		// Blocking here lets the bubble clock advance to initialWait, which runs
+		// the first pass and signals. A virtual deadline makes a broken loop a
+		// fast, deterministic failure instead of a 2 s wall-clock poll.
 		select {
-		case <-deadline:
-			t.Fatalf("updater loop never fetched; calls=%v", calls.Load())
-		default:
+		case <-fetched:
+		case <-time.After(2 * time.Second):
+			t.Errorf("updater loop never fetched; calls=%v", calls.Load())
+			updater.Stop()
+			return
 		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	updater.Stop()
+		updater.Stop()
 
-	// After Stop, the loop must not fetch again. Give it a moment and
-	// confirm the count is stable.
-	callsAtStop := calls.Load()
-	time.Sleep(80 * time.Millisecond)
-	if got := calls.Load(); got != callsAtStop {
-		t.Fatalf("updater fetched after Stop: calls went %v -> %v", callsAtStop, got)
-	}
+		callsAtStop := calls.Load()
+		testutils.Wait()
+		if got := calls.Load(); got != callsAtStop {
+			t.Errorf("updater fetched after Stop: calls went %v -> %v", callsAtStop, got)
+		}
+	})
 }
 
 // TestBlackholeUpdaterSetUpdateInterval verifies SetUpdateInterval is honored
