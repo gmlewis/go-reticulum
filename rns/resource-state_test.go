@@ -168,12 +168,11 @@ func TestResourceStateInitiator(t *testing.T) {
 	if r.sdu != MDU {
 		t.Fatalf("sdu = %v, want %v (MDU, link with mtu=0,mdu=MDU)", r.sdu, MDU)
 	}
-	// Python's accept requests the initial parts synchronously
-	// (Resource.py:232), so outstanding_parts already counts the first window
-	// when accept returns; this helper's advertisement has fewer parts than a
-	// full window, so every part is outstanding.
-	if want := min(r.window, r.totalParts); r.outstandingParts != want {
-		t.Fatalf("outstandingParts = %v, want %v (the initial request)", r.outstandingParts, want)
+	// An initiator never requests parts: request_next returns immediately when
+	// initiator is true (Resource.py:938), so the counter stays at its accept
+	// default of 0.
+	if r.outstandingParts != 0 {
+		t.Fatalf("outstandingParts = %v, want 0", r.outstandingParts)
 	}
 	if r.waitingForHmu {
 		t.Fatalf("waitingForHmu = true, want false")
