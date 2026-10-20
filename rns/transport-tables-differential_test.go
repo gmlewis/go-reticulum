@@ -67,6 +67,11 @@ class Stub(Interface):
         self.announce_rate_target = None
         self.announce_rate_grace = None
         self.announce_rate_penalty = None
+        # RNS 1.5.0's frame-length gate reads these before the IFAC check;
+        # 1.4.2 leaves HW_MTU None and never consults them here.
+        self.ifac_size = 0
+        self.ifac_identity = None
+        self.HW_MTU = 62500
         self.ia_freq_deque = []
         self.op_freq_deque = []
         self.held_announces = {}
@@ -74,6 +79,10 @@ class Stub(Interface):
     def should_ingress_limit_pr(self): return False
 
 r = RNS.Reticulum(sys.argv[2])
+# RNS 1.5.0 queues inbound packets and drains them on a background thread. The
+# harness reads the tables immediately after inbound, so process synchronously
+# as 1.4.2 does; the attribute is unused (and harmless) on 1.4.2.
+Transport.USE_INBOUND_QUEUE = False
 
 iface = Stub()
 
@@ -88,8 +97,6 @@ def reset():
     Transport.held_announces = {}
     Transport.path_requests = {}
     Transport.discovery_path_requests = {}
-    Transport.discovery_pr_tags = set()
-    Transport.discovery_pr_tags_prev = set()
     Transport.inflight_path_requests = {}
 
 results = []
@@ -218,6 +225,11 @@ class Capture(Interface):
         self.announce_rate_target = None
         self.announce_rate_grace = None
         self.announce_rate_penalty = None
+        # RNS 1.5.0's frame-length gate reads these before the IFAC check;
+        # 1.4.2 leaves HW_MTU None and never consults them here.
+        self.ifac_size = 0
+        self.ifac_identity = None
+        self.HW_MTU = 62500
         self.ia_freq_deque = []
         self.op_freq_deque = []
         self.held_announces = {}
@@ -227,6 +239,10 @@ class Capture(Interface):
     def should_ingress_limit_pr(self): return False
 
 r = RNS.Reticulum(sys.argv[2])
+# RNS 1.5.0 queues inbound packets and drains them on a background thread. The
+# harness reads the tables immediately after inbound, so process synchronously
+# as 1.4.2 does; the attribute is unused (and harmless) on 1.4.2.
+Transport.USE_INBOUND_QUEUE = False
 
 results = []
 for case in json.loads(sys.argv[1]):
@@ -239,8 +255,6 @@ for case in json.loads(sys.argv[1]):
     Transport.held_announces = {}
     Transport.path_requests = {}
     Transport.discovery_path_requests = {}
-    Transport.discovery_pr_tags = []
-    Transport.discovery_pr_tags_prev = set()
     Transport.inflight_path_requests = {}
 
     iface = Capture()
@@ -390,6 +404,11 @@ class Capture(Interface):
         self.announce_rate_target = None
         self.announce_rate_grace = None
         self.announce_rate_penalty = None
+        # RNS 1.5.0's frame-length gate reads these before the IFAC check;
+        # 1.4.2 leaves HW_MTU None and never consults them here.
+        self.ifac_size = 0
+        self.ifac_identity = None
+        self.HW_MTU = 62500
         self.ia_freq_deque = []
         self.op_freq_deque = []
         self.held_announces = {}
@@ -399,6 +418,10 @@ class Capture(Interface):
     def should_ingress_limit_pr(self): return False
 
 r = RNS.Reticulum(sys.argv[2])
+# RNS 1.5.0 queues inbound packets and drains them on a background thread. The
+# harness reads the tables immediately after inbound, so process synchronously
+# as 1.4.2 does; the attribute is unused (and harmless) on 1.4.2.
+Transport.USE_INBOUND_QUEUE = False
 iface = Capture()
 Transport.interfaces = [iface]
 

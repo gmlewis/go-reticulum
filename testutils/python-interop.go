@@ -22,9 +22,19 @@ import (
 // derived from, so a run against it fails loudly rather than passing quietly on
 // values nobody checked.
 //
-// Bump or extend this set in the same change that re-verifies the affected
-// vectors against the new release.
-var SOTRNSVersions = []string{"1.4.2", "1.5.0"}
+// The set is the release the CI workflow installs; keeping the two identical
+// means a local run exercises the same reference as CI. Bump or extend it in the
+// same change that re-verifies the affected vectors against the new release.
+var SOTRNSVersions = []string{"1.5.0"}
+
+// SOTRNSPreferredVersion is the release the suite targets. When several
+// candidate interpreters are installed, the probe prefers one that reports this
+// version so a stale PATH `python3` cannot select an older reference.
+const SOTRNSPreferredVersion = "1.5.0"
+
+// pythonInterpreterEnv names an interpreter to use instead of probing the
+// candidates, for a developer or CI that manages Python explicitly.
+const pythonInterpreterEnv = "GORETICULUM_PYTHON"
 
 // allowRNSDriftEnv downgrades a reference-version mismatch from a test failure
 // to a logged warning when set to a non-empty value, for the deliberate case of
@@ -45,9 +55,10 @@ print("SOT:" + json.dumps({"rns": RNS.__version__}))
 
 // pythonRNSCandidates are the interpreters probed for an importable RNS
 // reference, in preference order. The system `python3` comes first so a
-// venv/PATH python wins; the Homebrew py3.14 interpreter is the macOS fallback
-// that carries the user-site RNS. Adding candidates is safe — the first that can
-// import RNS and report its version is used.
+// venv/PATH python wins; the Homebrew py3.14 interpreter is the macOS fallback.
+// The probe prefers an interpreter reporting SOTRNSPreferredVersion, so a
+// stale first candidate does not select an older reference. Adding candidates
+// is safe.
 var pythonRNSCandidates = []string{
 	"python3",
 	"/opt/homebrew/bin/python3",
@@ -66,16 +77,31 @@ var (
 // once per test binary.
 func pythonRNSReference() (string, string) {
 	pythonRNSOnce.Do(func() {
-		for _, exe := range pythonRNSCandidates {
+		candidates := pythonRNSCandidates
+		if override := os.Getenv(pythonInterpreterEnv); override != "" {
+			candidates = []string{override}
+		}
+		var firstExe, firstVer string
+		for _, exe := range candidates {
 			out, err := exec.Command(exe, "-c", rnsVersionProbeScript).Output()
 			if err != nil {
 				continue
 			}
-			if v, ok := parseRNSSOTLine(out); ok {
+			v, ok := parseRNSSOTLine(out)
+			if !ok {
+				continue
+			}
+			if firstExe == "" {
+				firstExe, firstVer = exe, v
+			}
+			if v == SOTRNSPreferredVersion {
 				pythonRNSExe, pythonRNSVer = exe, v
 				return
 			}
 		}
+		// No preferred release: keep the first importable one so
+		// AssertSOTRNSVersion reports what was found rather than "none".
+		pythonRNSExe, pythonRNSVer = firstExe, firstVer
 	})
 	return pythonRNSExe, pythonRNSVer
 }

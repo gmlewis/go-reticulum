@@ -88,9 +88,9 @@ func TestInboundQueueLengthsFromConfig(t *testing.T) {
 }
 
 // TestInboundQueueDefaultsMatchPython pins the four defaults against the
-// installed 1.5.0 reference, the release that introduced the queues. The
-// repo-standard python3 is RNS 1.4.2, which has no InboundQueues at all, so
-// the probe explicitly looks for 1.5.0.
+// installed 1.5.0 reference, the release that introduced the queues. The probe
+// resolves an explicit 1.5.0 interpreter, so the check also runs on a machine
+// whose default python3 is an older release without InboundQueues.
 func TestInboundQueueDefaultsMatchPython(t *testing.T) {
 	t.Parallel()
 	testutils.SkipIfNoPythonRNS(t)

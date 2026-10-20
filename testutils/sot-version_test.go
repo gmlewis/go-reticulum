@@ -26,7 +26,7 @@ func TestAssertSOTRNSVersionAcceptsOnlyVerifiedReleases(t *testing.T) {
 		version    string
 		wantReject bool
 	}{
-		{"1.4.2", false},
+		{"1.4.2", true},
 		{"1.5.0", false},
 		{"1.6.0", true},
 		{"1.3.5", true},
