@@ -574,6 +574,14 @@ func NewReticulumWithLogger(ts Transport, configDir string, logger *Logger, opts
 			setter.SetPublishBlackhole(true)
 		}
 	}
+	// enable_remote_management must be set before Start so the
+	// rnstransport.remote.management destination is registered during startup
+	// (Python Transport.py:356-362).
+	if r.remoteMgmtEnabled {
+		if setter, ok := r.transport.(interface{ SetRemoteManagement(bool, [][]byte) }); ok {
+			setter.SetRemoteManagement(true, r.remoteMgmtAllowed)
+		}
+	}
 	storagePath := r.StoragePath()
 	if err := r.transport.Start(storagePath); err != nil {
 		return nil, err

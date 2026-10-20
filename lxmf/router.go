@@ -3681,6 +3681,93 @@ func (r *Router) StampsEnforced() bool {
 	return r.enforceStampsEnabled
 }
 
+// IgnoreStamps disables stamp enforcement, mirroring Python ignore_stamps
+// (LXMRouter.py:699-700).
+func (r *Router) IgnoreStamps() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.enforceStampsEnabled = false
+}
+
+// SetRetainNodeLXMs records whether synced messages are retained on the node
+// rather than deleted after download, mirroring Python set_retain_node_lxms
+// (LXMRouter.py:451-455).
+func (r *Router) SetRetainNodeLXMs(retain bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.retainSyncedOnNode = retain
+}
+
+// RetainNodeLXMs reports the retain-synced-messages setting.
+func (r *Router) RetainNodeLXMs() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.retainSyncedOnNode
+}
+
+// RequiresAuthentication reports whether the router requires authenticated
+// peers, mirroring Python requires_authentication (LXMRouter.py:461-462).
+func (r *Router) RequiresAuthentication() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.authRequired
+}
+
+// DisallowControl removes an identity hash from the control-allowed list,
+// the counterpart of AllowControl. Python's disallow_control calls
+// list.pop(identity_hash), which raises TypeError instead of removing (its
+// control list is a Python list); the intended removal is implemented here.
+func (r *Router) DisallowControl(identityHash []byte) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.controlAllowed, string(identityHash))
+}
+
+// GetOutboundStampCost returns the cached outbound stamp cost announced by
+// destinationHash, or nil when none is cached, mirroring Python
+// get_outbound_stamp_cost (LXMRouter.py:396-401).
+func (r *Router) GetOutboundStampCost(destinationHash []byte) any {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if entry, ok := r.outboundStampCosts[string(destinationHash)]; ok {
+		return entry.stampCost
+	}
+	return nil
+}
+
+// SetInboundPropagationNode mirrors Python's unimplemented setter
+// (LXMRouter.py:444-446): inbound/outbound propagation node differentiation is
+// not implemented, so it reports an error instead of silently changing the
+// outbound node.
+func (r *Router) SetInboundPropagationNode(destinationHash []byte) error {
+	return errors.New("inbound/outbound propagation node differentiation is currently not implemented")
+}
+
+// GetInboundPropagationNode mirrors Python get_inbound_propagation_node
+// (LXMRouter.py:448-449): it is the outbound propagation node.
+func (r *Router) GetInboundPropagationNode() []byte {
+	return r.GetOutboundPropagationNode()
+}
+
+// GetPropagationNodeAnnounceMetadata returns the metadata map this router puts
+// in its propagation announce, mirroring Python
+// get_propagation_node_announce_metadata (LXMRouter.py:319-322).
+func (r *Router) GetPropagationNodeAnnounceMetadata() map[any]any {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.propagationNodeAnnounceMetadataLocked()
+}
+
+// propagationNodeAnnounceMetadataLocked builds the announce metadata map.
+// Caller must hold r.mu.
+func (r *Router) propagationNodeAnnounceMetadataLocked() map[any]any {
+	metadata := map[any]any{}
+	if r.name != "" {
+		metadata[PNMetaName] = []byte(r.name)
+	}
+	return metadata
+}
+
 // SetMessageStorageLimit configures the maximum message storage size in megabytes to prevent unbounded memory or disk consumption.
 func (r *Router) SetMessageStorageLimit(megabytes float64) {
 	r.mu.Lock()
@@ -5280,10 +5367,7 @@ func (r *Router) AnnouncePropagationNode() {
 }
 
 func (r *Router) getPropagationNodeAppDataLocked() []byte {
-	metadata := map[any]any{}
-	if r.name != "" {
-		metadata[PNMetaName] = []byte(r.name)
-	}
+	metadata := r.propagationNodeAnnounceMetadataLocked()
 
 	nodeState := r.propagationEnabled && !r.fromStaticOnly
 	stampCost := []any{

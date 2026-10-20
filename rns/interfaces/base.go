@@ -59,6 +59,10 @@ type DiscoveryConfig struct {
 	CodingRate      *int
 	Channel         *int
 	Modulation      string
+	// LXMFAddress is the operator's LXMF delivery address published under
+	// OP_ADDR in the discovery announce (Python interface.discovery_lxmf_address,
+	// RNS/Reticulum.py:887,919-923, Discovery.py:140).
+	LXMFAddress []byte
 }
 
 // InboundHandler rigorously defines the callback signature invoked universally across all interface types whenever a valid payload frame is successfully reassembled.
@@ -92,8 +96,12 @@ type BaseInterface struct {
 	// (Python interface.current_rx_speed / current_tx_speed), stored as
 	// math.Float64bits so they can be read/written atomically. They are read
 	// by the interface_stats RPC.
-	currentRxSpeedBits uint64
-	currentTxSpeedBits uint64
+	currentRxSpeedBits  uint64
+	currentTxSpeedBits  uint64
+	currentArxSpeedBits uint64
+	currentAtxSpeedBits uint64
+	currentPrxSpeedBits uint64
+	currentPtxSpeedBits uint64
 
 	errorPolicyMu sync.RWMutex
 	discoveryMu   sync.RWMutex
@@ -184,6 +192,28 @@ type BaseInterface struct {
 	ipFreqDeque []time.Time
 	opFreqDeque []time.Time
 
+	// Announce and path-request byte/count totals (Python arxb/atxb/arxc/atxc
+	// and prxb/ptxb/prxc/ptxc, Interface.py:101-108, incremented in
+	// received_announce/sent_announce/received_path_request/
+	// sent_path_request, Interface.py:282-304). Guarded by ingressMu, which
+	// the same methods already take for the frequency deques.
+	announceRxBytes uint64
+	announceTxBytes uint64
+	announceRxCount uint64
+	announceTxCount uint64
+	prRxBytes       uint64
+	prTxBytes       uint64
+	prRxCount       uint64
+	prTxCount       uint64
+
+	// Violation counters (Python protocol_violations/ifac_violations/
+	// packet_filter_hits, Interface.py:156-158, incremented by the methods at
+	// Interface.py:307-317). Atomic because inbound processing runs on each
+	// interface's read goroutine while ifstats reads them.
+	protocolViolations atomic.Int64
+	ifacViolations     atomic.Int64
+	packetFilterHits   atomic.Int64
+
 	// Ingress-limit burst + held-announce state (Interface.py:121-137, 224-255).
 	// icBurstActive is the announce-burst flag set by ShouldIngressLimit;
 	// icBurstActivated is when it activated; icHeldRelease is the earliest
@@ -192,6 +222,7 @@ type BaseInterface struct {
 	// heldAnnounces maps destination hash -> held announce awaiting release.
 	icBurstActive    bool
 	icBurstActivated time.Time
+	icBurstCount     int
 	icHeldRelease    time.Time
 	heldAnnounces    map[string]heldAnnounce
 
@@ -202,6 +233,7 @@ type BaseInterface struct {
 	// request forwarding.
 	icPrBurstActive    bool
 	icPrBurstActivated time.Time
+	icPrBurstCount     int
 
 	// defaultIFACSize is this interface type's DEFAULT_IFAC_SIZE class
 	// attribute (RNS/Interfaces/*.py). Set by each concrete constructor, it
@@ -538,9 +570,16 @@ func appendFreqSample(deque []time.Time, now time.Time, max int) []time.Time {
 
 // ReceivedAnnounce records an incoming announce on this interface at the
 // current instant and propagates it to the parent server interface
-// (Interface.py:257-260).
+// (Interface.py:282-287). The optional size adds to the interface's announce
+// byte counter, as Python's size argument does.
 func (bi *BaseInterface) ReceivedAnnounce() {
-	bi.receivedAnnounceAt(time.Now(), false)
+	bi.receivedAnnounceAtSize(time.Now(), false, 0)
+}
+
+// ReceivedAnnounceSize is the size-aware form of ReceivedAnnounce: it also adds
+// to the announce byte counter (Python's size argument).
+func (bi *BaseInterface) ReceivedAnnounceSize(size int) {
+	bi.receivedAnnounceAtSize(time.Now(), false, size)
 }
 
 // receivedAnnounceAt is the lock-free core of ReceivedAnnounce taking an
@@ -548,29 +587,48 @@ func (bi *BaseInterface) ReceivedAnnounce() {
 // the sample also propagates to the parent interface (Python passes
 // from_spawned=True to the parent so it does not re-propagate).
 func (bi *BaseInterface) receivedAnnounceAt(now time.Time, fromSpawned bool) {
+	bi.receivedAnnounceAtSize(now, fromSpawned, 0)
+}
+
+// receivedAnnounceAtSize is the size-aware core of receivedAnnounceAt.
+func (bi *BaseInterface) receivedAnnounceAtSize(now time.Time, fromSpawned bool, size int) {
 	bi.ingressMu.Lock()
 	bi.iaFreqDeque = appendFreqSample(bi.iaFreqDeque, now, IAFreqSamples)
+	bi.announceRxCount++
+	bi.announceRxBytes += uint64(max(size, 0))
 	bi.ingressMu.Unlock()
 	if !fromSpawned && bi.parentInterface != nil {
-		bi.parentInterface.receivedAnnounceAt(now, true)
+		bi.parentInterface.receivedAnnounceAtSize(now, true, size)
 	}
 }
 
 // SentAnnounce records an outgoing announce on this interface at the current
 // instant and propagates it to the parent server interface
-// (Interface.py:262-265).
+// (Interface.py:288-293).
 func (bi *BaseInterface) SentAnnounce() {
-	bi.sentAnnounceAt(time.Now(), false)
+	bi.sentAnnounceAtSize(time.Now(), false, 0)
+}
+
+// SentAnnounceSize is the size-aware form of SentAnnounce.
+func (bi *BaseInterface) SentAnnounceSize(size int) {
+	bi.sentAnnounceAtSize(time.Now(), false, size)
 }
 
 // sentAnnounceAt is the lock-free core of SentAnnounce taking an explicit
 // now for deterministic frequency tests.
 func (bi *BaseInterface) sentAnnounceAt(now time.Time, fromSpawned bool) {
+	bi.sentAnnounceAtSize(now, fromSpawned, 0)
+}
+
+// sentAnnounceAtSize is the size-aware core of sentAnnounceAt.
+func (bi *BaseInterface) sentAnnounceAtSize(now time.Time, fromSpawned bool, size int) {
 	bi.ingressMu.Lock()
 	bi.oaFreqDeque = appendFreqSample(bi.oaFreqDeque, now, OAFreqSamples)
+	bi.announceTxCount++
+	bi.announceTxBytes += uint64(max(size, 0))
 	bi.ingressMu.Unlock()
 	if !fromSpawned && bi.parentInterface != nil {
-		bi.parentInterface.sentAnnounceAt(now, true)
+		bi.parentInterface.sentAnnounceAtSize(now, true, size)
 	}
 }
 
@@ -657,9 +715,14 @@ func (bi *BaseInterface) ageAt(now time.Time) float64 {
 
 // ReceivedPathRequest records an incoming path request on this interface at the
 // current instant and propagates it to the parent server interface
-// (Interface.py:267-270).
+// (Interface.py:294-298).
 func (bi *BaseInterface) ReceivedPathRequest() {
-	bi.receivedPathRequestAt(time.Now(), false)
+	bi.receivedPathRequestAtSize(time.Now(), false, 0)
+}
+
+// ReceivedPathRequestSize is the size-aware form of ReceivedPathRequest.
+func (bi *BaseInterface) ReceivedPathRequestSize(size int) {
+	bi.receivedPathRequestAtSize(time.Now(), false, size)
 }
 
 // receivedPathRequestAt is the lock-free core of ReceivedPathRequest taking an
@@ -667,30 +730,81 @@ func (bi *BaseInterface) ReceivedPathRequest() {
 // sample also propagates to the parent interface (Python passes from_spawned=True
 // to the parent so it does not re-propagate).
 func (bi *BaseInterface) receivedPathRequestAt(now time.Time, fromSpawned bool) {
+	bi.receivedPathRequestAtSize(now, fromSpawned, 0)
+}
+
+// receivedPathRequestAtSize is the size-aware core of receivedPathRequestAt.
+func (bi *BaseInterface) receivedPathRequestAtSize(now time.Time, fromSpawned bool, size int) {
 	bi.ingressMu.Lock()
 	bi.ipFreqDeque = appendFreqSample(bi.ipFreqDeque, now, IPFreqSamples)
+	bi.prRxCount++
+	bi.prRxBytes += uint64(max(size, 0))
 	bi.ingressMu.Unlock()
 	if !fromSpawned && bi.parentInterface != nil {
-		bi.parentInterface.receivedPathRequestAt(now, true)
+		bi.parentInterface.receivedPathRequestAtSize(now, true, size)
 	}
 }
 
 // SentPathRequest records an outgoing path request on this interface at the
 // current instant and propagates it to the parent server interface
-// (Interface.py:272-275).
+// (Interface.py:300-304).
 func (bi *BaseInterface) SentPathRequest() {
-	bi.sentPathRequestAt(time.Now(), false)
+	bi.sentPathRequestAtSize(time.Now(), false, 0)
+}
+
+// SentPathRequestSize is the size-aware form of SentPathRequest.
+func (bi *BaseInterface) SentPathRequestSize(size int) {
+	bi.sentPathRequestAtSize(time.Now(), false, size)
 }
 
 // sentPathRequestAt is the lock-free core of SentPathRequest taking an explicit
 // now for deterministic frequency tests.
 func (bi *BaseInterface) sentPathRequestAt(now time.Time, fromSpawned bool) {
+	bi.sentPathRequestAtSize(now, fromSpawned, 0)
+}
+
+// sentPathRequestAtSize is the size-aware core of sentPathRequestAt.
+func (bi *BaseInterface) sentPathRequestAtSize(now time.Time, fromSpawned bool, size int) {
 	bi.ingressMu.Lock()
 	bi.opFreqDeque = appendFreqSample(bi.opFreqDeque, now, OPFreqSamples)
+	bi.prTxCount++
+	bi.prTxBytes += uint64(max(size, 0))
 	bi.ingressMu.Unlock()
 	if !fromSpawned && bi.parentInterface != nil {
-		bi.parentInterface.sentPathRequestAt(now, true)
+		bi.parentInterface.sentPathRequestAtSize(now, true, size)
 	}
+}
+
+// AnnounceCounters returns the announce counters Python emits as
+// arxb/atxb/arxc/atxc (Interface.py:101-104).
+func (bi *BaseInterface) AnnounceCounters() (rxBytes, txBytes, rxCount, txCount uint64) {
+	bi.ingressMu.RLock()
+	defer bi.ingressMu.RUnlock()
+	return bi.announceRxBytes, bi.announceTxBytes, bi.announceRxCount, bi.announceTxCount
+}
+
+// PathRequestCounters returns the path-request counters Python emits as
+// prxb/ptxb/prxc/ptxc (Interface.py:105-108).
+func (bi *BaseInterface) PathRequestCounters() (rxBytes, txBytes, rxCount, txCount uint64) {
+	bi.ingressMu.RLock()
+	defer bi.ingressMu.RUnlock()
+	return bi.prRxBytes, bi.prTxBytes, bi.prRxCount, bi.prTxCount
+}
+
+// ProtocolViolation records a protocol violation (Interface.py:307-308).
+func (bi *BaseInterface) ProtocolViolation() { bi.protocolViolations.Add(1) }
+
+// IFACViolation records an IFAC violation (Interface.py:312-313).
+func (bi *BaseInterface) IFACViolation() { bi.ifacViolations.Add(1) }
+
+// PacketFilterHit records a packet-filter rejection (Interface.py:317).
+func (bi *BaseInterface) PacketFilterHit() { bi.packetFilterHits.Add(1) }
+
+// ViolationCounters returns the violation totals Python emits as
+// protocol_violations/ifac_violations/packet_filter_hits
+// (Interface.py:156-158).
+func (bi *BaseInterface) ViolationCounters() (protocol, ifac, packetFilter int64) {
+	return bi.protocolViolations.Load(), bi.ifacViolations.Load(), bi.packetFilterHits.Load()
 }
 
 // IncomingPrFrequency returns the current incoming path-request rate in Hz
@@ -807,6 +921,7 @@ func (bi *BaseInterface) shouldIngressLimitAt(now time.Time) bool {
 	if iaFreq > freqThreshold {
 		bi.icBurstActive = true
 		bi.icBurstActivated = now
+		bi.icBurstCount++
 		bi.icHeldRelease = now.Add(time.Duration(bi.icBurstPenalty) * time.Second)
 		return true
 	}
@@ -860,6 +975,7 @@ func (bi *BaseInterface) shouldIngressLimitPrAt(now time.Time) bool {
 	if ipFreq > freqThreshold {
 		bi.icPrBurstActive = true
 		bi.icPrBurstActivated = now
+		bi.icPrBurstCount++
 		return true
 	}
 	return false
@@ -1103,13 +1219,54 @@ func (bi *BaseInterface) CurrentTxSpeed() float64 {
 	return math.Float64frombits(atomic.LoadUint64(&bi.currentTxSpeedBits))
 }
 
+// CurrentAnnounceRxSpeed returns the most recent announce receive speed
+// (bits/sec), Python interface.current_arx_speed.
+func (bi *BaseInterface) CurrentAnnounceRxSpeed() float64 {
+	return math.Float64frombits(atomic.LoadUint64(&bi.currentArxSpeedBits))
+}
+
+// CurrentAnnounceTxSpeed returns the most recent announce transmit speed.
+func (bi *BaseInterface) CurrentAnnounceTxSpeed() float64 {
+	return math.Float64frombits(atomic.LoadUint64(&bi.currentAtxSpeedBits))
+}
+
+// CurrentPRRxSpeed returns the most recent path-request receive speed.
+func (bi *BaseInterface) CurrentPRRxSpeed() float64 {
+	return math.Float64frombits(atomic.LoadUint64(&bi.currentPrxSpeedBits))
+}
+
+// CurrentPRTxSpeed returns the most recent path-request transmit speed.
+func (bi *BaseInterface) CurrentPRTxSpeed() float64 {
+	return math.Float64frombits(atomic.LoadUint64(&bi.currentPtxSpeedBits))
+}
+
+// BurstCount returns how many announce-ingress bursts have activated
+// (Python interface.ic_burst_count).
+func (bi *BaseInterface) BurstCount() int {
+	bi.ingressMu.RLock()
+	defer bi.ingressMu.RUnlock()
+	return bi.icBurstCount
+}
+
+// PRBurstCount returns how many path-request-ingress bursts have activated
+// (Python interface.ic_pr_burst_count).
+func (bi *BaseInterface) PRBurstCount() int {
+	bi.ingressMu.RLock()
+	defer bi.ingressMu.RUnlock()
+	return bi.icPrBurstCount
+}
+
 // SetTrafficSpeeds stores the per-interface receive/transmit speeds (bits/sec)
-// computed by the transport traffic loop. Mirrors Python's
-// `interface.current_rx_speed = crxs; interface.current_tx_speed = ctxs`
-// (Transport.py:435-436).
-func (bi *BaseInterface) SetTrafficSpeeds(rxSpeed, txSpeed float64) {
+// computed by the transport traffic loop, including the announce and
+// path-request speeds. Mirrors Python's current_*_speed assignments
+// (Transport.py:435-440).
+func (bi *BaseInterface) SetTrafficSpeeds(rxSpeed, txSpeed, arxSpeed, atxSpeed, prxSpeed, ptxSpeed float64) {
 	atomic.StoreUint64(&bi.currentRxSpeedBits, math.Float64bits(rxSpeed))
 	atomic.StoreUint64(&bi.currentTxSpeedBits, math.Float64bits(txSpeed))
+	atomic.StoreUint64(&bi.currentArxSpeedBits, math.Float64bits(arxSpeed))
+	atomic.StoreUint64(&bi.currentAtxSpeedBits, math.Float64bits(atxSpeed))
+	atomic.StoreUint64(&bi.currentPrxSpeedBits, math.Float64bits(prxSpeed))
+	atomic.StoreUint64(&bi.currentPtxSpeedBits, math.Float64bits(ptxSpeed))
 }
 
 // SetIFACConfig reinitializes the interface's cryptographic authentication

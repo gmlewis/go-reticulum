@@ -3,11 +3,15 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-package main
+package rns
 
 import (
 	"bytes"
+	"encoding/hex"
+	"encoding/json"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestB256RepGolden(t *testing.T) {
@@ -20,7 +24,6 @@ func TestB256RepGolden(t *testing.T) {
 		{"empty", []byte{}, ""},
 		{"zero", []byte{0x00}, "a"},
 		{"ff", []byte{0xff}, "𐐏"},
-		{"range16", bytes.Repeat([]byte{0}, 0), ""},
 	}
 	// range(16) -> "abcdefghijklmnop"
 	var rb []byte
@@ -36,6 +39,52 @@ func TestB256RepGolden(t *testing.T) {
 	for _, c := range cases {
 		if got := B256Rep(c.in); got != c.want {
 			t.Errorf("B256Rep(%v) = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+// TestB256RepPythonParity derives Python RNS.b256rep's answer freshly over
+// every byte value and a few mixed runs, so the alphabet cannot drift from the
+// reference (RNS/__init__.py:516-537).
+func TestB256RepPythonParity(t *testing.T) {
+	t.Parallel()
+	testutils.SkipIfNoPythonRNS(t)
+
+	all := make([]byte, 256)
+	for i := range all {
+		all[i] = byte(i)
+	}
+	cases := [][]byte{
+		{},
+		all,
+		bytes.Repeat([]byte{0xff}, 5),
+		{0x00, 0x17, 0x18, 0x80},
+	}
+	hexCases := make([]string, len(cases))
+	for i, c := range cases {
+		hexCases[i] = hex.EncodeToString(c)
+	}
+	in, err := json.Marshal(hexCases)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const script = `
+import sys, json
+import RNS
+out = [RNS.b256rep(bytes.fromhex(h)) for h in json.loads(sys.argv[1])]
+json.dump(out, sys.stdout)
+`
+	var want []string
+	if err := json.Unmarshal([]byte(testutils.RunPython(t, script, string(in))), &want); err != nil {
+		t.Fatalf("decode python output: %v", err)
+	}
+	for i, c := range cases {
+		if got := B256Rep(c); got != want[i] {
+			t.Errorf("B256Rep(%x) = %q, want %q (Python)", c, got, want[i])
+		}
+		if got := PrettyB256Rep(c); got != "<"+want[i]+">" {
+			t.Errorf("PrettyB256Rep(%x) = %q, want %q", c, got, "<"+want[i]+">")
 		}
 	}
 }

@@ -56,6 +56,7 @@ const (
 	discoveryFieldCodingRate      = 0x0C
 	discoveryFieldModulation      = 0x0D
 	discoveryFieldChannel         = 0x0E
+	discoveryFieldOPAddr          = 0xF0
 )
 
 // discoveryAnnounceTypes mirrors InterfaceAnnouncer.DISCOVERABLE_INTERFACE_TYPES
@@ -483,6 +484,70 @@ func advertisedI2PReachableOn(iface interfaces.Interface, fallback string) strin
 	return fallback
 }
 
+// IsOnionAddress reports whether address ends in ".onion" case-insensitively,
+// mirroring RNS Discovery.is_onion_address (Discovery.py:871-874).
+func IsOnionAddress(address string) bool {
+	return strings.HasSuffix(strings.ToLower(address), ".onion")
+}
+
+// IsInvalidIPAddress reports whether address is one of the reference's
+// non-routable discovery addresses, mirroring
+// RNS Discovery.is_invalid_ip_address (Discovery.py:876-879).
+func IsInvalidIPAddress(address string) bool {
+	return address == "127.0.0.1" || address == "0.0.0.0"
+}
+
+// discoveryBaseInfo builds the interface-type-independent discovery announce
+// fields, including the optional operator LXMF address under OP_ADDR
+// (RNS/Discovery.py:126-141: `if interface.discovery_lxmf_address: info[OP_ADDR]
+// = interface.discovery_lxmf_address`).
+func discoveryBaseInfo(cfg interfaces.DiscoveryConfig, advertisedType string, transportEnabled bool, transportID []byte, name string, lat, lon, hgt *float64) map[any]any {
+	info := map[any]any{
+		discoveryFieldInterfaceType: advertisedType,
+		discoveryFieldTransport:     transportEnabled,
+		discoveryFieldTransportID:   append([]byte(nil), transportID...),
+		discoveryFieldName:          name,
+		discoveryFieldLatitude:      nil,
+		discoveryFieldLongitude:     nil,
+		discoveryFieldHeight:        nil,
+	}
+	if len(cfg.LXMFAddress) > 0 {
+		info[discoveryFieldOPAddr] = append([]byte(nil), cfg.LXMFAddress...)
+	}
+	if lat != nil {
+		info[discoveryFieldLatitude] = *lat
+	}
+	if lon != nil {
+		info[discoveryFieldLongitude] = *lon
+	}
+	if hgt != nil {
+		info[discoveryFieldHeight] = *hgt
+	}
+	return info
+}
+
+// discoveryOperatorLXMFAddress extracts OP_ADDR from a decoded announce,
+// mirroring RNS/Discovery.py:417-420: nil is allowed, any other non-bytes value
+// is a decode error, and a non-empty 16-byte value becomes the
+// "operator_lxmf_address" hex string (a wrong-length byte string is ignored).
+func discoveryOperatorLXMFAddress(m map[any]any) (string, bool, error) {
+	v, ok := lookupDiscovery(m, discoveryFieldOPAddr)
+	if !ok {
+		return "", false, nil
+	}
+	if v == nil {
+		return "", false, nil
+	}
+	b, ok := v.([]byte)
+	if !ok {
+		return "", false, fmt.Errorf("invalid data in operator LXMF address field of announce")
+	}
+	if len(b) == TruncatedHashLength/8 {
+		return hex.EncodeToString(b), true, nil
+	}
+	return "", false, nil
+}
+
 func (ia *InterfaceAnnouncer) getInterfaceAnnounceData(iface interfaces.Interface) ([]byte, error) {
 	if ia == nil || ia.owner == nil || ia.owner.transport == nil {
 		return nil, fmt.Errorf("no Reticulum transport available")
@@ -526,25 +591,8 @@ func (ia *InterfaceAnnouncer) getInterfaceAnnounceData(iface interfaces.Interfac
 		return nil, nil
 	}
 
-	info := map[any]any{
-		discoveryFieldInterfaceType: advertisedType,
-		discoveryFieldTransport:     ia.owner.transport.Enabled(),
-		discoveryFieldTransportID:   append([]byte(nil), transportIdentity.Hash...),
-		discoveryFieldName:          name,
-		discoveryFieldLatitude:      nil,
-		discoveryFieldLongitude:     nil,
-		discoveryFieldHeight:        nil,
-	}
-
-	if lat != nil {
-		info[discoveryFieldLatitude] = *lat
-	}
-	if lon != nil {
-		info[discoveryFieldLongitude] = *lon
-	}
-	if hgt != nil {
-		info[discoveryFieldHeight] = *hgt
-	}
+	info := discoveryBaseInfo(cfg, advertisedType, ia.owner.transport.Enabled(),
+		transportIdentity.Hash, name, lat, lon, hgt)
 
 	// RNS/Discovery.py:139-141: a TCPClientInterface that is not KISS-framed
 	// has no valid discovery configuration; abort the announce before any
@@ -3120,6 +3168,11 @@ func (h *InterfaceAnnounceHandler) decodeDiscoveryInfo(destinationHash []byte, a
 	}
 	if ifacNetkey, ok := lookupDiscovery(m, discoveryFieldIFACNetkey); ok {
 		info["ifac_netkey"] = discoveryCoerceString(ifacNetkey)
+	}
+	if opAddr, ok, err := discoveryOperatorLXMFAddress(m); err != nil {
+		return nil, err
+	} else if ok {
+		info["operator_lxmf_address"] = opAddr
 	}
 
 	requiredReachableOn := func() (any, error) {

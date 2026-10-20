@@ -22,6 +22,16 @@ const (
 	// packs to the same bytes as the untyped 1, so the wire format is unchanged
 	// and Python still reads the name it always did.
 	PNMetaName = int64(0x01)
+	// PNMetaVersion, PNMetaSyncStratum, PNMetaSyncThrottle, PNMetaAuthBand,
+	// PNMetaUtilPressure and PNMetaCustom are the remaining propagation-node
+	// metadata keys (Python PN_META_*, lxmf/LXMF.py:132-138). Like PNMetaName
+	// they are int64 so they key msgpack-decoded maps correctly.
+	PNMetaVersion      = int64(0x00)
+	PNMetaSyncStratum  = int64(0x02)
+	PNMetaSyncThrottle = int64(0x03)
+	PNMetaAuthBand     = int64(0x04)
+	PNMetaUtilPressure = int64(0x05)
+	PNMetaCustom       = int64(0xFF)
 
 	// SFCompression is the supported-functionality code signalling that a peer
 	// accepts auto-compressed LXMF message resources. It appears in the

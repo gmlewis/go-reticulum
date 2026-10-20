@@ -42,6 +42,19 @@ const (
 	AES128BlockSize = 16
 	// MDU defines the Python-compatible block-aligned Maximum Data Unit payload size.
 	MDU = ((MTU - IFACMinSize - HeaderMinSize - TokenOverhead) / AES128BlockSize * AES128BlockSize) - 1
+	// PacketPlainMDU is the maximum unencrypted single-packet payload: Python
+	// Packet.PLAIN_MDU = Reticulum.MDU = MTU - HEADER_MAXSIZE - IFAC_MIN_SIZE
+	// (RNS/Reticulum.py:155, RNS/Packet.py:110).
+	PacketPlainMDU = MTU - HeaderMaxSize - IFACMinSize
+	// PacketEncryptedMDU is the maximum encrypted single-packet payload,
+	// Python Packet.ENCRYPTED_MDU (RNS/Packet.py:106).
+	PacketEncryptedMDU = ((PacketPlainMDU - TokenOverhead - IdentityKeySize/16) / AES128BlockSize * AES128BlockSize) - 1
+	// MinimumBitrate is the floor Python applies when deriving path timeouts
+	// from the slowest interface (RNS/Reticulum.py:134).
+	MinimumBitrate = 5
+	// DefaultPerHopTimeout is Python's DEFAULT_PER_HOP_TIMEOUT in seconds
+	// (RNS/Reticulum.py:142).
+	DefaultPerHopTimeout = 6.0
 )
 
 // PrettySize dynamically formats a precise byte count into an easily readable string with magnitude suffixes.

@@ -8,6 +8,7 @@ package lxmf
 import (
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -217,4 +218,158 @@ func functionalityCodeEquals(code any, target int) bool {
 	default:
 		return false
 	}
+}
+
+// PNAnnounceDataIsValid validates a `lxmf.propagation` announce payload,
+// mirroring Python pn_announce_data_is_valid (LXMF/LXMF.py:216-252): a
+// MessagePack list of at least seven elements whose timebase and transfer/sync
+// limits are integers, whose node state is boolean, whose stamp-cost entry is a
+// three-integer list, and whose metadata is a dict. Python returns False for
+// any failure (it logs the reason at DEBUG).
+func PNAnnounceDataIsValid(appData []byte) bool {
+	if len(appData) == 0 {
+		return false
+	}
+	result, err := msgpack.Unpack(appData)
+	if err != nil {
+		return false
+	}
+	data, ok := result.([]any)
+	if !ok || len(data) < 7 {
+		return false
+	}
+	// Python: int(data[1]) (timebase), data[2] must be True/False,
+	// int(data[3]) (transfer limit), int(data[4]) (sync limit).
+	if !pnIntLike(data[1]) {
+		return false
+	}
+	// Python tests `data[2] != True and data[2] != False`, and in Python
+	// 1 == True and 0 == False, so an integer 1/0 passes as well as a bool.
+	if !pnNodeStateValid(data[2]) {
+		return false
+	}
+	if !pnIntLike(data[3]) || !pnIntLike(data[4]) {
+		return false
+	}
+	// data[5] is [target stamp cost, flexibility, peering cost].
+	stamps, ok := data[5].([]any)
+	if !ok || len(stamps) < 3 {
+		return false
+	}
+	for i := range 3 {
+		if !pnIntLike(stamps[i]) {
+			return false
+		}
+	}
+	// data[6] is the metadata dict.
+	_, ok = data[6].(map[any]any)
+	return ok
+}
+
+// PNNameFromAppData returns the announced propagation-node name, mirroring
+// Python pn_name_from_app_data (LXMF/LXMF.py:202-213). ok is false when the
+// payload is invalid, carries no metadata name, or the name is not valid UTF-8
+// (Python returns None in each case).
+func PNNameFromAppData(appData []byte) (string, bool) {
+	if !PNAnnounceDataIsValid(appData) {
+		return "", false
+	}
+	result, err := msgpack.Unpack(appData)
+	if err != nil {
+		return "", false
+	}
+	data, ok := result.([]any)
+	if !ok {
+		return "", false
+	}
+	metadata, ok := data[6].(map[any]any)
+	if !ok {
+		return "", false
+	}
+	raw, ok := pnMetaValue(metadata, PNMetaName)
+	if !ok {
+		return "", false
+	}
+	name, ok := raw.([]byte)
+	if !ok || !utf8.Valid(name) {
+		return "", false
+	}
+	return string(name), true
+}
+
+// PNStampCostFromAppData returns the propagation node's announced target stamp
+// cost, mirroring Python pn_stamp_cost_from_app_data (LXMF/LXMF.py:215-221):
+// element 0 of the stamp-cost list, returned as decoded, or ok=false when the
+// payload is invalid.
+func PNStampCostFromAppData(appData []byte) (any, bool) {
+	if !PNAnnounceDataIsValid(appData) {
+		return nil, false
+	}
+	result, err := msgpack.Unpack(appData)
+	if err != nil {
+		return nil, false
+	}
+	data, ok := result.([]any)
+	if !ok || len(data) < 6 {
+		return nil, false
+	}
+	stamps, ok := data[5].([]any)
+	if !ok || len(stamps) == 0 {
+		return nil, false
+	}
+	return stamps[0], true
+}
+
+// pnIntLike reports whether Python's int(v) would succeed for a msgpack-decoded
+// element: integers, floats, bools and numeric text convert; containers do not.
+func pnIntLike(v any) bool {
+	switch x := v.(type) {
+	case int, int64, uint64, float32, float64, bool:
+		return true
+	case string:
+		_, err := strconv.Atoi(strings.TrimSpace(x))
+		return err == nil
+	case []byte:
+		_, err := strconv.Atoi(strings.TrimSpace(string(x)))
+		return err == nil
+	default:
+		return false
+	}
+}
+
+// pnNodeStateValid reports whether Python's
+// `data[2] != True and data[2] != False` condition passes: bools, and the
+// integers/floats equal to 0 or 1 (Python's equality treats 1 == True).
+func pnNodeStateValid(v any) bool {
+	switch x := v.(type) {
+	case bool:
+		return true
+	case int:
+		return x == 0 || x == 1
+	case int64:
+		return x == 0 || x == 1
+	case uint64:
+		return x == 0 || x == 1
+	case float64:
+		return x == 0 || x == 1
+	default:
+		return false
+	}
+}
+
+// pnMetaValue looks a metadata key up in a decoded map, accepting the integer
+// kinds msgpack keys can decode as.
+func pnMetaValue(metadata map[any]any, key int64) (any, bool) {
+	if v, ok := metadata[key]; ok {
+		return v, true
+	}
+	for k, v := range metadata {
+		if n, ok := k.(int); ok && int64(n) == key {
+			return v, true
+		}
+		if n, ok := k.(uint64); ok && n == uint64(key) {
+			return v, true
+		}
+	}
+	return nil, false
 }

@@ -3,7 +3,7 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-package main
+package rns
 
 import (
 	"errors"
@@ -42,6 +42,12 @@ func B256Rep(data []byte) string {
 		out[i] = b256Runes[b]
 	}
 	return string(out)
+}
+
+// PrettyB256Rep returns the bracketed base-256 representation, matching
+// Python RNS.prettyb256rep (RNS/__init__.py:537).
+func PrettyB256Rep(data []byte) string {
+	return "<" + B256Rep(data) + ">"
 }
 
 // B256ToBytes decodes an RNS base-256 string back to bytes, matching

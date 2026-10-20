@@ -6,6 +6,7 @@
 package rns
 
 import (
+	"bytes"
 	"crypto/subtle"
 	"encoding/binary"
 	"encoding/hex"
@@ -306,6 +307,12 @@ func (r *Reticulum) handleRPCRequest(req any) (resp any) {
 			return ""
 		case "link_count":
 			return r.getLinkCount()
+		case "active_link_count":
+			return r.getActiveLinkCount()
+		case "lowest_interface_bitrate":
+			return r.getLowestInterfaceBitrate()
+		case "medium_path_timeout":
+			return r.getMediumPathTimeout()
 		case "rate_table":
 			return r.getRateTable()
 		case "blackholed_identities":
@@ -584,6 +591,46 @@ func (r *Reticulum) getInterfaceStats() map[string]any {
 			blockedIPList = blocker.BlockedIPList()
 		}
 
+		// Announce/path-request byte and count totals and the current
+		// announce/PR speeds (Reticulum.py:1520-1538). Interfaces that embed
+		// BaseInterface provide them; the keys are emitted either way because
+		// Python's Interface defines them on every interface.
+		var arxb, atxb, arxc, atxc, prxb, ptxb, prxc, ptxc uint64
+		if c, ok := iface.(interface {
+			AnnounceCounters() (uint64, uint64, uint64, uint64)
+		}); ok {
+			arxb, atxb, arxc, atxc = c.AnnounceCounters()
+		}
+		if c, ok := iface.(interface {
+			PathRequestCounters() (uint64, uint64, uint64, uint64)
+		}); ok {
+			prxb, ptxb, prxc, ptxc = c.PathRequestCounters()
+		}
+		var arxs, atxs, prxs, ptxs float64
+		if c, ok := iface.(interface{ CurrentAnnounceRxSpeed() float64 }); ok {
+			arxs = c.CurrentAnnounceRxSpeed()
+		}
+		if c, ok := iface.(interface{ CurrentAnnounceTxSpeed() float64 }); ok {
+			atxs = c.CurrentAnnounceTxSpeed()
+		}
+		if c, ok := iface.(interface{ CurrentPRRxSpeed() float64 }); ok {
+			prxs = c.CurrentPRRxSpeed()
+		}
+		if c, ok := iface.(interface{ CurrentPRTxSpeed() float64 }); ok {
+			ptxs = c.CurrentPRTxSpeed()
+		}
+		var burstCount, prBurstCount int
+		if c, ok := iface.(interface{ BurstCount() int }); ok {
+			burstCount = c.BurstCount()
+		}
+		if c, ok := iface.(interface{ PRBurstCount() int }); ok {
+			prBurstCount = c.PRBurstCount()
+		}
+		var protocolViolations, ifacViolations, packetFilterHits int64
+		if c, ok := iface.(interface{ ViolationCounters() (int64, int64, int64) }); ok {
+			protocolViolations, ifacViolations, packetFilterHits = c.ViolationCounters()
+		}
+
 		// Ingress/egress-control ifstats (Reticulum.py:1453-1466). The
 		// announce/PR-frequency and burst-state accessors are part of the
 		// Interface contract; the burst activation timestamps convert to the
@@ -612,8 +659,25 @@ func (r *Reticulum) getInterfaceStats() map[string]any {
 			"held_announces":              iface.HeldAnnounces(),
 			"burst_active":                iface.ICBurstActive(),
 			"burst_activated":             burstActivatedEpoch(iface.ICBurstActivated()),
+			"burst_count":                 burstCount,
 			"pr_burst_active":             iface.ICPrBurstActive(),
 			"pr_burst_activated":          burstActivatedEpoch(iface.ICPrBurstActivated()),
+			"pr_burst_count":              prBurstCount,
+			"arxb":                        arxb,
+			"atxb":                        atxb,
+			"arxc":                        arxc,
+			"atxc":                        atxc,
+			"prxb":                        prxb,
+			"ptxb":                        ptxb,
+			"prxc":                        prxc,
+			"ptxc":                        ptxc,
+			"arxs":                        arxs,
+			"atxs":                        atxs,
+			"prxs":                        prxs,
+			"ptxs":                        ptxs,
+			"protocol_violations":         protocolViolations,
+			"ifac_violations":             ifacViolations,
+			"packet_filter_hits":          packetFilterHits,
 			"announces_to_internal":       boolPtrValue(iface.AnnouncesToInternal()),
 			"announce_queue":              announceQueue,
 			"peers":                       nil,
@@ -677,11 +741,112 @@ func (r *Reticulum) getInterfaceStats() map[string]any {
 		"txb":              ts.TrafficTxb(),
 		"rxs":              ts.SpeedRx(),
 		"txs":              ts.SpeedTx(),
+		"arxb":             ts.AnnounceRxb(),
+		"atxb":             ts.AnnounceTxb(),
+		"arxs":             ts.AnnounceSpeedRx(),
+		"atxs":             ts.AnnounceSpeedTx(),
+		"arxf":             ts.AnnounceFreqRx(),
+		"atxf":             ts.AnnounceFreqTx(),
+		"prxb":             ts.PrRxb(),
+		"ptxb":             ts.PrTxb(),
+		"prxs":             ts.PrSpeedRx(),
+		"ptxs":             ts.PrSpeedTx(),
+		"prxf":             ts.PrFreqRx(),
+		"ptxf":             ts.PrFreqTx(),
+		"txq":              nil,
 		"network_id":       networkID,
 		"transport_id":     transportID,
 		"transport_uptime": transportUptime,
 		"probe_responder":  nil,
 		"rss":              nil,
+	}
+}
+
+// remoteStatusHandler serves the rnstransport.remote.management "/status"
+// request, mirroring Python Transport.remote_status_handler
+// (Reticulum.py:3253-3268): the response is [interface_stats] and, when the
+// request's first element is true, also the link count.
+func (r *Reticulum) remoteStatusHandler(data any, remoteIdentity *Identity) any {
+	if remoteIdentity == nil {
+		return nil
+	}
+	items, ok := data.([]any)
+	if !ok || len(items) == 0 {
+		return nil
+	}
+	response := []any{r.getInterfaceStats()}
+	if pnTruthy(items[0]) {
+		response = append(response, r.getLinkCount())
+	}
+	return response
+}
+
+// remotePathHandler serves the rnstransport.remote.management "/path" request,
+// mirroring Python Transport.remote_path_handler (Transport.py:3271-3301):
+// data = [command, destination_hash?, max_hops?] with command "table" or
+// "rates"; the response is the matching table, optionally filtered to one
+// destination hash.
+func (r *Reticulum) remotePathHandler(data any, remoteIdentity *Identity) any {
+	if remoteIdentity == nil {
+		return nil
+	}
+	items, ok := data.([]any)
+	if !ok || len(items) == 0 {
+		return nil
+	}
+	command, _ := items[0].(string)
+	var destinationHash []byte
+	if len(items) > 1 {
+		destinationHash, _ = items[1].([]byte)
+	}
+	maxHops := 0
+	if len(items) > 2 {
+		if n, ok := numericIntValue(items[2]); ok {
+			maxHops = n
+		}
+	}
+
+	var table []any
+	switch command {
+	case "table":
+		table = r.getPathTable(maxHops)
+	case "rates":
+		table = r.getRateTable()
+	default:
+		return nil
+	}
+	if destinationHash == nil {
+		return table
+	}
+	filtered := make([]any, 0, len(table))
+	for _, row := range table {
+		m, ok := row.(map[string]any)
+		if !ok {
+			continue
+		}
+		if hash, ok := m["hash"].([]byte); ok && bytes.Equal(hash, destinationHash) {
+			filtered = append(filtered, row)
+		}
+	}
+	return filtered
+}
+
+// pnTruthy reports whether v equals Python's True in a truth test, accepting
+// the integer 1 as Python's equality does.
+func pnTruthy(v any) bool {
+	switch x := v.(type) {
+	case bool:
+		return x
+	case int:
+		return x == 1
+	case int64:
+		return x == 1
+	case uint64:
+		return x == 1
+	case float64:
+		return x == 1
+	default:
+		return false
 	}
 }
 
@@ -738,6 +903,33 @@ func (r *Reticulum) getLinkCount() int {
 		return 0
 	}
 	return len(r.transport.LinkTable())
+}
+
+// getActiveLinkCount mirrors Python Reticulum.get_active_link_count's local
+// branch (Reticulum.py:1796-1804).
+func (r *Reticulum) getActiveLinkCount() int {
+	if r.transport == nil {
+		return 0
+	}
+	return r.transport.ActiveLinkCount()
+}
+
+// getLowestInterfaceBitrate mirrors Python
+// Reticulum.get_lowest_interface_bitrate's local branch (Reticulum.py:1736-1753).
+func (r *Reticulum) getLowestInterfaceBitrate() int {
+	if r.transport == nil {
+		return 0
+	}
+	return r.transport.LowestInterfaceBitrate()
+}
+
+// getMediumPathTimeout mirrors Python
+// Reticulum.get_medium_path_timeout's local branch (Reticulum.py:1755-1773).
+func (r *Reticulum) getMediumPathTimeout() float64 {
+	if r.transport == nil {
+		return 0
+	}
+	return r.transport.MediumPathTimeout()
 }
 
 func (r *Reticulum) getRateTable() []any {
@@ -1151,6 +1343,47 @@ func (r *Reticulum) LinkCount() (int, error) {
 		return asInt(resp), nil
 	}
 	return r.getLinkCount(), nil
+}
+
+// ActiveLinkCount returns the number of validated links, mirroring Python
+// Reticulum.get_active_link_count (Reticulum.py:1796-1804).
+func (r *Reticulum) ActiveLinkCount() (int, error) {
+	if r.IsConnectedToSharedInstance() {
+		resp, err := r.callRPC(map[string]any{"get": "active_link_count"})
+		if err != nil {
+			return 0, err
+		}
+		return asInt(resp), nil
+	}
+	return r.getActiveLinkCount(), nil
+}
+
+// LowestInterfaceBitrate returns the bitrate of the slowest online interface,
+// or 0 when none reports one, mirroring Python
+// Reticulum.get_lowest_interface_bitrate (Reticulum.py:1736-1753).
+func (r *Reticulum) LowestInterfaceBitrate() (int, error) {
+	if r.IsConnectedToSharedInstance() {
+		resp, err := r.callRPC(map[string]any{"get": "lowest_interface_bitrate"})
+		if err != nil {
+			return 0, err
+		}
+		return asInt(resp), nil
+	}
+	return r.getLowestInterfaceBitrate(), nil
+}
+
+// MediumPathTimeout estimates a reasonable minimum path-request timeout in
+// seconds, mirroring Python Reticulum.get_medium_path_timeout
+// (Reticulum.py:1755-1773).
+func (r *Reticulum) MediumPathTimeout() (float64, error) {
+	if r.IsConnectedToSharedInstance() {
+		resp, err := r.callRPC(map[string]any{"get": "medium_path_timeout"})
+		if err != nil {
+			return 0, err
+		}
+		return asFloat64(resp), nil
+	}
+	return r.getMediumPathTimeout(), nil
 }
 
 // FirstHopTimeout calculates the appropriate timeout in seconds for the first hop towards a given destination.

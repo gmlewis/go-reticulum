@@ -148,6 +148,12 @@ type Packet struct {
 	// request_path; Transport.py:1354 gates interface.sent_path_request()).
 	IsOutboundPR bool
 
+	// TrafficClass is the inbound traffic class the transport assigned when it
+	// queued the packet (Python Packet.traffic_class, Packet.py:120,162, set
+	// by Transport.inbound for TC_INGRESS_LIMITED at Transport.py:1801). Nil
+	// before the transport classifies it, matching Python's None default.
+	TrafficClass *int
+
 	ReceivingInterface interfaces.Interface
 	AttachedInterface  interfaces.Interface
 
@@ -282,6 +288,11 @@ func (p *Packet) Pack() error {
 func (p *Packet) Send() error {
 	if p.Sent {
 		return errors.New("packet was already sent")
+	}
+	// Python Packet.send's hop gate (Packet.py:262-263): an exhausted packet
+	// returns False without packing or transmitting.
+	if p.Hops >= PathfinderM {
+		return fmt.Errorf("packet hop count %v exceeds the forwarding budget", p.Hops)
 	}
 	if !p.Packed {
 		if err := p.Pack(); err != nil {

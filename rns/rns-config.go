@@ -6,6 +6,7 @@
 package rns
 
 import (
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -513,6 +514,17 @@ func parseDiscoveryConfig(sub *ConfigSection, ifaceType string, mode int) (inter
 	}
 	if v, ok := sub.GetProperty("discovery_name"); ok {
 		cfg.Name = strings.TrimSpace(v)
+	}
+	// RNS/Reticulum.py:919-923: discovery_lxmf_address must be exactly
+	// TRUNCATED_HASHLENGTH/8*2 hex characters; a bad value leaves it unset
+	// (the reference logs and continues).
+	if v, ok := sub.GetProperty("discovery_lxmf_address"); ok {
+		hexAddr := strings.TrimSpace(v)
+		if len(hexAddr) == (TruncatedHashLength/8)*2 {
+			if b, err := hex.DecodeString(hexAddr); err == nil {
+				cfg.LXMFAddress = b
+			}
+		}
 	}
 	if v, ok := sub.GetProperty("discovery_encrypt"); ok {
 		cfg.Encrypt = parseBoolLike(v)

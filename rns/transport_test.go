@@ -427,23 +427,24 @@ func TestHandlePathRequestTagDedup(t *testing.T) {
 	}
 }
 
-// TestCullDiscoveryPRTags verifies the path-request tag set is bounded to
-// maxPRTags entries and that eviction removes the oldest entries from both
-// the insertion-ordered slice and the membership set, mirroring Python's
-// Transport.py:674-676 cull. It drives the cull directly with a slice larger
-// than maxPRTags rather than emitting 32000+ real requests.
+// TestCullDiscoveryPRTags verifies the path-request tag set rotates
+// generations at maxPRTags, mirroring Python's
+// `discovery_pr_tags_prev = discovery_pr_tags; discovery_pr_tags = set()`
+// (Transport.py:821-824): the whole previous set is preserved for one more
+// dedup generation and the current set starts empty. It drives the cull
+// directly with a set larger than maxPRTags rather than emitting 32000+ real
+// requests.
 func TestCullDiscoveryPRTags(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)
+	ts.mu.Lock()
 	ts.ensureStateLocked()
+	ts.mu.Unlock()
 
-	// Seed maxPRTags + 50 unique tags; the cull must drop the 50 oldest.
 	total := maxPRTags + 50
-	ts.discoveryPRTags = make([]string, 0, total)
 	ts.discoveryPRTagsSet = make(map[string]struct{}, total)
 	for i := range total {
 		key := string([]byte{byte(i >> 8), byte(i)})
-		ts.discoveryPRTags = append(ts.discoveryPRTags, key)
 		ts.discoveryPRTagsSet[key] = struct{}{}
 	}
 
@@ -451,44 +452,29 @@ func TestCullDiscoveryPRTags(t *testing.T) {
 	ts.cullDiscoveryPRTagsLocked()
 	ts.discoveryPRTagsMu.Unlock()
 
-	if len(ts.discoveryPRTags) != maxPRTags {
-		t.Fatalf("after cull: len=%v, want %v", len(ts.discoveryPRTags), maxPRTags)
+	if len(ts.discoveryPRTagsPrev) != total {
+		t.Fatalf("previous generation size = %v, want %v", len(ts.discoveryPRTagsPrev), total)
 	}
-	if len(ts.discoveryPRTagsSet) != maxPRTags {
-		t.Fatalf("after cull: set size=%v, want %v", len(ts.discoveryPRTagsSet), maxPRTags)
+	if len(ts.discoveryPRTagsSet) != 0 {
+		t.Fatalf("current generation size = %v, want 0 after rotation", len(ts.discoveryPRTagsSet))
 	}
-	// The oldest 50 entries (indices 0..49) must be evicted from the set.
-	for i := range 50 {
+	// Every prev-generation tag remains visible to the dedup check.
+	for i := range total {
 		b := []byte{byte(i >> 8), byte(i)}
-		if _, ok := ts.discoveryPRTagsSet[string(b)]; ok {
-			t.Fatalf("evicted tag %v still present in set after cull", i)
+		if _, ok := ts.discoveryPRTagsPrev[string(b)]; !ok {
+			t.Fatalf("tag %v missing from the previous generation", i)
 		}
 	}
-	// The most recent maxPRTags entries (indices 50..total-1) must remain.
-	for i := 50; i < total; i++ {
-		b := []byte{byte(i >> 8), byte(i)}
-		if _, ok := ts.discoveryPRTagsSet[string(b)]; !ok {
-			t.Fatalf("retained tag %v missing from set after cull", i)
-		}
-	}
-	// A no-op cull at or below the limit must not change anything.
+	// A no-op cull at or below the limit must not rotate again.
 	ts.discoveryPRTagsMu.Lock()
 	ts.cullDiscoveryPRTagsLocked()
 	ts.discoveryPRTagsMu.Unlock()
-	if len(ts.discoveryPRTags) != maxPRTags || len(ts.discoveryPRTagsSet) != maxPRTags {
-		t.Fatalf("no-op cull changed sizes: slice=%v set=%v", len(ts.discoveryPRTags), len(ts.discoveryPRTagsSet))
+	if len(ts.discoveryPRTagsPrev) != total || len(ts.discoveryPRTagsSet) != 0 {
+		t.Fatalf("no-op cull changed generations: prev=%v current=%v",
+			len(ts.discoveryPRTagsPrev), len(ts.discoveryPRTagsSet))
 	}
 }
 
-// TestHandlePathRequestAnswersFromCachedPath verifies the cached-path branch
-// of handlePathRequest: when a transport node already knows a path to a
-// REMOTE destination (not local to it), it answers a path request by replaying
-// the cached announce as a path response, instead of relaying the request
-// onward and relying on a round-trip to the remote node. This mirrors Python
-// Reticulum's "elif (transport_enabled or is_from_local_client) and
-// (destination_hash in path_table)" branch and is what makes
-// sparsely-announcing destinations (e.g. a nomadnet node announcing every 60
-// minutes) reachable by a freshly-started client within the request timeout.
 func TestHandlePathRequestAnswersFromCachedPath(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)

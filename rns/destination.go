@@ -591,6 +591,22 @@ func CalculateHash(identity *Identity, appName string, aspects ...string) []byte
 	return FullHash(material)[:TruncatedHashLength/8]
 }
 
+// AppAndAspectsFromName splits a full destination name ("app.aspect.…") into
+// the app name and its aspects, mirroring Python
+// Destination.app_and_aspects_from_name (RNS/Destination.py:133-138).
+func AppAndAspectsFromName(fullName string) (string, []string) {
+	components := strings.Split(fullName, ".")
+	return components[0], components[1:]
+}
+
+// HashFromNameAndIdentity returns the addressable destination hash for a full
+// name string and an identity, mirroring Python
+// Destination.hash_from_name_and_identity (RNS/Destination.py:141-148).
+func HashFromNameAndIdentity(fullName string, identity *Identity) []byte {
+	appName, aspects := AppAndAspectsFromName(fullName)
+	return CalculateHash(identity, appName, aspects...)
+}
+
 // String provides a human-readable representation of the destination, including its expanded name and truncated hex hash.
 func (d *Destination) String() string {
 	return fmt.Sprintf("<%v:%v>", d.name, d.HexHash)

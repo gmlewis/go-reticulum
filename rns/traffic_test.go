@@ -18,17 +18,35 @@ import (
 // interface (rxb, txb, current_rx_speed, current_tx_speed).
 type trafficTestInterface struct {
 	dummyInterface
-	rxb, txb          uint64
-	rxSpeed, txSpeed  float64
-	speedSetCallCount int
+	rxb, txb           uint64
+	rxSpeed, txSpeed   float64
+	speedSetCallCount  int
+	arxb, atxb         uint64
+	arxc, atxc         uint64
+	prxb, ptxb         uint64
+	prxc, ptxc         uint64
+	arxSpeed, atxSpeed float64
+	prxSpeed, ptxSpeed float64
 }
 
 func (t *trafficTestInterface) BytesReceived() uint64 { return t.rxb }
 func (t *trafficTestInterface) BytesSent() uint64     { return t.txb }
-func (t *trafficTestInterface) SetTrafficSpeeds(rx, tx float64) {
+func (t *trafficTestInterface) SetTrafficSpeeds(rx, tx, arx, atx, prx, ptx float64) {
 	t.rxSpeed = rx
 	t.txSpeed = tx
+	t.arxSpeed = arx
+	t.atxSpeed = atx
+	t.prxSpeed = prx
+	t.ptxSpeed = ptx
 	t.speedSetCallCount++
+}
+
+func (t *trafficTestInterface) AnnounceCounters() (uint64, uint64, uint64, uint64) {
+	return t.arxb, t.atxb, t.arxc, t.atxc
+}
+
+func (t *trafficTestInterface) PathRequestCounters() (uint64, uint64, uint64, uint64) {
+	return t.prxb, t.ptxb, t.prxc, t.ptxc
 }
 func (t *trafficTestInterface) CurrentRxSpeed() float64 { return t.rxSpeed }
 func (t *trafficTestInterface) CurrentTxSpeed() float64 { return t.txSpeed }
@@ -200,5 +218,92 @@ func TestInterfaceStatsSpeeds(t *testing.T) {
 	}
 	if got := entry["txs"]; got != wantTXS {
 		t.Fatalf("per-interface txs=%v, want %v", got, wantTXS)
+	}
+}
+
+// TestCountTrafficPassAnnounceAggregates pins the announce/path-request halves
+// of count_traffic_loop (Transport.py:584-649): byte deltas accumulate into
+// announce_rxb/atxb and pr_rxb/txb, the per-pass speeds
+// (diff*8/ts_diff) become the aggregate speed fields and are pushed onto the
+// interface, and the frequencies are summed.
+func TestCountTrafficPassAnnounceAggregates(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(nil)
+	iface := &trafficTestInterface{dummyInterface: dummyInterface{name: "A"}}
+	ts.interfaces = []interfaces.Interface{iface}
+
+	t0 := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	ts.countTrafficPass(t0) // initial sample
+
+	iface.arxb, iface.atxb = 800, 400
+	iface.prxb, iface.ptxb = 160, 80
+	ts.countTrafficPass(t0.Add(time.Second))
+
+	if got := ts.AnnounceRxb(); got != 800 {
+		t.Errorf("AnnounceRxb = %v, want 800", got)
+	}
+	if got := ts.AnnounceTxb(); got != 400 {
+		t.Errorf("AnnounceTxb = %v, want 400", got)
+	}
+	if got := ts.PrRxb(); got != 160 {
+		t.Errorf("PrRxb = %v, want 160", got)
+	}
+	if got := ts.PrTxb(); got != 80 {
+		t.Errorf("PrTxb = %v, want 80", got)
+	}
+	if got := ts.AnnounceSpeedRx(); got != 6400 {
+		t.Errorf("AnnounceSpeedRx = %v, want 6400 bits/sec", got)
+	}
+	if got := iface.arxSpeed; got != 6400 {
+		t.Errorf("per-interface announce rx speed = %v, want 6400", got)
+	}
+	if got := ts.PrSpeedTx(); got != 640 {
+		t.Errorf("PrSpeedTx = %v, want 640", got)
+	}
+}
+
+// TestInterfaceStatsCounterFields pins the ifstats keys added for the announce/
+// path-request counters, burst counts and violation counters
+// (Reticulum.py:1520-1554).
+func TestInterfaceStatsCounterFields(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(nil)
+	iface := &trafficTestInterface{dummyInterface: dummyInterface{name: "A"}}
+	iface.arxb, iface.atxb, iface.arxc, iface.atxc = 11, 12, 13, 14
+	iface.prxb, iface.ptxb, iface.prxc, iface.ptxc = 21, 22, 23, 24
+	ts.interfaces = []interfaces.Interface{iface}
+
+	r := &Reticulum{transport: ts}
+	stats := r.getInterfaceStats()
+	list, ok := stats["interfaces"].([]any)
+	if !ok || len(list) != 1 {
+		t.Fatalf("interfaces = %T/%v, want one entry", stats["interfaces"], stats["interfaces"])
+	}
+	entry, ok := list[0].(map[string]any)
+	if !ok {
+		t.Fatalf("entry = %T, want map", list[0])
+	}
+	want := map[string]any{
+		"arxb": uint64(11), "atxb": uint64(12), "arxc": uint64(13), "atxc": uint64(14),
+		"prxb": uint64(21), "ptxb": uint64(22), "prxc": uint64(23), "ptxc": uint64(24),
+		"burst_count": 0, "pr_burst_count": 0,
+		"protocol_violations": int64(0), "ifac_violations": int64(0), "packet_filter_hits": int64(0),
+	}
+	for key, v := range want {
+		got, ok := entry[key]
+		if !ok {
+			t.Errorf("ifstats missing %q", key)
+			continue
+		}
+		if got != v {
+			t.Errorf("ifstats[%q] = %v, want %v", key, got, v)
+		}
+	}
+	for _, key := range []string{"arxb", "atxb", "arxs", "atxs", "arxf", "atxf", "prxb", "ptxb", "prxs", "ptxs", "prxf", "ptxf", "txq"} {
+		if _, ok := stats[key]; !ok {
+			t.Errorf("top-level stats missing %q", key)
+		}
 	}
 }

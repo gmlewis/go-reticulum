@@ -104,6 +104,30 @@ type Transport interface {
 	UseImplicitProof() bool
 	// LinkTable returns the active transport link table.
 	LinkTable() map[string]*LinkEntry
+	// ActiveLinkCount returns the number of validated links.
+	ActiveLinkCount() int
+	// LowestInterfaceBitrate returns the slowest online interface bitrate.
+	LowestInterfaceBitrate() int
+	// MediumPathTimeout estimates the minimum path-request timeout in seconds.
+	MediumPathTimeout() float64
+	// AnnounceRxb/AnnounceTxb return the cumulative announce byte deltas.
+	AnnounceRxb() uint64
+	AnnounceTxb() uint64
+	// AnnounceSpeedRx/AnnounceSpeedTx return the aggregate announce speeds.
+	AnnounceSpeedRx() float64
+	AnnounceSpeedTx() float64
+	// AnnounceFreqRx/AnnounceFreqTx return the summed announce frequencies.
+	AnnounceFreqRx() float64
+	AnnounceFreqTx() float64
+	// PrRxb/PrTxb return the cumulative path-request byte deltas.
+	PrRxb() uint64
+	PrTxb() uint64
+	// PrSpeedRx/PrSpeedTx return the aggregate path-request speeds.
+	PrSpeedRx() float64
+	PrSpeedTx() float64
+	// PrFreqRx/PrFreqTx return the summed path-request frequencies.
+	PrFreqRx() float64
+	PrFreqTx() float64
 	// NetworkIdentityHash returns the hash of the transport's network identity.
 	NetworkIdentityHash() []byte
 	// Outbound processes an outbound packet before transmission.
@@ -286,18 +310,30 @@ type TransportSystem struct {
 	announceQueues        map[interfaces.Interface]*announceQueueState
 	pathRequests          map[string]time.Time
 	pendingPathRequests   map[string][]interfaces.Interface
+	// inflightPathRequests tracks inbound path requests currently being
+	// resolved, mirroring Python Transport.inflight_path_requests
+	// (Transport.py:183,1771-1777): a second request for the same destination
+	// while one is in flight is batched (consumed) instead of processed again.
+	// Entries are cleared when the request is answered, when an announce for
+	// the destination installs a path, and by the stale cull after
+	// pathRequestCullAfter. Guarded by ts.mu.
+	inflightPathRequests map[string]time.Time
 
-	// discoveryPRTags is the ordered list of unique path-request tags seen by
-	// this transport, for dedup of inbound path requests. It mirrors Python's
-	// Transport.discovery_pr_tags (Transport.py:127): a path request is only
-	// processed the first time its unique tag (destination_hash + tag_bytes)
-	// is observed; subsequent identical requests are silently consumed rather
-	// than answered or relayed (Transport.py:2984-2987). discoveryPRTagsSet is
-	// the O(1) membership index over the same keys; the slice preserves
-	// insertion order for the maxPRTags cull. discoveryPRTagsMu guards both.
-	discoveryPRTags    []string
+	// discoveryPRTagsSet is the current generation of unique path-request
+	// tags seen by this transport, for dedup of inbound path requests. It
+	// mirrors Python's Transport.discovery_pr_tags (Transport.py:188-189): a
+	// path request is only processed the first time its unique tag
+	// (destination_hash + tag_bytes) is observed; repeated requests are
+	// silently consumed rather than answered or relayed
+	// (Transport.py:1757-1764). When the set grows past maxPRTags, Python
+	// rotates generations — the current set becomes discovery_pr_tags_prev and
+	// a fresh current set begins (Transport.py:821-824) — and membership tests
+	// consult both. discoveryPRTagsMu guards both sets.
 	discoveryPRTagsSet map[string]struct{}
-	discoveryPRTagsMu  sync.Mutex
+	// discoveryPRTagsPrev is the previous tag generation (Python's
+	// Transport.discovery_pr_tags_prev).
+	discoveryPRTagsPrev map[string]struct{}
+	discoveryPRTagsMu   sync.Mutex
 
 	// downNotified is the once-per-down-transition latch for the outbound
 	// fan-out paths (sendRebroadcast, dispatchForwardSend). When an
@@ -347,6 +383,14 @@ type TransportSystem struct {
 	// blackholeDestination holds that destination once created.
 	publishBlackhole     bool
 	blackholeDestination *Destination
+
+	// remoteManagement enables the rnstransport.remote.management request
+	// destination (Python enable_remote_management, Transport.py:356-362).
+	// remoteManagementAllowed is its identity ACL. remoteManagementDestination
+	// holds the destination once created.
+	remoteManagement            bool
+	remoteManagementAllowed     [][]byte
+	remoteManagementDestination *Destination
 
 	// tunnelSynthesizeDestination is the inbound PLAIN destination
 	// rnstransport.tunnel.synthesize that receives tunnel establishment
@@ -460,6 +504,23 @@ type TransportSystem struct {
 	trafficTxb      uint64
 	speedRx         float64
 	speedTx         float64
+
+	// Announce and path-request aggregate counters, mirroring Python
+	// Transport.announce_rxb/atxb/announce_speed_rx/tx/announce_freq_rx/tx and
+	// pr_rxb/txb/pr_speed_rx/tx/pr_freq_rx/tx (Transport.py:434-449), emitted
+	// in get_interface_stats. Guarded by trafficMu.
+	announceRxb     uint64
+	announceTxb     uint64
+	announceSpeedRx float64
+	announceSpeedTx float64
+	announceFreqRx  float64
+	announceFreqTx  float64
+	prRxb           uint64
+	prTxb           uint64
+	prSpeedRx       float64
+	prSpeedTx       float64
+	prFreqRx        float64
+	prFreqTx        float64
 	trafficMu       sync.Mutex
 }
 
@@ -572,6 +633,15 @@ type ifacOutboundHook interface {
 // PathfinderM is the maximum number of hops in path finding,
 // matching Python's Transport.PATHFINDER_M = 128.
 const PathfinderM = 128
+
+// Inbound traffic classes, mirroring Python Transport.TC_DATA/TC_ANNOUNCE/
+// TC_PATH_REQUEST/TC_INGRESS_LIMITED (Transport.py:108-111).
+const (
+	TCData           = 0x00
+	TCAnnounce       = 0x01
+	TCPathRequest    = 0x02
+	TCIngressLimited = 0x03
+)
 
 // Path expiration durations, matching Python Transport.py:71-73:
 //
@@ -737,8 +807,10 @@ func NewTransportSystem(logger *Logger) *TransportSystem {
 		announceRateTable:       make(map[string]*AnnounceRateEntry),
 		announceQueues:          make(map[interfaces.Interface]*announceQueueState),
 		pathRequests:            make(map[string]time.Time),
+		inflightPathRequests:    make(map[string]time.Time),
 		pendingPathRequests:     make(map[string][]interfaces.Interface),
 		discoveryPRTagsSet:      make(map[string]struct{}),
+		discoveryPRTagsPrev:     make(map[string]struct{}),
 		downNotified:            make(map[interfaces.Interface]struct{}),
 		packetRSSICache:         make(map[string]float64),
 		packetSNRCache:          make(map[string]float64),
@@ -807,6 +879,51 @@ func (ts *TransportSystem) LinkTable() map[string]*LinkEntry {
 	return out
 }
 
+// ActiveLinkCount returns the number of validated links, mirroring Python
+// Transport.active_link_count (Transport.py:3142-3144).
+func (ts *TransportSystem) ActiveLinkCount() int {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	n := 0
+	for _, entry := range ts.linkTable {
+		if entry.Validated {
+			n++
+		}
+	}
+	return n
+}
+
+// LowestInterfaceBitrate returns the bitrate of the slowest currently online
+// interface that reports one, or 0 when there is none. Python's job loop keeps
+// this value in Transport.lowest_interface_bitrate (Transport.py:557-558); the
+// port computes it on demand so it can never lag the interface list.
+func (ts *TransportSystem) LowestInterfaceBitrate() int {
+	ts.mu.Lock()
+	ifaces := append([]interfaces.Interface(nil), ts.interfaces...)
+	ts.mu.Unlock()
+
+	lowest := 0
+	for _, iface := range ifaces {
+		bitrate := iface.Bitrate()
+		if iface.Status() && bitrate > 0 && (lowest == 0 || bitrate < lowest) {
+			lowest = bitrate
+		}
+	}
+	return lowest
+}
+
+// MediumPathTimeout estimates a reasonable minimum path-request timeout: a
+// full round trip for an MTU on the slowest online interface plus per-hop
+// grace, mirroring Python Transport.medium_path_timeout
+// (Transport.py:3133-3136). It returns 0 when the slowest bitrate is unknown.
+func (ts *TransportSystem) MediumPathTimeout() float64 {
+	lowest := ts.LowestInterfaceBitrate()
+	if lowest == 0 {
+		return 0
+	}
+	return 2*(float64(MTU)*8/float64(max(lowest, MinimumBitrate))) + DefaultPerHopTimeout
+}
+
 func (ts *TransportSystem) ensureStateLocked() {
 	if ts.packetHashes == nil {
 		ts.packetHashes = make(map[string]time.Time)
@@ -841,11 +958,17 @@ func (ts *TransportSystem) ensureStateLocked() {
 	if ts.pathRequests == nil {
 		ts.pathRequests = make(map[string]time.Time)
 	}
+	if ts.inflightPathRequests == nil {
+		ts.inflightPathRequests = make(map[string]time.Time)
+	}
 	if ts.pendingPathRequests == nil {
 		ts.pendingPathRequests = make(map[string][]interfaces.Interface)
 	}
 	if ts.discoveryPRTagsSet == nil {
 		ts.discoveryPRTagsSet = make(map[string]struct{})
+	}
+	if ts.discoveryPRTagsPrev == nil {
+		ts.discoveryPRTagsPrev = make(map[string]struct{})
 	}
 	if ts.packetRSSICache == nil {
 		ts.packetRSSICache = make(map[string]float64)
@@ -1073,6 +1196,15 @@ func (ts *TransportSystem) Start(storagePath string) error {
 		}
 	}
 
+	// Register the remote-management destination (Python Transport.py:356-362),
+	// gated on enable_remote_management, a transport identity, and NOT being a
+	// client of a shared instance.
+	if ts.remoteManagement && ts.identity != nil && !ts.connectedToSharedInstance {
+		if err := ts.registerRemoteManagementDestination(); err != nil {
+			return err
+		}
+	}
+
 	// Start maintenance loop
 	go ts.maintenance()
 
@@ -1101,6 +1233,43 @@ func (ts *TransportSystem) registerBlackholeDestination() error {
 	dst.RegisterRequestHandler("/list", ts.blackholeListHandler, AllowAll, nil, false)
 	ts.mu.Lock()
 	ts.blackholeDestination = dst
+	_, already := ts.destinationsMap[string(dst.Hash)]
+	ts.mu.Unlock()
+	if !already {
+		ts.RegisterDestination(dst)
+	}
+	return nil
+}
+
+// SetRemoteManagement configures remote management: when enabled, Start
+// registers the rnstransport.remote.management destination serving the /status
+// and /path handlers to the listed identities (Python
+// enable_remote_management / remote_management_allowed,
+// Transport.py:356-362). It must be called before Start.
+func (ts *TransportSystem) SetRemoteManagement(enabled bool, allowed [][]byte) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.remoteManagement = enabled
+	ts.remoteManagementAllowed = append([][]byte(nil), allowed...)
+}
+
+// registerRemoteManagementDestination creates the
+// rnstransport.remote.management SINGLE IN destination and registers its
+// /status and /path handlers with the configured ACL (Transport.py:356-362).
+func (ts *TransportSystem) registerRemoteManagementDestination() error {
+	dst, err := NewDestination(ts, ts.identity, DestinationIn, DestinationSingle, "rnstransport", "remote", "management")
+	if err != nil {
+		return err
+	}
+	r := &Reticulum{transport: ts}
+	dst.RegisterRequestHandler("/status", func(path string, data any, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
+		return r.remoteStatusHandler(data, remoteIdentity)
+	}, AllowList, ts.remoteManagementAllowed, false)
+	dst.RegisterRequestHandler("/path", func(path string, data any, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
+		return r.remotePathHandler(data, remoteIdentity)
+	}, AllowList, ts.remoteManagementAllowed, false)
+	ts.mu.Lock()
+	ts.remoteManagementDestination = dst
 	_, already := ts.destinationsMap[string(dst.Hash)]
 	ts.mu.Unlock()
 	if !already {
@@ -3050,6 +3219,13 @@ func (ts *TransportSystem) cullPathRequests(now time.Time) {
 			delete(ts.pathRequests, destinationHash)
 		}
 	}
+	// Cull in-flight path requests on the same window (Python's
+	// PATH_REQUEST_GATE_TIMEOUT sweep, Transport.py:964-968,1080-1081).
+	for destinationHash, requestedAt := range ts.inflightPathRequests {
+		if now.Sub(requestedAt) > pathRequestCullAfter {
+			delete(ts.inflightPathRequests, destinationHash)
+		}
+	}
 	// Cull pending path-request records whose requester has GONE. Python bounds
 	// such a record by the requester's own lifetime, never by a timer: "Cull
 	// invalidated path requests" pops it only when the recording interface is no
@@ -3081,29 +3257,19 @@ func (ts *TransportSystem) hasPendingPathRequesterLocked(destinationHash string,
 	return slices.Contains(requesters, iface)
 }
 
-// cullDiscoveryPRTagsLocked trims the remembered path-request tag set to
-// maxPRTags entries once it has grown past the limit, mirroring Python's cull
-// in the jobs loop (Transport.py:674-676, `discovery_pr_tags = discovery_pr_tags
-// [len-max:len]`). The oldest entries (front of the insertion-ordered slice)
-// are evicted; the membership set is updated in lockstep. The caller must hold
-// discoveryPRTagsMu. It is invoked at insert time so the set is bounded
-// immediately rather than waiting for the next jobs tick (Python checks the
-// threshold every job_interval, 250ms); the dedup window is otherwise
-// identical.
+// cullDiscoveryPRTagsLocked rotates the path-request tag generations once the
+// current set has grown past maxPRTags, mirroring Python's jobs-loop cull
+// (Transport.py:821-824): the current set becomes discovery_pr_tags_prev and a
+// fresh current set begins, so recently-seen tags stay deduplicated for one
+// more generation while memory stays bounded. The caller must hold
+// discoveryPRTagsMu. It is also invoked at insert time so the set is bounded
+// immediately rather than waiting for the next jobs tick.
 func (ts *TransportSystem) cullDiscoveryPRTagsLocked() {
-	if len(ts.discoveryPRTags) <= maxPRTags {
+	if len(ts.discoveryPRTagsSet) <= maxPRTags {
 		return
 	}
-	drop := len(ts.discoveryPRTags) - maxPRTags
-	for i := range drop {
-		delete(ts.discoveryPRTagsSet, ts.discoveryPRTags[i])
-	}
-	// Compact into a fresh backing slice so the evicted entries' strings are
-	// no longer referenced and the underlying array does not grow unbounded
-	// across repeated culls.
-	kept := make([]string, 0, maxPRTags)
-	kept = append(kept, ts.discoveryPRTags[drop:]...)
-	ts.discoveryPRTags = kept
+	ts.discoveryPRTagsPrev = ts.discoveryPRTagsSet
+	ts.discoveryPRTagsSet = make(map[string]struct{})
 }
 
 // localClientServer is implemented by *interfaces.LocalServerInterface. It
@@ -3682,12 +3848,36 @@ func (ts *TransportSystem) handlePathRequest(data []byte, packet *Packet) bool {
 		ts.logger.Debug("Ignoring duplicate path request for %x", targetHash)
 		return true
 	}
-	ts.discoveryPRTagsSet[uniqueTag] = struct{}{}
-	ts.discoveryPRTags = append(ts.discoveryPRTags, uniqueTag)
-	if len(ts.discoveryPRTags) > maxPRTags {
-		ts.cullDiscoveryPRTagsLocked()
+	if _, seen := ts.discoveryPRTagsPrev[uniqueTag]; seen {
+		ts.discoveryPRTagsMu.Unlock()
+		ts.logger.Debug("Ignoring duplicate path request for %x", targetHash)
+		return true
 	}
+	ts.discoveryPRTagsSet[uniqueTag] = struct{}{}
+	ts.cullDiscoveryPRTagsLocked()
 	ts.discoveryPRTagsMu.Unlock()
+
+	// Batch a request for a destination that already has one in flight
+	// (Python Transport.py:1771-1777: early registration immediately batches
+	// duplicates). The entry is cleared when this request is answered, when an
+	// announce for the destination installs a path, or by the stale cull.
+	inflightKey := string(targetHash)
+	ts.mu.Lock()
+	if _, inflight := ts.inflightPathRequests[inflightKey]; inflight {
+		ts.mu.Unlock()
+		ts.logger.Pathing("Path request for %x already in-flight, batching to existing", targetHash)
+		return true
+	}
+	ts.inflightPathRequests[inflightKey] = time.Now()
+	ts.mu.Unlock()
+	answered := false
+	defer func() {
+		if answered {
+			ts.mu.Lock()
+			delete(ts.inflightPathRequests, inflightKey)
+			ts.mu.Unlock()
+		}
+	}()
 
 	ts.mu.Lock()
 	localDest := ts.localDestinationLocked(targetHash)
@@ -3720,6 +3910,7 @@ func (ts *TransportSystem) handlePathRequest(data []byte, packet *Packet) bool {
 	ts.mu.Unlock()
 
 	if localDest != nil {
+		answered = true
 		ts.logger.Debug("Answering path request for %x, destination is local", targetHash)
 
 		// Build the path-response announce with nil app data so the
@@ -3781,6 +3972,7 @@ func (ts *TransportSystem) handlePathRequest(data []byte, packet *Packet) bool {
 	// toward the requestor via the pending-path-request machinery.
 	if cachedPath != nil && len(cachedPath.Packet) > 0 && ts.identity != nil &&
 		packet != nil && packet.ReceivingInterface != nil {
+		answered = true
 
 		// Loop prevention: the next hop toward the destination is the
 		// requestor itself. Replying would send the announce back along the
@@ -4828,6 +5020,19 @@ func (ts *TransportSystem) recallLocked(targetHash []byte, noUse bool) *Identity
 	return nil
 }
 
+// CurrentRatchetID returns the ID of the currently known forward-secrecy
+// ratchet for destHash, or nil when no ratchet is known, mirroring Python
+// Identity.current_ratchet_id (RNS/Identity.py:382-393). Python reads its
+// process-wide Identity.known_ratchets table; in this port the transport owns
+// the ratchet store, so the equivalent accessor lives here.
+func (ts *TransportSystem) CurrentRatchetID(destHash []byte) []byte {
+	pub := ts.GetRatchet(destHash)
+	if pub == nil {
+		return nil
+	}
+	return RatchetID(pub)
+}
+
 // GetRatchet retrieves the most recently observed valid forward-secrecy ratchet public key for a known destination.
 func (ts *TransportSystem) GetRatchet(destHash []byte) []byte {
 	ts.mu.Lock()
@@ -5709,6 +5914,16 @@ func (ts *TransportSystem) HasPath(destHash []byte) bool {
 }
 
 // RequestPath requests a path to the destination from the network.
+// PathRequestPending reports whether a path request for destHash is currently
+// outstanding (Python `destination_hash in Transport.path_requests`,
+// Transport.py:964-968). It is a read-only view of the request gate table.
+func (ts *TransportSystem) PathRequestPending(destHash []byte) bool {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	_, ok := ts.pathRequests[string(destHash)]
+	return ok
+}
+
 func (ts *TransportSystem) RequestPath(destHash []byte) error {
 	pathRequestDst, err := NewDestination(ts, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
 	if err != nil {
@@ -5801,6 +6016,11 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 	if ifac, ok := iface.(ifacInboundHook); ok {
 		processed, accepted := ifac.ApplyIFACInbound(raw)
 		if !accepted {
+			// Python's IFAC rejection paths call interface.ifac_violation
+			// (Transport.py:1681-1694).
+			if v, ok := iface.(interface{ IFACViolation() }); ok {
+				v.IFACViolation()
+			}
 			ts.logger.Debug("Dropped packet by IFAC ingress policy on %v", iface.Name())
 			return
 		}
@@ -5811,6 +6031,11 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 	packet.transport = ts
 	packet.ReceivingInterface = iface
 	if err := packet.Unpack(); err != nil {
+		// Python calls interface.protocol_violation for a malformed packet
+		// (Transport.py:1704).
+		if v, ok := iface.(interface{ ProtocolViolation() }); ok {
+			v.ProtocolViolation()
+		}
 		ts.logger.Extreme("Received malformed packet, dropping it: %v", err)
 		return
 	}
@@ -5844,6 +6069,11 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 	filterAccepted := ts.packetFilter(packet)
 	ts.mu.Unlock()
 	if !filterAccepted {
+		// Python's packet_filter rejection increments the interface's
+		// packet_filter_hits (Transport.py:1705).
+		if v, ok := iface.(interface{ PacketFilterHit() }); ok {
+			v.PacketFilterHit()
+		}
 		return
 	}
 
@@ -5934,7 +6164,7 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 		// go-reticulum path requests always carry a tag, so the same gate
 		// applies.
 		if iface != nil && len(packet.Data) > TruncatedHashLength/8 {
-			iface.ReceivedPathRequest()
+			recordReceivedPathRequest(iface, len(packet.Raw))
 		}
 		// If this node answered the request (local destination or cached
 		// path), do not relay it onward — matching Python's elif chain. Only
@@ -6468,7 +6698,7 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 	// deque (Python Transport.py:1751: `elif interface != None:
 	// interface.received_announce()`).
 	if iface != nil {
-		iface.ReceivedAnnounce()
+		recordReceivedAnnounce(iface, len(packet.Raw))
 	}
 
 	destHash := string(packet.DestinationHash)
@@ -6648,6 +6878,9 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 				Packet:        copyBytes(packet.Raw),
 				PacketHash:    append([]byte(nil), packet.GetHash()...),
 			}
+			// An announce that installs a path resolves any in-flight path
+			// request for the destination (Python Transport.py:2395-2397).
+			delete(ts.inflightPathRequests, destHash)
 			// Mark the freshly-inserted path's responsiveness state as
 			// "unknown", mirroring RNS/Transport.py:2053 where
 			// Transport.mark_path_unknown_state runs immediately after the new
@@ -6904,11 +7137,52 @@ func (ts *TransportSystem) shouldHoldAnnounce(packet *Packet, iface interfaces.I
 // Outbound's branches.
 func (ts *TransportSystem) recordOutboundPR(packet *Packet, iface interfaces.Interface) {
 	if packet.DestinationType == DestinationPlain && packet.IsOutboundPR && iface != nil {
+		if v, ok := iface.(interface{ SentPathRequestSize(int) }); ok {
+			v.SentPathRequestSize(len(packet.Raw))
+			return
+		}
 		iface.SentPathRequest()
 	}
 }
 
+// recordOutboundAnnounce records an outgoing announce on the transmitting
+// interface, mirroring Python Transport.outbound's
+// `if packet.packet_type == ANNOUNCE: interface.sent_announce(size=len(raw))`
+// (Transport.py:1547).
+func (ts *TransportSystem) recordOutboundAnnounce(packet *Packet, iface interfaces.Interface) {
+	if packet.PacketType != PacketAnnounce || iface == nil {
+		return
+	}
+	if v, ok := iface.(interface{ SentAnnounceSize(int) }); ok {
+		v.SentAnnounceSize(len(packet.Raw))
+	}
+}
+
+// recordReceivedAnnounce records an incoming announce with its wire size,
+// using the size-aware form when the interface provides one.
+func recordReceivedAnnounce(iface interfaces.Interface, size int) {
+	if v, ok := iface.(interface{ ReceivedAnnounceSize(int) }); ok {
+		v.ReceivedAnnounceSize(size)
+		return
+	}
+	iface.ReceivedAnnounce()
+}
+
+// recordReceivedPathRequest records an incoming path request with its wire size.
+func recordReceivedPathRequest(iface interfaces.Interface, size int) {
+	if v, ok := iface.(interface{ ReceivedPathRequestSize(int) }); ok {
+		v.ReceivedPathRequestSize(size)
+		return
+	}
+	iface.ReceivedPathRequest()
+}
+
 func (ts *TransportSystem) Outbound(packet *Packet) error {
+	// Python Transport._outbound's hop gate (Transport.py:1305): a packet
+	// that has exhausted the forwarding budget is not sent at all.
+	if packet.Hops > PathfinderM-1 {
+		return fmt.Errorf("packet hop count %v exceeds the forwarding budget", packet.Hops)
+	}
 	if !packet.Packed {
 		if err := packet.Pack(); err != nil {
 			return err
@@ -6994,6 +7268,7 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 			ts.logger.Error("Could not transmit on %v: %v", attachedIface.Name(), err)
 		}
 		ts.recordOutboundPR(packet, attachedIface)
+		ts.recordOutboundAnnounce(packet, attachedIface)
 
 		// Arm the receipt's timeout before taking ts.mu: the arming reads the
 		// path table, which takes the same lock.
@@ -7083,6 +7358,7 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 			ts.logger.Error("Could not transmit on %v: %v", pathEntry.Interface.Name(), err)
 		}
 		ts.recordOutboundPR(packet, pathEntry.Interface)
+		ts.recordOutboundAnnounce(packet, pathEntry.Interface)
 
 		// Arm before taking ts.mu (see the attached-interface branch above).
 		register := receiptEligible(packet)
@@ -7182,6 +7458,7 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 			ts.logger.Error("Could not transmit on %v: %v", iface.Name(), err)
 		}
 		ts.recordOutboundPR(packet, iface)
+		ts.recordOutboundAnnounce(packet, iface)
 	}
 
 	if !attemptedAny {
