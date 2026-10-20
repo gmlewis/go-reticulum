@@ -7,6 +7,7 @@ package rns
 
 import (
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -305,6 +306,35 @@ func applyInterfaceConfig(iface interfaces.Interface, mode int, ifac interfaces.
 	applyInterfaceContract(iface, contract)
 	applyBootstrapOnly(iface, bootstrapOnly)
 	applyInterfaceErrorPolicy(iface, panicOnInterfaceError)
+	// Python calls optimise_mtu when the interface is added, after any
+	// configured bitrate has been applied (Reticulum.py:945,1138).
+	optimiseInterfaceMTU(iface)
+}
+
+// optimiseInterfaceMTU derives an interface's hardware MTU from its bitrate
+// when it carries Python's MTU model (Interface.py:231-246).
+func optimiseInterfaceMTU(iface interfaces.Interface) {
+	if optimiser, ok := iface.(interface{ OptimiseMTU() }); ok {
+		optimiser.OptimiseMTU()
+	}
+}
+
+// parseFixedMTU returns the TCP fixed_mtu key's value (TCPInterface.py:78-82).
+// Absent, non-numeric and zero values yield 0, which Python treats as unset
+// (`if fixed_mtu:`). A positive value below the Reticulum MTU is an error.
+func parseFixedMTU(sub *ConfigSection) (int, error) {
+	v, ok := sub.GetProperty("fixed_mtu")
+	if !ok {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || n <= 0 {
+		return 0, nil
+	}
+	if n < interfaces.ReticulumMTU {
+		return 0, fmt.Errorf("configured MTU of %v bytes is too small", n)
+	}
+	return n, nil
 }
 
 // applyInterfaceContract applies the per-interface routing-policy

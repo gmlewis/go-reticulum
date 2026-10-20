@@ -240,8 +240,21 @@ func (l *Link) signallingBytes() []byte {
 	if l.transport != nil && !l.transport.LinkMTUDiscovery() {
 		return nil
 	}
+	// Python signals the next hop's HW_MTU when discovery is enabled and that
+	// interface autoconfigures or fixes its MTU; otherwise it signals
+	// Reticulum.MTU (Link.py:305-310).
+	signallingMTU := l.mtu
+	if l.destination != nil {
+		if provider, ok := l.transport.(interface {
+			NextHopInterfaceHWMTU([]byte) (int, bool)
+		}); ok {
+			if nh, ok := provider.NextHopInterfaceHWMTU(l.destination.Hash); ok {
+				signallingMTU = nh
+			}
+		}
+	}
 	// signalling_value = (mtu & Link.MTU_BYTEMASK)+(((mode<<5) & Link.MODE_BYTEMASK)<<16)
-	signallingValue := uint32(l.mtu&MTUBytemask) + uint32(((l.mode<<5)&ModeBytemask)<<16)
+	signallingValue := uint32(signallingMTU&MTUBytemask) + uint32(((l.mode<<5)&ModeBytemask)<<16)
 	buf := make([]byte, 4)
 	binary.BigEndian.PutUint32(buf, signallingValue)
 	return buf[1:]

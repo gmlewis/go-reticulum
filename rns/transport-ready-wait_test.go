@@ -177,7 +177,8 @@ func TestStartSetsReadyFlag(t *testing.T) {
 
 	_, raw, got := readyWaitDest(t, ts, "startflag", "hello-after-start")
 	ts.Inbound(raw, &dummyInterface{name: "dummy"})
-	if got.Load() != 1 {
-		t.Fatalf("started transport did not process packet (got=%v, want 1)", got.Load())
-	}
+	// A started transport defers the packet to the inbound queue drainer, so
+	// the delivery is asynchronous by design (Python's inbound_job thread).
+	waitForCondition(t, 2*time.Second, func() bool { return got.Load() == 1 },
+		"started transport did not process the queued packet")
 }

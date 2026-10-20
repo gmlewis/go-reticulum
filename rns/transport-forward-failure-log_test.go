@@ -175,6 +175,10 @@ func TestForwardFailureLoggingDoesNotStorm(t *testing.T) {
 						OutboundInterface: iface,
 						ReceivedInterface: iface,
 						DestinationHash:   bytes.Repeat([]byte{0x11}, 16),
+						// A link packet is only forwarded once the link's
+						// proof has been seen (Transport.py:2036-2037); this
+						// test is about the send-failure log on a live link.
+						Validated: true,
 					}
 				}
 				ts.mu.Unlock()

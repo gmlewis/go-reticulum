@@ -1478,16 +1478,18 @@ func TestIntegratedPathResponsePacketMetadataUDP(t *testing.T) {
 	if response.Context != ContextPathResponse {
 		t.Fatalf("expected ContextPathResponse, got %v", response.Context)
 	}
-	if response.HeaderType != Header2 {
-		t.Fatalf("expected Header2 path response, got %v", response.HeaderType)
+	// The reference answers a request for its own local destination with
+	// Destination.announce(path_response=True): a HEADER_1 BROADCAST announce
+	// with no transport header (captured from RNS 1.4.2 in
+	// TestOutboundFramingDifferentialPathResponse).
+	if response.HeaderType != Header1 {
+		t.Fatalf("expected Header1 path response, got %v", response.HeaderType)
 	}
-	if response.TransportType != TransportForward {
-		t.Fatalf("expected TransportForward path response, got %v", response.TransportType)
+	if response.TransportType != TransportBroadcast {
+		t.Fatalf("expected TransportBroadcast path response, got %v", response.TransportType)
 	}
-
-	transportID := r.Transport().Identity().Hash
-	if !bytes.Equal(response.TransportID, transportID) {
-		t.Fatalf("expected transport ID to match local transport identity")
+	if response.TransportID != nil {
+		t.Fatalf("expected no transport ID on a local path response, got %x", response.TransportID)
 	}
 	if !bytes.Equal(response.DestinationHash, localDest.Hash) {
 		t.Fatalf("expected destination hash to match requested local destination")

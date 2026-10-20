@@ -377,6 +377,12 @@ type TransportSystem struct {
 	// to ≥2) before EnableBlackholeUpdater runs.
 	blackholeUpdateInterval time.Duration
 
+	// inboundQueueLengths is the per-traffic-class bound of the inbound
+	// packet queues (Python Transport.INBOUND_*_QUEUE_LENGTH,
+	// Transport.py:139-142), overridden by the [reticulum] qlen_in_* keys
+	// (Reticulum.py:707-721). It is read when the queues are created.
+	inboundQueueLengths [NumTrafficClasses]int
+
 	// publishBlackhole mirrors RNS.Reticulum.publish_blackhole_enabled: when
 	// true, Start registers the rnstransport.info.blackhole request
 	// destination serving the /list RPC (Python Transport.py:229-232).
@@ -463,6 +469,15 @@ type TransportSystem struct {
 	// the traffic goroutine and confirm it did not leak (Python _should_run loop
 	// control, Transport.py:213,517).
 	trafficDone chan struct{}
+
+	// inboundQueues is the bounded per-traffic-class inbound queue
+	// (Python Transport.inbound_queues, Transport.py:194,305). It is nil until
+	// Start creates it: an unstarted transport processes inbound packets
+	// inline, which is what the loopback test harness relies on and what
+	// Python's USE_INBOUND_QUEUE=False branch does. inboundDone is closed by
+	// the drainer when it exits, so Stop can join it.
+	inboundQueues *InboundQueues[*Packet]
+	inboundDone   chan struct{}
 
 	// cacheCleanMu is the non-reentrant guard for the announce-cache cleaning
 	// job (Python Transport.cache_clean_lock, Transport.py:151,2600-2615). It is
@@ -819,9 +834,15 @@ func NewTransportSystem(logger *Logger) *TransportSystem {
 		knownDestinations:       make(map[string][]any),
 		knownRatchets:           make(map[string][]byte),
 		blackholeUpdateInterval: BlackholeUpdateInterval,
-		allowLinkPathRebalance:  true,
-		readyWaitTimeout:        60 * time.Second,
-		readyPollInterval:       250 * time.Millisecond,
+		inboundQueueLengths: [NumTrafficClasses]int{
+			DefaultInboundDataQueueLength,
+			DefaultInboundAnnounceQueueLength,
+			DefaultInboundPRQueueLength,
+			DefaultInboundILQueueLength,
+		},
+		allowLinkPathRebalance: true,
+		readyWaitTimeout:       60 * time.Second,
+		readyPollInterval:      250 * time.Millisecond,
 	}
 }
 
@@ -989,6 +1010,40 @@ func (ts *TransportSystem) SetEnabled(enabled bool) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	ts.enabled = enabled
+}
+
+// SetInboundQueueLengths sets the per-traffic-class bound of the inbound
+// packet queues, in TCData, TCAnnounce, TCPathRequest, TCIngressLimited order
+// (Python Transport.INBOUND_*_QUEUE_LENGTH, Transport.py:139-142). Callers
+// pass the already-validated values; a non-positive entry would make its class
+// drop every packet, which is Python's behaviour for a zero-length queue but
+// is never produced by the config parser (it ignores non-positive keys).
+func (ts *TransportSystem) SetInboundQueueLengths(lengths [NumTrafficClasses]int) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.inboundQueueLengths = lengths
+}
+
+// InboundQueueLengths returns the configured inbound queue bounds in traffic
+// class order.
+func (ts *TransportSystem) InboundQueueLengths() [NumTrafficClasses]int {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return ts.inboundQueueLengths
+}
+
+// InboundQueueSnapshot returns the queue's total height, per-class heights and
+// per-class cumulative drop counts (Python
+// Transport.inbound_queues.snapshot(), Transport.py:85-90). An unstarted
+// transport has no queues and reports all zeros.
+func (ts *TransportSystem) InboundQueueSnapshot() (total int, heights [NumTrafficClasses]int, dropped [NumTrafficClasses]int) {
+	ts.mu.Lock()
+	queues := ts.inboundQueues
+	ts.mu.Unlock()
+	if queues == nil {
+		return 0, heights, dropped
+	}
+	return queues.Snapshot()
 }
 
 // Enabled returns whether the transport system is enabled.
@@ -1213,6 +1268,18 @@ func (ts *TransportSystem) Start(storagePath string) error {
 	// closes trafficDone on exit so Stop can join it (leak check).
 	go ts.countTrafficLoop(ts.stopCh, ts.trafficDone)
 
+	// Create the inbound queue and spawn its drainer (Python Transport.start,
+	// Transport.py:305,518). The bounds are the Transport.INBOUND_*_QUEUE_LENGTH
+	// defaults unless the config layer overrode them with qlen_in_*.
+	ts.mu.Lock()
+	ts.enableInboundQueueLocked()
+	inboundDone := make(chan struct{})
+	ts.inboundDone = inboundDone
+	inboundQueues := ts.inboundQueues
+	stopCh := ts.stopCh
+	ts.mu.Unlock()
+	go ts.inboundDrainer(inboundQueues, stopCh, inboundDone)
+
 	// Mark the transport ready for inbound processing (Python
 	// Transport.py:427 sets Transport.ready = True at the end of start).
 	ts.mu.Lock()
@@ -1319,6 +1386,7 @@ func (ts *TransportSystem) Stop() {
 	stopCh := ts.stopCh
 	doneCh := ts.doneCh
 	trafficDone := ts.trafficDone
+	inboundDone := ts.inboundDone
 	ts.running = false
 	ts.ready = false
 	updater := ts.blackholeUpdater
@@ -1344,6 +1412,16 @@ func (ts *TransportSystem) Stop() {
 	if trafficDone != nil {
 		<-trafficDone
 	}
+	// Join the inbound drainer. It exits as soon as stopCh closes, leaving any
+	// undrained packets in the queue, exactly as Python's
+	// `while Transport._should_run` loop does.
+	if inboundDone != nil {
+		<-inboundDone
+	}
+	ts.mu.Lock()
+	ts.inboundQueues = nil
+	ts.inboundDone = nil
+	ts.mu.Unlock()
 
 	// Final flush of any destinations learned since the last periodic save, so
 	// the debounce in Remember doesn't lose up to one interval on shutdown.
@@ -1918,8 +1996,11 @@ func (ts *TransportSystem) runInterfaceJobs() {
 		if ok {
 			// Re-inject on a goroutine to match Python's daemon-thread release
 			// (Interface.py:254) and to avoid blocking the maintenance loop
-			// behind a full Inbound pass.
-			go ts.Inbound(raw, recv)
+			// behind a full Inbound pass. Python releases with
+			// tc=TC_INGRESS_LIMITED and ifac_handled=True (Interface.py:275), so
+			// the frame is classified as ingress-limited and its already-
+			// unwrapped IFAC is not checked again.
+			go ts.inbound(raw, recv, TCIngressLimited, true)
 		}
 	}
 }
@@ -3836,10 +3917,16 @@ func (ts *TransportSystem) handlePathRequest(data []byte, packet *Packet) bool {
 	}
 	if len(tag) == 0 {
 		ts.logger.Debug("Ignoring tagless path request for %x", targetHash)
+		// Python: `return packet.receiving_interface.protocol_violation(
+		// "Tagless path request")` (Transport.py:1748-1750).
+		recordProtocolViolation(packet)
 		return true
 	}
 	if len(tag) > hashLen {
 		tag = tag[:hashLen]
+		// Python: protocol_violation("Excessive path request tag size")
+		// (Transport.py:1751-1753); the truncated tag is still processed.
+		recordProtocolViolation(packet)
 	}
 	uniqueTag := string(targetHash) + string(tag)
 	ts.discoveryPRTagsMu.Lock()
@@ -3928,11 +4015,16 @@ func (ts *TransportSystem) handlePathRequest(data []byte, packet *Packet) bool {
 			return true
 		}
 
-		announcePacket.HeaderType = Header2
-		announcePacket.TransportType = TransportForward
-		if ts.identity != nil {
-			announcePacket.TransportID = copyBytes(ts.identity.Hash)
-		}
+		// Python answers from its own destination table with
+		// Destination.announce(path_response=True), which builds a HEADER_1
+		// BROADCAST announce with no transport id (RNS/Destination.py,
+		// announce(); captured from the reference by
+		// TestOutboundFramingDifferentialPathResponse). The frame goes
+		// directly back on the receiving interface, so no transport header
+		// belongs on it.
+		announcePacket.HeaderType = Header1
+		announcePacket.TransportType = TransportBroadcast
+		announcePacket.TransportID = nil
 
 		if err := announcePacket.Pack(); err != nil {
 			ts.logger.Error("Failed to pack path response announce: %v", err)
@@ -5947,7 +6039,10 @@ func (ts *TransportSystem) RequestPath(destHash []byte) error {
 	// Transport.path_requests bypasses the ingress-limit hold at arrival time.
 	for _, iface := range ts.GetInterfaces() {
 		if raw, recv, ok := iface.ReleaseHeldAnnounce(destHash); ok {
-			go ts.Inbound(raw, recv)
+			// The held bytes are packet.raw, already unwrapped from IFAC, so
+			// the re-injection must not run IFAC again (Python's
+			// ifac_handled=True).
+			go ts.inbound(raw, recv, noTrafficClass, true)
 		}
 	}
 
@@ -5977,8 +6072,36 @@ func (ts *TransportSystem) RequestPath(destHash []byte) error {
 	return ts.Outbound(p)
 }
 
+// noTrafficClass is the sentinel for "the caller did not pre-assign a traffic
+// class", Python's tc=None (Transport.py:1706).
+const noTrafficClass = -1
+
+// enableInboundQueueLocked creates the inbound queue with the configured
+// bounds. Callers must hold ts.mu. Start uses it; tests use it to exercise the
+// queue without a running drainer.
+func (ts *TransportSystem) enableInboundQueueLocked() {
+	ts.inboundQueues = NewInboundQueues[*Packet](ts.inboundQueueLengths)
+}
+
 // Inbound processes a raw packet received from an interface.
 func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
+	ts.inbound(raw, iface, noTrafficClass, false)
+}
+
+// inbound is Python's Transport.inbound (Transport.py:1629-1815): it
+// preprocesses a raw frame — READY_WAIT, IFAC, unpack, hop adjustment, packet
+// filter and deduplication — classifies it into a traffic class, and hands it
+// to the inbound queue for the drainer. On a transport that was never Started
+// the queue does not exist and the packet is processed inline, which is
+// Python's USE_INBOUND_QUEUE=False branch and what the loopback harness uses.
+//
+// tc is the traffic class the caller already assigned (Python's tc argument;
+// the held-announce release passes TCIngressLimited), or noTrafficClass.
+// ifacHandled skips IFAC processing for a frame that has already been
+// unwrapped, matching Python's ifac_handled=True on the held-announce release
+// (Interfaces/Interface.py:275): the held bytes are packet.raw, i.e. the
+// post-IFAC frame, so re-running IFAC on them would reject it.
+func (ts *TransportSystem) inbound(raw []byte, iface interfaces.Interface, tc int, ifacHandled bool) {
 	// READY_WAIT: if Start is in progress but has not yet completed, wait for
 	// the transport to become ready before processing the packet (Python
 	// Transport.py:1430-1437). The wait only applies during the startup
@@ -6013,7 +6136,7 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 		return
 	}
 	ts.logger.Debug("Go Transport.Inbound received %v bytes from %v, type=%v\n", len(raw), iface.Name(), raw[0]>>4)
-	if ifac, ok := iface.(ifacInboundHook); ok {
+	if ifac, ok := iface.(ifacInboundHook); ok && !ifacHandled {
 		processed, accepted := ifac.ApplyIFACInbound(raw)
 		if !accepted {
 			// Python's IFAC rejection paths call interface.ifac_violation
@@ -6025,6 +6148,19 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 			return
 		}
 		raw = processed
+	}
+
+	// Frame-length gate at Python's position (Transport.py:1699-1701): a frame
+	// longer than the interface's hardware MTU plus its IFAC allowance is a
+	// protocol violation. The concrete receive loops enforce their own ceiling
+	// before calling Inbound, but Python repeats the check here and accounts it
+	// to the interface, so the port does too.
+	if hw, ok := interfaceHardwareMTU(iface); ok && len(raw) > hw+interfaceIFACSize(iface) {
+		if v, ok := iface.(interface{ ProtocolViolation() }); ok {
+			v.ProtocolViolation()
+		}
+		ts.logger.Debug("Dropped frame of %v bytes exceeding MTU of %v on %v", len(raw), hw, iface.Name())
+		return
 	}
 
 	packet := NewPacketFromRaw(raw)
@@ -6111,6 +6247,15 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 	var isDup bool
 	if isLrproof {
 		isDup = ts.packetHashSeenLocked(packet.PacketHash)
+	} else if ts.connectedToSharedInstance {
+		// A client of a shared instance neither filters nor deduplicates:
+		// Python's packet_filter returns True immediately for one
+		// (Transport.py:1379-1381) and add_packet_hash is a no-op
+		// (Transport.py:1372-1375) because the instance does both for it.
+		// The hash is therefore not remembered either, so the same frame
+		// delivered twice reaches the local destination twice, as it does in
+		// Python.
+		isDup = false
 	} else if contextExempt {
 		isDup = false
 	} else if _, ok := ts.linkTable[string(packet.DestinationHash)]; ok {
@@ -6152,10 +6297,76 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 	}
 	ts.mu.Unlock()
 
+	// Classify (Python Transport.py:1706-1778): an announce is TC_ANNOUNCE
+	// unless the caller pre-assigned a class (the held-announce release
+	// pre-assigns TC_INGRESS_LIMITED), a path request is TC_PATH_REQUEST, and
+	// everything else is TC_DATA. The deduplication above happens in the
+	// prefix because the port keeps Python's filter and remember pair
+	// together; Python updates its hashlist in _inbound instead, so a
+	// duplicate that arrives before the queued original is drained is dropped
+	// here and enqueued there.
+	trafficClass := tc
+	switch {
+	case packet.PacketType == PacketAnnounce:
+		if tc == noTrafficClass {
+			trafficClass = TCAnnounce
+		}
+	case isPathRequestPacket(ts, packet):
+		trafficClass = TCPathRequest
+	}
+	if trafficClass == noTrafficClass {
+		trafficClass = TCData
+	}
+
+	ts.mu.Lock()
+	queues := ts.inboundQueues
+	ts.mu.Unlock()
+	if queues == nil {
+		// Unstarted transport: Python's USE_INBOUND_QUEUE=False branch.
+		ts.processInboundPacket(packet)
+		return
+	}
+	if trafficClass == TCIngressLimited {
+		class := trafficClass
+		packet.TrafficClass = &class
+	}
+	if err := queues.Put(trafficClass, packet); err != nil {
+		ts.logger.Extreme("Dropping inbound packet, queue is full (tc=%v)", trafficClass)
+		return
+	}
+}
+
+// isPathRequestPacket reports whether packet is a path request addressed to
+// this transport's path-request destination.
+func isPathRequestPacket(ts *TransportSystem, packet *Packet) bool {
+	return packet.PacketType == PacketData && len(ts.pathRequestHash) > 0 &&
+		bytes.Equal(packet.DestinationHash, ts.pathRequestHash)
+}
+
+// inboundDrainer is Python's Transport.inbound_job (Transport.py:1807-1815):
+// one goroutine that drains the inbound queue in priority order and processes
+// each packet. It exits when stop closes, leaving any remaining packets
+// queued.
+func (ts *TransportSystem) inboundDrainer(queues *InboundQueues[*Packet], stop <-chan struct{}, done chan struct{}) {
+	defer close(done)
+	for {
+		packet, err := queues.GetUntil(stop)
+		if err != nil {
+			return
+		}
+		ts.processInboundPacket(packet)
+	}
+}
+
+// processInboundPacket is Python's Transport._inbound (Transport.py:1822): the
+// post-queue half of inbound processing. The drainer calls it for every
+// dequeued packet; an unstarted transport calls it inline.
+func (ts *TransportSystem) processInboundPacket(packet *Packet) {
+	iface := packet.ReceivingInterface
 	// Destination management
 	destHash := string(packet.DestinationHash)
 
-	if packet.PacketType == PacketData && len(ts.pathRequestHash) > 0 && bytes.Equal(packet.DestinationHash, ts.pathRequestHash) {
+	if isPathRequestPacket(ts, packet) {
 		// Record the incoming path request on the receiving interface's PR
 		// frequency deque (Python Transport.py:2983:
 		// `if packet.receiving_interface: packet.receiving_interface.received_path_request()`).
@@ -6363,6 +6574,15 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 				linkEntry, ok := ts.linkTable[string(packet.DestinationHash)]
 				if !ok {
 					ts.mu.Unlock()
+				} else if !linkEntry.Validated {
+					ts.mu.Unlock()
+					// Python: protocol_violation("Link packet received before
+					// link validation") (Transport.py:2036-2037). Forwarding a
+					// packet for a link whose proof has not yet been seen
+					// would let an unvalidated link inject traffic.
+					ts.logger.Warning("Pre-validation link packet from %v", iface.Name())
+					recordProtocolViolation(packet)
+					return
 				} else {
 					var outboundIface interfaces.Interface
 					if linkEntry.OutboundInterface == linkEntry.ReceivedInterface {
@@ -6677,6 +6897,12 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 	}()
 	if !ValidateAnnounce(ts, packet) {
 		ts.logger.Debug("Received invalid announce for %x, dropping", packet.DestinationHash)
+		// Python: packet.receiving_interface.protocol_violation(
+		// "Invalid announce") (Transport.py:2089-2090). This also covers the
+		// early signature-only rejection (Transport.py:1716-1717): a packet
+		// failing either check is counted once, because Python returns at the
+		// first check it fails.
+		recordProtocolViolation(packet)
 		return
 	}
 
@@ -7175,6 +7401,45 @@ func recordReceivedPathRequest(iface interfaces.Interface, size int) {
 		return
 	}
 	iface.ReceivedPathRequest()
+}
+
+// interfaceHardwareMTU reports an interface's Python HW_MTU when it carries
+// one (> 0; Python's None is 0).
+func interfaceHardwareMTU(iface interfaces.Interface) (int, bool) {
+	model, ok := iface.(interface{ HardwareMTU() int })
+	if !ok {
+		return 0, false
+	}
+	hw := model.HardwareMTU()
+	return hw, hw > 0
+}
+
+// interfaceIFACSize reports the IFAC bytes that precede a frame on iface, or 0
+// when IFAC is disabled. It is the `interface.ifac_size or 0` term of Python's
+// frame-length gate (Transport.py:1700).
+func interfaceIFACSize(iface interfaces.Interface) int {
+	getter, ok := iface.(interface{ IFACConfig() interfaces.IFACConfig })
+	if !ok {
+		return 0
+	}
+	cfg := getter.IFACConfig()
+	if !cfg.Enabled {
+		return 0
+	}
+	return cfg.Size
+}
+
+// recordProtocolViolation increments the receiving interface's
+// protocol-violation counter, mirroring Python's
+// `packet.receiving_interface.protocol_violation(...)` calls throughout
+// Transport.py (Transport.py:1593-1622,1701,1717,1748-1753,2037,2090).
+func recordProtocolViolation(packet *Packet) {
+	if packet == nil || packet.ReceivingInterface == nil {
+		return
+	}
+	if v, ok := packet.ReceivingInterface.(interface{ ProtocolViolation() }); ok {
+		v.ProtocolViolation()
+	}
 }
 
 func (ts *TransportSystem) Outbound(packet *Packet) error {
@@ -8427,6 +8692,36 @@ func (ts *TransportSystem) nextHopInterfaceLocked(destHash []byte) interfaces.In
 	return nil
 }
 
+// NextHopInterfaceHWMTU returns the hardware MTU of the interface the next hop
+// to destHash uses, but only when that interface autoconfigures its MTU from
+// the bitrate or carries a fixed one (Python Transport.next_hop_interface_hw_mtu,
+// Transport.py:3101-3107). It returns false when the destination is unknown,
+// when the interface is not registered, when it has neither flag, or when its
+// HW_MTU is Python's None. Python's destinations_map → shared-instance fallback
+// is absent for the reason nextHopInterfaceLocked documents: link establishment
+// consults this only for a remote destination.
+func (ts *TransportSystem) NextHopInterfaceHWMTU(destHash []byte) (int, bool) {
+	ts.mu.Lock()
+	iface := ts.nextHopInterfaceLocked(destHash)
+	ts.mu.Unlock()
+	if iface == nil {
+		return 0, false
+	}
+	model, ok := iface.(interface {
+		HardwareMTU() int
+		AutoConfigureMTU() bool
+		FixedMTU() bool
+	})
+	if !ok || (!model.AutoConfigureMTU() && !model.FixedMTU()) {
+		return 0, false
+	}
+	mtu := model.HardwareMTU()
+	if mtu <= 0 {
+		return 0, false
+	}
+	return mtu, true
+}
+
 // announceExclusionReason names the Python branch that blocked an announce, for
 // the debug log. It mirrors the branch order of shouldTransmitAnnounce and
 // exists only to make a blocked broadcast explain itself.
@@ -8653,21 +8948,25 @@ func (ts *TransportSystem) packetFilter(packet *Packet) bool {
 		if packet.PacketType != PacketAnnounce {
 			if packet.Hops > 1 {
 				ts.logger.Debug("Dropped PLAIN packet %x with %v hops", packet.PacketHash, packet.Hops)
+				recordProtocolViolation(packet)
 				return false
 			}
 			return true
 		}
 		ts.logger.Debug("Dropped invalid PLAIN announce packet")
+		recordProtocolViolation(packet)
 		return false
 	case DestinationGroup:
 		if packet.PacketType != PacketAnnounce {
 			if packet.Hops > 1 {
 				ts.logger.Debug("Dropped GROUP packet %x with %v hops", packet.PacketHash, packet.Hops)
+				recordProtocolViolation(packet)
 				return false
 			}
 			return true
 		}
 		ts.logger.Debug("Dropped invalid GROUP announce packet")
+		recordProtocolViolation(packet)
 		return false
 	}
 
@@ -8682,6 +8981,7 @@ func (ts *TransportSystem) packetFilter(packet *Packet) bool {
 			return true
 		}
 		ts.logger.Debug("Dropped invalid announce packet")
+		recordProtocolViolation(packet)
 		return false
 	}
 

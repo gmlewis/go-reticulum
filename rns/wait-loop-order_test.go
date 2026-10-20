@@ -64,7 +64,7 @@ var orderedWaitLoops = map[string]waitLoopEntry{
 			"remaining <= 0",
 		},
 	},
-	"TransportSystem.Inbound": {
+	"TransportSystem.inbound": {
 		python: "Transport.py:1430-1437 (the READY_WAIT gate: become ready on the last poll rather than dropped)",
 		ordered: []string{
 			"running && !ready",

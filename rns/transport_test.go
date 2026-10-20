@@ -347,14 +347,18 @@ func TestHandlePathRequestEmitsTargetedPathResponse(t *testing.T) {
 	if response.Context != ContextPathResponse {
 		t.Fatalf("expected ContextPathResponse, got %v", response.Context)
 	}
-	if response.HeaderType != Header2 {
-		t.Fatalf("expected Header2 path response, got %v", response.HeaderType)
+	// Python's Destination.announce(path_response=True) builds a HEADER_1
+	// BROADCAST announce for a local destination, with no transport header
+	// (captured from the reference; see
+	// TestOutboundFramingDifferentialPathResponse).
+	if response.HeaderType != Header1 {
+		t.Fatalf("expected Header1 path response, got %v", response.HeaderType)
 	}
-	if response.TransportType != TransportForward {
-		t.Fatalf("expected TransportForward path response, got %v", response.TransportType)
+	if response.TransportType != TransportBroadcast {
+		t.Fatalf("expected TransportBroadcast path response, got %v", response.TransportType)
 	}
-	if !bytes.Equal(response.TransportID, ts.identity.Hash) {
-		t.Fatalf("expected path response transport ID to match transport identity")
+	if response.TransportID != nil {
+		t.Fatalf("expected no transport ID on a local path response, got %x", response.TransportID)
 	}
 	if !bytes.Equal(response.DestinationHash, localDest.Hash) {
 		t.Fatalf("expected path response destination hash to match local destination")

@@ -185,6 +185,34 @@ func NewTCPClientInterface(name, host string, port int, kiss bool, handler Inbou
 	return newTCPClientInterface(name, host, port, kiss, handler, TCPHWMTU)
 }
 
+// ReticulumMTU is RNS.Reticulum.MTU (Reticulum.py:93): the minimum a configured
+// fixed_mtu may be, and the default link MTU.
+const ReticulumMTU = 500
+
+// SetFixedMTU applies the TCP fixed_mtu config key (TCPInterface.py:78-82):
+// autoconfiguration is disabled, FIXED_MTU is set, and the hardware MTU (also
+// the inbound frame ceiling) becomes mtu. A value below ReticulumMTU is
+// rejected, matching Python's ValueError.
+func (tci *TCPClientInterface) SetFixedMTU(mtu int) error {
+	if mtu < ReticulumMTU {
+		return fmt.Errorf("configured MTU of %v bytes is too small", mtu)
+	}
+	tci.BaseInterface.SetMTUModel(false, true, mtu)
+	tci.hwmtu = mtu
+	return nil
+}
+
+// SetFixedMTU applies the TCP fixed_mtu config key to a server interface
+// (TCPInterface.py:78-82). Spawned clients inherit the model.
+func (tsi *TCPServerInterface) SetFixedMTU(mtu int) error {
+	if mtu < ReticulumMTU {
+		return fmt.Errorf("configured MTU of %v bytes is too small", mtu)
+	}
+	tsi.BaseInterface.SetMTUModel(false, true, mtu)
+	tsi.hwmtu = mtu
+	return nil
+}
+
 // newTCPClientInterface is the shared constructor used by both TCP
 // (TCPHWMTU) and Backbone (BackboneHWMTU) client interfaces so the inbound
 // HDLC frame-length gate uses the correct hardware MTU for the interface
@@ -194,6 +222,11 @@ func newTCPClientInterface(name, host string, port int, kiss bool, handler Inbou
 	log.Printf("NewTCPClientInterface %v target=%v:%v", name, host, port)
 	bi := NewBaseInterface(name, ModeFull, TCPBitrateGuess)
 	bi.setDefaultIFACSize(TCPDefaultIFACSize)
+	// TCP and Backbone autoconfigure their hardware MTU from the bitrate
+	// (TCPInterface.py:42, BackboneInterface.py:55); optimise_mtu is applied
+	// now, and again after any configured bitrate in applyInterfaceConfig.
+	bi.SetMTUModel(true, false, hwmtu)
+	bi.OptimiseMTU()
 	tci := &TCPClientInterface{
 		BaseInterface:  bi,
 		targetHost:     host,
@@ -646,6 +679,8 @@ const tcpAcceptRetryDelay = 250 * time.Millisecond
 func newTCPServerInterface(name, bindIP string, bindPort int, handler InboundHandler, onConnect ConnectHandler, hwmtu int) (*TCPServerInterface, error) {
 	bi := NewBaseInterface(name, ModeFull, TCPBitrateGuess)
 	bi.setDefaultIFACSize(TCPDefaultIFACSize)
+	bi.SetMTUModel(true, false, hwmtu)
+	bi.OptimiseMTU()
 
 	// hostPortAddr brackets an IPv6 literal: "::" would otherwise be bound as
 	// ":::port", which net.Listen rejects with "too many colons in address".
@@ -755,6 +790,9 @@ func (tsi *TCPServerInterface) handleConnection(conn net.Conn) {
 	// spawned peer propagate up to the aggregating parent
 	// (TCPInterface.py:611: spawned_interface.parent_interface = self).
 	bi.parentInterface = tsi.BaseInterface
+	// A spawned client is the interface a path entry records (announces arrive
+	// on it), so it must report the parent's MTU model.
+	bi.SetMTUModel(tsi.AutoConfigureMTU(), tsi.FixedMTU(), tsi.HardwareMTU())
 	tci := &TCPClientInterface{
 		BaseInterface:  bi,
 		conn:           conn,

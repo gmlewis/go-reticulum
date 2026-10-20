@@ -735,6 +735,27 @@ func (r *Reticulum) getInterfaceStats() map[string]any {
 		transportUptime = time.Since(sa).Seconds()
 	}
 
+	// Inbound queue heights, cumulative drops and pressure ratios
+	// (Reticulum.py:1539-1554). Python emits an integer 0 when a numerator is
+	// zero and a float ratio otherwise; the same shape is preserved here.
+	var rxqt, rxqd, rxqa, rxqp, rxqil int
+	var rxqtd, rxqdd, rxqad, rxqpd, rxqild int
+	var heights, dropped [NumTrafficClasses]int
+	if s, ok := ts.(interface {
+		InboundQueueSnapshot() (int, [NumTrafficClasses]int, [NumTrafficClasses]int)
+	}); ok {
+		rxqt, heights, dropped = s.InboundQueueSnapshot()
+	}
+	rxqd, rxqa, rxqp, rxqil = heights[TCData], heights[TCAnnounce], heights[TCPathRequest], heights[TCIngressLimited]
+	rxqdd, rxqad, rxqpd, rxqild = dropped[TCData], dropped[TCAnnounce], dropped[TCPathRequest], dropped[TCIngressLimited]
+	rxqtd = rxqdd + rxqad + rxqpd + rxqild
+
+	var qLengths [NumTrafficClasses]int
+	if l, ok := ts.(interface{ InboundQueueLengths() [NumTrafficClasses]int }); ok {
+		qLengths = l.InboundQueueLengths()
+	}
+	dql, aql, pql, ilql := qLengths[TCData], qLengths[TCAnnounce], qLengths[TCPathRequest], qLengths[TCIngressLimited]
+
 	return map[string]any{
 		"interfaces":       interfacesOut,
 		"rxb":              ts.TrafficRxb(),
@@ -753,6 +774,21 @@ func (r *Reticulum) getInterfaceStats() map[string]any {
 		"ptxs":             ts.PrSpeedTx(),
 		"prxf":             ts.PrFreqRx(),
 		"ptxf":             ts.PrFreqTx(),
+		"rxqt":             rxqt,
+		"rxqd":             rxqd,
+		"rxqa":             rxqa,
+		"rxqp":             rxqp,
+		"rxqil":            rxqil,
+		"rxqtd":            rxqtd,
+		"rxqdd":            rxqdd,
+		"rxqad":            rxqad,
+		"rxqpd":            rxqpd,
+		"rxqild":           rxqild,
+		"tqpressure":       queuePressure(rxqt, dql+aql+pql+ilql),
+		"dqpressure":       queuePressure(rxqd, dql),
+		"aqpressure":       queuePressure(rxqa, aql),
+		"pqpressure":       queuePressure(rxqp, pql),
+		"ilqpressure":      queuePressure(rxqil, ilql),
 		"txq":              nil,
 		"network_id":       networkID,
 		"transport_id":     transportID,
@@ -760,6 +796,16 @@ func (r *Reticulum) getInterfaceStats() map[string]any {
 		"probe_responder":  nil,
 		"rss":              nil,
 	}
+}
+
+// queuePressure mirrors Python's `height/length if height else 0`
+// (Reticulum.py:1548-1554): an empty queue reports integer 0, a non-empty one
+// the float ratio. A zero length is reported as 0 to avoid a division by zero.
+func queuePressure(height, length int) any {
+	if height == 0 || length == 0 {
+		return 0
+	}
+	return float64(height) / float64(length)
 }
 
 // remoteStatusHandler serves the rnstransport.remote.management "/status"

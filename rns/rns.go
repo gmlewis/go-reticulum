@@ -942,6 +942,35 @@ func (r *Reticulum) applyConfig() error {
 		return fmt.Errorf("shared_instance_type %q is invalid; must be \"tcp\" or \"unix\"", r.sharedInstanceType)
 	}
 
+	// Inbound queue lengths (Python Reticulum.py:707-721). Each qlen_in_* key
+	// overrides its class default only when it parses as a positive integer;
+	// a non-positive value is ignored, leaving the default (4096/256/256/128)
+	// in place.
+	if setter, ok := r.transport.(interface {
+		InboundQueueLengths() [NumTrafficClasses]int
+		SetInboundQueueLengths([NumTrafficClasses]int)
+	}); ok {
+		if reticulumSection, found := r.config.GetSection("reticulum"); found {
+			lengths := setter.InboundQueueLengths()
+			for _, opt := range []struct {
+				key   string
+				class int
+			}{
+				{"qlen_in_data", TCData},
+				{"qlen_in_announce", TCAnnounce},
+				{"qlen_in_pr", TCPathRequest},
+				{"qlen_in_il", TCIngressLimited},
+			} {
+				if v, ok := reticulumSection.GetProperty(opt.key); ok {
+					if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && n > 0 {
+						lengths[opt.class] = n
+					}
+				}
+			}
+			setter.SetInboundQueueLengths(lengths)
+		}
+	}
+
 	r.transport.SetLinkMTUDiscovery(r.linkMTUDiscovery)
 	r.transport.SetUseImplicitProof(r.useImplicitProof)
 	// The hop-count disguise is armed here and drawn when the transport starts,
@@ -1564,6 +1593,17 @@ func (r *Reticulum) initInterfaces() error {
 					r.logger.Error("Failed to initialize TCP client interface %v: %v", sub.Name, err)
 					continue
 				}
+				fixedMTU, err := parseFixedMTU(sub)
+				if err != nil {
+					r.logger.Error("Invalid fixed_mtu for TCP client interface %v: %v", sub.Name, err)
+					continue
+				}
+				if fixedMTU > 0 {
+					if err := iface.SetFixedMTU(fixedMTU); err != nil {
+						r.logger.Error("Failed to apply fixed_mtu for TCP client interface %v: %v", sub.Name, err)
+						continue
+					}
+				}
 				applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, contractCfg, bootstrapOnly, r.panicOnIfaceError)
 				r.transport.RegisterInterface(iface)
 				if bootstrapOnly {
@@ -1574,6 +1614,7 @@ func (r *Reticulum) initInterfaces() error {
 					ifacConfigCopy := ifacConfig
 					discoveryConfigCopy := discoveryConfig
 					contractCfgCopy := contractCfg
+					fixedMTUCopy := fixedMTU
 					r.registerBootstrapRestarter(func() error {
 						handler := func(data []byte, iface interfaces.Interface) {
 							r.transport.Inbound(data, iface)
@@ -1582,6 +1623,11 @@ func (r *Reticulum) initInterfaces() error {
 						iface, err := interfaces.NewTCPClientInterface(name, targetHostCopy, targetPortCopy, false, handler)
 						if err != nil {
 							return err
+						}
+						if fixedMTUCopy > 0 {
+							if err := iface.SetFixedMTU(fixedMTUCopy); err != nil {
+								return err
+							}
 						}
 						applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, contractCfgCopy, true, r.panicOnIfaceError)
 						r.transport.RegisterInterface(iface)
@@ -1615,6 +1661,17 @@ func (r *Reticulum) initInterfaces() error {
 					r.logger.Error("Failed to initialize TCP server interface %v: %v", sub.Name, err)
 					continue
 				}
+				fixedMTU, err := parseFixedMTU(sub)
+				if err != nil {
+					r.logger.Error("Invalid fixed_mtu for TCP server interface %v: %v", sub.Name, err)
+					continue
+				}
+				if fixedMTU > 0 {
+					if err := iface.SetFixedMTU(fixedMTU); err != nil {
+						r.logger.Error("Failed to apply fixed_mtu for TCP server interface %v: %v", sub.Name, err)
+						continue
+					}
+				}
 				applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, contractCfg, bootstrapOnly, r.panicOnIfaceError)
 				r.transport.RegisterInterface(iface)
 				if bootstrapOnly {
@@ -1625,6 +1682,7 @@ func (r *Reticulum) initInterfaces() error {
 					ifacConfigCopy := ifacConfig
 					discoveryConfigCopy := discoveryConfig
 					contractCfgCopy := contractCfg
+					fixedMTUCopy := fixedMTU
 					r.registerBootstrapRestarter(func() error {
 						handler := func(data []byte, iface interfaces.Interface) {
 							r.transport.Inbound(data, iface)
@@ -1637,6 +1695,11 @@ func (r *Reticulum) initInterfaces() error {
 						iface, err := interfaces.NewTCPServerInterface(name, listenIPCopy, listenPortCopy, handler, onConnect)
 						if err != nil {
 							return err
+						}
+						if fixedMTUCopy > 0 {
+							if err := iface.SetFixedMTU(fixedMTUCopy); err != nil {
+								return err
+							}
 						}
 						applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, contractCfgCopy, true, r.panicOnIfaceError)
 						r.transport.RegisterInterface(iface)

@@ -140,6 +140,18 @@ type BaseInterface struct {
 	announcesFromInternal bool
 	announcesToInternal   *bool
 
+	// Hardware MTU model (RNS/Interfaces/Interface.py:94-95,114,231-246).
+	// autoConfigureMTU and fixedMTU mirror Python's AUTOCONFIGURE_MTU and
+	// FIXED_MTU class flags; hwMTU is Python's HW_MTU, with 0 standing in for
+	// None. Only TCP and Backbone set AUTOCONFIGURE_MTU; a configured
+	// fixed_mtu sets fixedMTU and the value. mtuMu guards all three: a TCP
+	// server's accept loop reads them to stamp spawned clients while
+	// applyInterfaceConfig is still optimising the server's MTU.
+	mtuMu            sync.RWMutex
+	autoConfigureMTU bool
+	fixedMTU         bool
+	hwMTU            int
+
 	// Ingress/egress-control configuration (RNS/Interfaces/Interface.py
 	// :118-136, v1.1.5). Defaults mirror Interface.__init__ via the
 	// Reticulum _default_* getters, which resolve to the Interface class
@@ -304,6 +316,82 @@ func (bi *BaseInterface) Bitrate() int { return int(bi.bitrate.Load()) }
 // changing hardware constraints. Updating this value influences routing cost
 // calculations downstream.
 func (bi *BaseInterface) SetBitrate(bitrate int) { bi.bitrate.Store(int32(bitrate)) }
+
+// SetMTUModel applies Python's AUTOCONFIGURE_MTU / FIXED_MTU / HW_MTU triple
+// (RNS/Interfaces/Interface.py:94-95,114). hwMTU is 0 when Python's HW_MTU is
+// None.
+func (bi *BaseInterface) SetMTUModel(autoConfigure, fixed bool, hwMTU int) {
+	bi.mtuMu.Lock()
+	defer bi.mtuMu.Unlock()
+	bi.autoConfigureMTU = autoConfigure
+	bi.fixedMTU = fixed
+	bi.hwMTU = hwMTU
+}
+
+// AutoConfigureMTU reports Python's AUTOCONFIGURE_MTU: whether the interface
+// derives HW_MTU from its bitrate.
+func (bi *BaseInterface) AutoConfigureMTU() bool {
+	bi.mtuMu.RLock()
+	defer bi.mtuMu.RUnlock()
+	return bi.autoConfigureMTU
+}
+
+// FixedMTU reports Python's FIXED_MTU: whether HW_MTU was fixed by
+// configuration (the TCP fixed_mtu key).
+func (bi *BaseInterface) FixedMTU() bool {
+	bi.mtuMu.RLock()
+	defer bi.mtuMu.RUnlock()
+	return bi.fixedMTU
+}
+
+// HardwareMTU reports Python's HW_MTU, or 0 when it is None.
+func (bi *BaseInterface) HardwareMTU() int {
+	bi.mtuMu.RLock()
+	defer bi.mtuMu.RUnlock()
+	return bi.hwMTU
+}
+
+// OptimiseMTU derives HW_MTU from the bitrate exactly as Python's
+// optimise_mtu does (RNS/Interfaces/Interface.py:231-246). It is a no-op
+// unless AUTOCONFIGURE_MTU is set, so a fixed_mtu survives it.
+func (bi *BaseInterface) OptimiseMTU() {
+	bi.mtuMu.Lock()
+	defer bi.mtuMu.Unlock()
+	if !bi.autoConfigureMTU {
+		return
+	}
+	bi.hwMTU = OptimiseHardwareMTU(bi.Bitrate())
+}
+
+// OptimiseHardwareMTU is the pure bitrate-to-MTU table of Python's
+// optimise_mtu (Interface.py:231-246). It returns 0 for Python's None (at or
+// below 62,500 bps). The first branch is >= 1 Gbps; every later one is strict.
+func OptimiseHardwareMTU(bitrate int) int {
+	switch {
+	case bitrate >= 1_000_000_000:
+		return 524288
+	case bitrate > 750_000_000:
+		return 262144
+	case bitrate > 400_000_000:
+		return 131072
+	case bitrate > 200_000_000:
+		return 65536
+	case bitrate > 100_000_000:
+		return 32768
+	case bitrate > 10_000_000:
+		return 16384
+	case bitrate > 5_000_000:
+		return 8192
+	case bitrate > 2_000_000:
+		return 4096
+	case bitrate > 1_000_000:
+		return 2048
+	case bitrate > 62_500:
+		return 1024
+	default:
+		return 0
+	}
+}
 
 // Gravity returns the interface gravity used for weighted path selection
 // (RNS v1.4.1). Higher gravity interfaces win same-timebase path ties. The
