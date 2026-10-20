@@ -423,12 +423,11 @@ func TestServerTunnelCloseCancelsAccept(t *testing.T) {
 }
 
 // TestServerTunnelCloseTrackPendingRace deterministically exercises the
-// Close-vs-trackPendingIfLive race that intermittently hung the suite under
-// load: Close runs while the accept loop has already sent STREAM ACCEPT and
-// returned from OpenStreamAccept, but has not yet tracked the pending. In that
-// window pendingAccept is nil, so Close cannot cancel it. The fixed accept loop
-// re-checks stopped after tracking and self-cancels; the old code blocked in
-// pending.Wait forever and Close's bgWG.Wait hung.
+// Close-vs-trackPendingIfLive window: Close runs while the accept loop has
+// already sent STREAM ACCEPT and returned from OpenStreamAccept, but has not
+// yet tracked the pending. In that window pendingAccept is nil, so Close cannot
+// cancel it; the accept loop must therefore re-check stopped after tracking and
+// self-cancel.
 //
 // The race is forced with channel/goroutine synchronization (no time.Sleep): a
 // test-only hook parks the accept loop in the window, then spins on isStopped
@@ -448,9 +447,9 @@ func TestServerTunnelCloseTrackPendingRace(t *testing.T) {
 	st.Destination = NewI2PDestinationFromData([]byte("race-dest"))
 
 	// Park the accept loop after OpenStreamAccept returns and before it tracks
-	// the pending — the exact window where Close previously saw pendingAccept
-	// nil and could not cancel. The hook proceeds only once Close has set
-	// stopped, so the subsequent trackPendingIfLive observes stopped.
+	// the pending — the window where Close sees pendingAccept nil and cannot
+	// cancel. The hook proceeds only once Close has set stopped, so the
+	// subsequent trackPendingIfLive observes stopped.
 	reachedHook := make(chan struct{})
 	st.onAcceptOpened = func() {
 		close(reachedHook)
@@ -504,13 +503,13 @@ func waitConnsSnapshotted(t *testing.T, tun *I2PTunnel) {
 }
 
 // TestServerTunnelCloseDuringConnRegister deterministically exercises the
-// Close-vs-register window that intermittently hung TestServerTunnelProxiesData
-// for the whole go test timeout. The accept loop holds an inbound stream and has
+// Close-vs-register window: the accept loop holds an inbound stream and has
 // passed its stopped check, but the stream conn is not yet registered in the
 // active set, so Close snapshots the active conns without it. Registering the
-// stream — and the local conn dialed afterwards — after that snapshot leaks both
-// conns: nothing ever closes them, both proxy copy directions stay blocked on
-// their peers, and Close's drain of the background goroutines never returns.
+// stream — and the local conn dialed afterwards — after that snapshot would
+// leak both conns: nothing ever closes them, both proxy copy directions stay
+// blocked on their peers, and Close's drain of the background goroutines never
+// returns.
 //
 // The window is forced with the onConnReady hook: the accept loop parks there
 // until Close has snapshotted the active conn set, so the stream conn is

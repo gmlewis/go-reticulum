@@ -3,8 +3,8 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-// server.go implements the gorngit repository node serve loop and the
-// /git/list and /git/create request handlers, mirroring
+// server.go implements the gorngit repository node serve loop, the /git/*
+// request handlers, and their git plumbing, mirroring
 // RNS/Utilities/rngit/server.py (ReticulumGitNode, rngit v1.4.2).
 
 package main
@@ -295,8 +295,8 @@ func (n *reticulumGitNode) loadAliasesAndBlocked(cfg *nodeConfig) {
 	}
 }
 
-// registerRequestHandlers installs the /git/list and /git/create handlers and
-// stubs the remaining paths, mirroring register_request_handlers (server.py).
+// registerRequestHandlers installs the handlers for every git and management
+// path, mirroring register_request_handlers (server.py).
 func (n *reticulumGitNode) registerRequestHandlers(logger *rns.Logger) {
 	n.destination.RegisterRequestHandler(pathList, n.handleList, rns.AllowAll, nil, false)
 	n.destination.RegisterRequestHandler(pathCreate, n.handleCreate, rns.AllowAll, nil, false)
@@ -306,7 +306,6 @@ func (n *reticulumGitNode) registerRequestHandlers(logger *rns.Logger) {
 	n.destination.RegisterRequestHandler(pathFork, n.handleFork, rns.AllowAll, nil, false)
 	n.destination.RegisterRequestHandler(pathSync, n.handleSync, rns.AllowAll, nil, false)
 	n.destination.RegisterRequestHandler(pathMirror, n.handleMirror, rns.AllowAll, nil, false)
-	// Stub handlers for follow-up tasks.
 	n.destination.RegisterRequestHandler(pathRelease, n.handleRelease, rns.AllowAll, nil, false)
 	n.destination.RegisterRequestHandler(pathWork, n.handleWork, rns.AllowAll, nil, false)
 	n.destination.RegisterRequestHandler(pathPerms, n.handlePerms, rns.AllowAll, nil, false)
@@ -1249,11 +1248,10 @@ func (n *reticulumGitNode) handleRemoteClone(path string, data any, requestID, l
 		return append([]byte{resRemoteFail}, []byte(msg)...)
 	}
 
-	// Best-effort HEAD update; failures only log and do not abort the clone,
+	// Best-effort HEAD update; a failure leaves HEAD at the existing symref,
 	// mirroring _handle_remote_clone's try/except around
 	// __update_head_to_source_default (server.py).
 	_ = updateHeadToSourceDefault(repoTempPath, sourceURL)
-	// Continue; HEAD defaults to the existing symref.
 
 	typeCmd := exec.Command("git", "config", "repository.rngit.type", repoType)
 	typeCmd.Dir = repoTempPath
@@ -1416,7 +1414,7 @@ func (n *reticulumGitNode) handleDelete(path string, data any, requestID, linkID
 		return append([]byte{resRemoteFail}, []byte("Could not delete ref")...)
 	}
 
-	// push_succeeded (stats/notification) is deferred.
+	// push_succeeded (stats/notification accounting) is not recorded here.
 	return []byte{resOK}
 }
 

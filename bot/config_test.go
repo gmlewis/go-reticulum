@@ -633,8 +633,7 @@ func TestDefaultTriggerNick(t *testing.T) {
 }
 
 // TestDecodeBotConfigIgnoresACommentedOutHub asserts a hub an operator has
-// commented out is never dialled. The generated template no longer ships a
-// commented public hub, but the parser must keep honouring comments in a
+// commented out is never dialled: the parser must honour comments in a
 // hand-edited config.
 func TestDecodeBotConfigIgnoresACommentedOutHub(t *testing.T) {
 	t.Parallel()
@@ -810,8 +809,7 @@ func TestDecodeBotConfigLXMFErrors(t *testing.T) {
 
 // TestDecodeBotConfigWarnsOnANodeWithoutLXMF asserts a propagation node
 // configured while LXMF is off is reported once at startup: the key is dead
-// configuration, and the operator has to hear that rather than wonder later why
-// nothing is store-and-forwarded.
+// configuration and the operator has to hear that.
 func TestDecodeBotConfigWarnsOnANodeWithoutLXMF(t *testing.T) {
 	t.Parallel()
 
@@ -846,8 +844,7 @@ lxmf_propagation_node = "`+testHubTwo+`"
 }
 
 // TestDecodeBotConfigReadsTheTopLevelPaths asserts the two keys the first-run
-// template writes above [bot] take effect there. Both were dropped silently, so a
-// bot told to keep its identity elsewhere quietly used the default path instead.
+// template writes above [bot] take effect there instead of being dropped.
 func TestDecodeBotConfigReadsTheTopLevelPaths(t *testing.T) {
 	t.Parallel()
 
@@ -1169,8 +1166,8 @@ func TestDecodeBotConfigToleratesAnAbsentTowersCSV(t *testing.T) {
 	}
 }
 
-// TestDecodePortalAndGNSSSettings asserts the Go Reticulum Buddy's Phase 0
-// keys decode: the captive portal's listen address, the GNSS receiver's device,
+// TestDecodePortalAndGNSSSettings asserts the captive portal and GNSS keys
+// decode: the captive portal's listen address, the GNSS receiver's device,
 // and a static fix for a headless node with no receiver at all.
 func TestDecodePortalAndGNSSSettings(t *testing.T) {
 	t.Parallel()
@@ -1246,9 +1243,9 @@ func TestPortalAndGNSSSettingsValidate(t *testing.T) {
 	}
 }
 
-// TestDecodeCompassSettings asserts the Phase 0.6 compass keys decode: the
-// device a magnetometer streams heading sentences from, and a static magnetic
-// heading for a node with no sensor.
+// TestDecodeCompassSettings asserts the compass keys decode: the device a
+// magnetometer streams heading sentences from, and a static magnetic heading
+// for a node with no sensor.
 func TestDecodeCompassSettings(t *testing.T) {
 	t.Parallel()
 

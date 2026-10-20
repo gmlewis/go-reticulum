@@ -367,7 +367,7 @@ func TestRecoverNearestOLCRefusesInvalidInput(t *testing.T) {
 }
 
 // TestCodeAreaCenterIsTheMiddleOfTheArea asserts Center is the geometric middle,
-// which is what a user is shown when the bot reports a code as a place.
+// which is what a user is shown when a code is reported as a place.
 func TestCodeAreaCenterIsTheMiddleOfTheArea(t *testing.T) {
 	t.Parallel()
 

@@ -81,10 +81,10 @@ type options struct {
 // dispatch and per-subcommand argparse setup. The first argument is treated as
 // the subcommand when it matches a known name; otherwise the subcommand
 // defaults to "node" and the full argument list is parsed as node flags.
-// Flag-first invocations are guarded: a subcommand name appearing after flags
-// (e.g. "gorngit -q sync <repo>") would otherwise silently dispatch to node —
-// which starts a second node answering the repositories destination instead
-// of running the requested client.
+// A subcommand name appearing after flags (e.g. "gorngit -q sync <repo>") is
+// rejected rather than silently dispatching to node, which would start a
+// second node answering the repositories destination instead of running the
+// requested client.
 func parseFlags(args []string, usageOutput io.Writer) (options, error) {
 	var opts options
 	opts.subcommand = subNode
@@ -219,7 +219,7 @@ func parseFlags(args []string, usageOutput io.Writer) (options, error) {
 // Ambiguity note: node's -i/-s are booleans while other subcommands use them
 // as value flags; a flag-first invocation like `gorngit -i sync <repo>` is
 // therefore still treated as `node -i` with an ignored positional, which is
-// the pre-existing (documented) node-flag fallback.
+// the documented node-flag fallback.
 var valueFlags = map[string]bool{
 	"config": true, "rnsconfig": true, "identity": true,
 	"signer": true, "name": true, "title": true, "id": true, "scope": true,

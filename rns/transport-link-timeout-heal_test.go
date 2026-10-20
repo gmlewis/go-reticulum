@@ -269,28 +269,17 @@ func TestUnvalidatedLinkTableTimeoutMarksUnresponsiveAndRequestsPath(t *testing.
 	}
 }
 
-// TestMultiHopLinkTimeoutMarksUnresponsiveAndRequestsPath pins the case the
-// operator actually hit: a link request sent along a path of MORE THAN ONE hop
-// that is never answered.
+// TestMultiHopLinkTimeoutMarksUnresponsiveAndRequestsPath pins the case of a
+// link request sent along a path of MORE THAN ONE hop that is never answered.
 //
-// The recovery block recognised four arrivals at a timed-out link request — the
-// path is now missing; the link was originated by a local client (hops 0); the
-// destination was previously one hop away; the link initiator is one hop away —
-// and a multi-hop timeout matches none of them. The link entry was culled, and
-// then nothing: the path stayed in the table, still marked responsive, so the
-// next attempt selected the same next hop and paid another full establishment
-// window. Observed on 2026-10-10 as a link request over a 2-hop path that got
-// no answer for its whole 18 s timeout, while a fresh client fetched the same
-// page over a 2-hop path in 529 ms and validated a link over a 4-hop path in
-// 43 ms. Hop count was never the problem — the path was simply never
-// invalidated, and the client could only find out by timing out.
-//
-// Python has the same four conditions (Transport.py:709-757) and its own
-// comment admits the shape is a known dead end ("This might result in the path
-// re-resolution only being able to happen once … Is this problematic, or does
-// it actually not matter?"). It does matter: it is one full link-establishment
-// timeout, every time, for a destination that is perfectly reachable by
-// another route.
+// The recovery block in cullStaleTransportTables recognises four arrivals at a
+// timed-out link request: the path is now missing; the link was originated by
+// a local client (hops 0); the destination was previously one hop away; the
+// link initiator is one hop away. A multi-hop timeout matches none of them, so
+// the path must still be marked unresponsive and path rediscovery requested;
+// otherwise the next attempt selects the same next hop and pays another full
+// link-establishment window. Python has the same four conditions
+// (Transport.py:709-757).
 func TestMultiHopLinkTimeoutMarksUnresponsiveAndRequestsPath(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)

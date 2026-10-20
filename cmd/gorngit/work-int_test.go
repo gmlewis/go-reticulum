@@ -279,13 +279,9 @@ func TestIntegrationWorkRoundTrip(t *testing.T) {
 	}
 	t.Logf("Edit applied")
 
-	// 6. Complete — author-only. Since the doc is in proposed/, complete
-	// only moves active→completed, so first we activate it to active, then
-	// complete it. But activate moves completed→active, so we must move the
-	// proposed doc to active manually... Actually the Python _work_complete
-	// only handles active→completed. For a proposed doc, complete returns
-	// "Document not found" (active dir missing). So instead, re-create a doc
-	// in active scope and exercise complete/activate on that.
+	// 6. Complete and activate only move documents between the active and
+	// completed scopes, so create a separate document in the active scope to
+	// exercise them.
 	activeContent := "Active work document body."
 	activeSig, err := client.identity.Sign([]byte(activeContent))
 	if err != nil {
@@ -521,7 +517,6 @@ func TestIntegrationWorkRoundTrip(t *testing.T) {
 	}
 	t.Logf("Deleted active work document #%v", activeDocID)
 
-	// Allow the server a moment to flush. The test is done; the deferred
-	// node cleanup will terminate the subprocess.
+	// The test is done; the deferred node cleanup terminates the subprocess.
 	_ = time.Millisecond
 }

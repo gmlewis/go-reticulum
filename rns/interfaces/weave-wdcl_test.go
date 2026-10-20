@@ -62,7 +62,7 @@ func TestWeaveEventTableGolden(t *testing.T) {
 			t.Errorf("event 0x%04X description = %q, want %q", tc.code, got, tc.desc)
 		}
 	}
-	// ET_BOARD_INIT is the headline constant for this task.
+	// ET_BOARD_INIT keeps its Python value, 0x0003.
 	if WeaveETBoardInit != 0x0003 {
 		t.Fatalf("WeaveETBoardInit = 0x%04X, want 0x0003", WeaveETBoardInit)
 	}

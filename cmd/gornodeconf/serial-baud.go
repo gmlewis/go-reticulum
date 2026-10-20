@@ -13,9 +13,9 @@ import (
 )
 
 // serialBaudConstant maps a baud rate to the platform's termios speed
-// constant. The syscall.B* constants are present on linux, darwin, and
-// freebsd (not windows), so this table is shared across the three; the
-// per-OS serial_*.go files feed the result into their own termios layout.
+// constant. The syscall.B* constants are present on Linux, Darwin and FreeBSD
+// (not Windows), so this table is shared across the three; the per-OS
+// serial_*.go files feed the result into their own termios layout.
 func serialBaudConstant(speed int) (uint32, error) {
 	switch speed {
 	case 1200:

@@ -112,11 +112,10 @@ func downClientForTest(name string, conn net.Conn) *TCPClientInterface {
 // discovers it fails, the interface goes down, and every Send after that fails
 // fast instead of writing to the dead socket again.
 //
-// The storm this guards against is not hypothetical. Send is reached from the
-// transport's maintenance loop and every forwarding path, so an interface that
-// kept reporting itself up and kept writing would turn one flapping peer into a
-// stream of write errors on a socket that can never carry them — the
-// "use of closed network connection" storm that a flapping uplink produced.
+// Send is reached from the transport's maintenance loop and every forwarding
+// path, so an interface that kept reporting itself up and kept writing would
+// turn one flapping peer into a stream of write errors on a socket that can
+// never carry them.
 func TestTCPClientInterface_ClosedConnDoesNotStormSends(t *testing.T) {
 	t.Parallel()
 

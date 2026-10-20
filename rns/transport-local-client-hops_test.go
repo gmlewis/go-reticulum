@@ -107,7 +107,7 @@ func TestSharedInstanceLocalClientHopsParity(t *testing.T) {
 		return frames
 	}
 
-	var _ = attachWithCapture // placeholder until the wiring below uses it
+	var _ = attachWithCapture
 
 	// The hub attachment tees frames so the test can pin the forwarded link
 	// request's wire framing and hop byte.

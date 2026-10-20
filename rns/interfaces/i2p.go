@@ -5,15 +5,14 @@
 
 package interfaces
 
-// I2PInterface wraps a TCP listener tuned for tunneling over the Invisible
-// Internet Project (I2P) network. It acts as an anonymized ingress point and
-// manages inbound connections originating from the I2P mesh.
+// I2PInterface is a TCP server listener that receives connections tunneled
+// over the Invisible Internet Project (I2P) network.
 type I2PInterface struct {
 	*TCPServerInterface
 }
 
-// NewI2PInterface binds and orchestrates an I2P-aware TCP server on the provided IP and port.
-// It delegates core session handling to the underlying TCP infrastructure while explicitly labeling traffic as traversing the I2P boundary.
+// NewI2PInterface creates a TCP server listener on the given address that
+// presents itself as an I2P interface.
 func NewI2PInterface(name, bindIP string, bindPort int, handler InboundHandler, onConnect ConnectHandler) (Interface, error) {
 	inner, err := NewTCPServerInterface(name, bindIP, bindPort, handler, onConnect)
 	if err != nil {
@@ -27,15 +26,14 @@ func (i *I2PInterface) Type() string {
 	return "I2PInterface"
 }
 
-// I2PInterfacePeer establishes a persistent TCP connection to a remote I2P
-// hidden service. It encapsulates I2P transport details and presents a standard
-// TCP client interface to upper routing layers.
+// I2PInterfacePeer is a TCP client interface whose connection is carried over
+// I2P to a remote hidden service.
 type I2PInterfacePeer struct {
 	*TCPClientInterface
 }
 
-// NewI2PInterfacePeer aggressively dials a targeted I2P node, establishing a stable outbound tunnel.
-// It securely funnels Reticulum payloads into the I2P network, mapping the remote host to a local interface abstraction.
+// NewI2PInterfacePeer returns a TCP client interface that connects to a remote
+// I2P node.
 func NewI2PInterfacePeer(name, targetHost string, targetPort int, handler InboundHandler) (Interface, error) {
 	inner, err := NewTCPClientInterface(name, targetHost, targetPort, false, handler)
 	if err != nil {

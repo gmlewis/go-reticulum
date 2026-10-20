@@ -46,23 +46,19 @@ func InvalidFrame(ifaceName string, frameLen, hwmtu, ifacSize int) {
 	log.Printf("[HDLC] %v: invalid frame of %v bytes received (max %v), dropping frame", ifaceName, frameLen, hwmtu+ifacSize)
 }
 
-// HDLCFlag defines the High-Level Data Link Control (HDLC) frame boundary
-// marker. It is the synchronization primitive used to assert the start and
-// end of discrete packets over raw serial interfaces.
+// HDLCFlag is the HDLC frame boundary marker that delimits the start and end
+// of a packet.
 const HDLCFlag = 0x7E
 
-// HDLCEsc escapes reserved bytes inside an HDLC payload.
-// It prevents embedded flag markers from being misinterpreted
-// as structural boundaries.
+// HDLCEsc is the HDLC escape byte, used to protect reserved values inside a
+// payload.
 const HDLCEsc = 0x7D
 
-// HDLCEscMask is XORed with escaped bytes in an HDLC frame.
-// It ensures escaped bytes are transformed safely for transport.
+// HDLCEscMask is XORed with an escaped byte.
 const HDLCEscMask = 0x20
 
-// HDLCEscape scans and reformats a binary payload to comply with HDLC framing
-// constraints. It replaces flag and escape characters so the payload is safe for
-// hardware transmission.
+// HDLCEscape escapes HDLCFlag and HDLCEsc bytes in data so the payload is
+// safe to embed in an HDLC frame.
 func HDLCEscape(data []byte) []byte {
 	out := make([]byte, 0, len(data))
 	for _, b := range data {

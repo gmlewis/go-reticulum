@@ -20,12 +20,9 @@ import (
 )
 
 // TestInboundArrivalTimestamp pins Python's timestamp source (RRC.py:1043):
-// EVERY inbound message (msg/action/notice) is stamped with the receiver's
-// own _now_ms() ARRIVAL time — the sender's envelope ts is only kept as the
-// fanout-dedupe window key (the copies share it). Measured live on the
-// 2026-09-03 12:32 full-fleet capture: A1 shows [12:26:56] on the Python SOT
-// while the Go nodes showed the sender's envelope [12:26:55] — a real,
-// visible 1s skew (worse over relays).
+// every inbound message (msg/action/notice) is stamped with the receiver's
+// own _now_ms() arrival time; the sender's envelope ts is kept only as the
+// fanout-dedupe window key, which the copies share.
 func TestInboundArrivalTimestamp(t *testing.T) {
 	t.Parallel()
 

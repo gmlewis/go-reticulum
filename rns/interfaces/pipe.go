@@ -34,7 +34,7 @@ type PipeInterface struct {
 }
 
 // PipeDefaultMTU is the MTU an untouched in-memory pipe reports: large enough that no
-// frame is ever dropped, which is what the pipe interface has always done.
+// frame is ever dropped by default.
 const PipeDefaultMTU = 1000000
 
 // NewPipeInterface provisions an asynchronous in-memory testing channel. It

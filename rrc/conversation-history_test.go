@@ -46,18 +46,12 @@ func TestIsEphemeralNotice(t *testing.T) {
 	}
 }
 
-// TestHubBootKeepsBotAndPrivateReplies is the regression test for the live
-// failure it reproduces: gonomadnet on the Mac mini was restarted, and after
-// the restart the room view showed the user's own commands ("/msg gorrcbot
-// help", "@gorrcbot help dn") but NEITHER gorrbot's private replies NOR its
-// public reply, even though every one of them was present in the stored room
-// history file.
-//
-// Two independent filters erased them: loadHistory dropped every non-direct
-// notice (so the bot's public reply never reached the buffer), and the first
-// cleanHistory call after boot purged every notice older than the
-// ephemeral-notices timeout from the buffer, including the private replies
-// that had just been loaded. Both filters must now keep conversation.
+// TestHubBootKeepsBotAndPrivateReplies asserts that a restart keeps bot
+// conversation: after loadHistory and the first cleanHistory call, the user's
+// commands, the bot's public reply, and its private replies all remain in the
+// room buffer even though every row is older than the ephemeral-notices
+// timeout. Two filters must keep conversation: loadHistory must not drop peer
+// notices, and cleanHistory must not age out private or peer notices.
 func TestHubBootKeepsBotAndPrivateReplies(t *testing.T) {
 	t.Parallel()
 
@@ -82,8 +76,8 @@ func TestHubBootKeepsBotAndPrivateReplies(t *testing.T) {
 	appendHistoryEntry(t, hub, "general", &RRCMessage{Kind: "notice", Src: botHash, Nick: "gorrcbot", Text: "dn — send a direct NOTICE to one client.", Ts: stale})
 
 	hub.loadHistory()
-	// The first live row after a reconnect triggers the cleanup, which used to
-	// erase the replies that loadHistory had just restored.
+	// The first live row after a reconnect triggers the cleanup; it must not
+	// erase the replies loadHistory just restored.
 	hub.lastHistoryClean.Store(0)
 	hub.cleanHistory()
 

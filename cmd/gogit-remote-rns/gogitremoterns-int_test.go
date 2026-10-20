@@ -398,13 +398,10 @@ func TestIntegrationClonePushReclone(t *testing.T) {
 	// the server's bare repo ref advanced to the pushed SHA, rather than
 	// relying on git's exit code alone.
 	//
-	// The push is retried on a transient failure for the reason documented on
-	// cmd/gorngit's sendRequestRetry: a resource transfer over a fast
-	// localhost link has RTT-proportional part-timeouts, and heavy parallel
-	// -race load can exhaust them and cancel the transfer. This test drives
-	// the real git binary, so the retry has to wrap the push itself. Retrying
-	// is safe because the push is idempotent: it either already advanced the
-	// server ref, or it sends the same SHA again.
+	// A resource transfer over a fast localhost link has RTT-proportional
+	// part-timeouts that heavy parallel -race load can exhaust and cancel the
+	// transfer. This test drives the real git binary, so the retry wraps the
+	// push itself; the push is idempotent, so retrying is safe.
 	const pushAttempts = 3
 	var pushErr error
 	var serverSHA string

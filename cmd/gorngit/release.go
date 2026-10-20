@@ -682,10 +682,9 @@ func readReleaseMETA(path string) (map[string]string, error) {
 	return meta, nil
 }
 
-// writeReleaseMETA writes a flat key=value INI-style META file. Keys are
-// written in the order returned by meta.Iter, which is deterministic for
-// map[string]string iteration (non-deterministic, but META is
-// server-local storage so round-trip consistency is sufficient).
+// writeReleaseMETA writes a flat key=value INI-style META file. Key order is
+// not significant: META is server-local storage, and readReleaseMETA parses
+// it back into a map.
 func writeReleaseMETA(path string, meta map[string]string) error {
 	var sb strings.Builder
 	for key, val := range meta {

@@ -12,19 +12,13 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// TestRegisterInterfaceDoesNotReannounceDestinations is the regression test for
-// the announce storm. The Go port previously re-announced every local
-// destination from RegisterInterface (and from a TCP client's onConnect hook
-// on every reconnect). Each re-announce minted a fresh random blob, bypassing
-// the configured announce interval, so any interface that re-registered or
-// reconnected on a ~5s cadence flooded the network with announces every few
-// seconds — a self-sustaining storm that saturated the shared transport and
-// dropped link-handshake packets ("Link establishment timed out"). Python's
+// TestRegisterInterfaceDoesNotReannounceDestinations verifies that registering
+// an interface after destinations exist sends no announce. Python's
 // add_interface (Transport.py:438-441) only appends the interface and never
-// announces; this test asserts the Go port now matches that: registering an
-// interface after destinations exist sends no announce. The trailing
-// dest.Announce sanity check proves the send path is live, so a reintroduced
-// re-announce would surface as sendCount > 0.
+// announces, so a re-announce here would mint a fresh random blob and bypass
+// the configured announce interval. The trailing dest.Announce sanity check
+// proves the send path is live, so a re-announce would surface as
+// sendCount > 0.
 func TestRegisterInterfaceDoesNotReannounceDestinations(t *testing.T) {
 	t.Parallel()
 	testutils.RunInBubble(t, func(t *testing.T) {
@@ -43,15 +37,15 @@ func TestRegisterInterfaceDoesNotReannounceDestinations(t *testing.T) {
 		iface := &capturingInterface{name: "net"}
 		ts.RegisterInterface(iface)
 
-		// Settle everything before asserting the negative: any reintroduced
-		// deferred re-announce would have fired by now.
+		// Settle everything before asserting the negative: any deferred
+		// re-announce would have fired by now.
 		testutils.Wait()
 		if iface.SendCount() != 0 {
 			t.Fatalf("RegisterInterface re-announced destinations (sendCount=%v): interface registration must not mint announces", iface.SendCount())
 		}
 
-		// Sanity check: the send path is live, so a reintroduced re-announce
-		// would be observable here. A direct announce reaches the registered
+		// Sanity check: the send path is live, so a re-announce would be
+		// observable here. A direct announce reaches the registered
 		// OUT interface via Outbound.
 		if err := dest.Announce(nil); err != nil {
 			t.Fatalf("dest.Announce sanity send failed: %v", err)

@@ -21,16 +21,12 @@ import (
 // The returned port is not merely probed and released: the probe listener stays
 // open and is handed to the next bind site that needs it (see
 // pending-listener.go — the TCP, Backbone, I2P and Local server constructors
-// all adopt a held listener instead of calling net.Listen themselves). That is
-// what removes the address-already-in-use flake this helper used to cause: a
-// closed probe hands the just-released ephemeral port back to the kernel, and a
-// parallel test's own reserveTCPPort, listener bind, or outgoing dial can claim
-// it before the caller binds — which failed
-// TestTCPServerSpawnedInheritsGravity, TestHDLCFrameLenValidationDropsInvalid-
-// Frames and TestSpawnedOnRemoveFiresOnWireDrop under -race -count=5. While the
-// probe is held, the port cannot leave this test's control, and the probe sheds
-// inbound connections (accept then close) so a premature dial still fails
-// promptly instead of hanging.
+// all adopt a held listener instead of calling net.Listen themselves). A closed
+// probe would hand the just-released ephemeral port back to the kernel, where a
+// parallel test's own reserveTCPPort, listener bind, or outgoing dial could
+// claim it before the caller binds. While the probe is held, the port cannot
+// leave this test's control, and the probe sheds inbound connections (accept
+// then close) so a premature dial still fails promptly instead of hanging.
 //
 // A held listener that no bind site adopts is closed by the test cleanup below.
 // Tests that must bind the port themselves, or hand it to a subprocess that
@@ -102,10 +98,10 @@ func reserveIPv6LoopbackTCPPort(t *testing.T) int {
 // caller to bind later, for the two cases reserveTCPPort cannot serve: a test
 // that binds the port itself, and a port handed to a Python subprocess, which
 // cannot adopt a held Go listener. The port therefore leaves this test's
-// control as soon as it is returned, exactly like the old reserveTCPPort, so
-// callers must treat losing it as expected and retry the whole bind on a fresh
-// port (see TestTCPClientReconnectFiresOnConnect and
-// startPythonEchoOnReservedPort) rather than failing the test.
+// control as soon as it is returned, so callers must treat losing it as
+// expected and retry the whole bind on a fresh port (see
+// TestTCPClientReconnectFiresOnConnect and startPythonEchoOnReservedPort)
+// rather than failing the test.
 func reserveUnboundTCPPort(t *testing.T) int {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -162,10 +158,9 @@ func allocateUDPPortPair(t *testing.T) (int, int) {
 // until the code under test adopts the held socket, the UDP counterpart of
 // reserveTCPPort (see pendingUDPSocket). The held socket is handed to the next
 // UDPInterface that binds that port, so the port cannot be handed to a parallel
-// test's own reservation in between — the "bind: address already in use" flake
-// TestUDPInterface used to hit under -race -count=5. A held socket that no
-// interface adopts is closed by the test cleanup below. Tests that need the port
-// to stay free for another process need reserveUnboundUDPPort instead.
+// test's own reservation in between. A held socket that no interface adopts is
+// closed by the test cleanup below. Tests that need the port to stay free for
+// another process need reserveUnboundUDPPort instead.
 func reserveHeldUDPPort(t *testing.T) int {
 	t.Helper()
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
@@ -204,9 +199,8 @@ func waitUntil(timeout time.Duration, cond func() bool) bool {
 }
 
 // waitForIfaceRunning polls a client interface's Status() until it reports
-// running (connection established) or timeout elapses, replacing the fragile
-// fixed "time.Sleep before Send" pattern that can fatal with "not running"
-// under scheduler load when the connect has not completed in time.
+// running (connection established) or timeout elapses, then falls back to a
+// short fixed wait for interfaces that do not expose Status().
 func waitForIfaceRunning(t *testing.T, iface Interface, timeout time.Duration) {
 	t.Helper()
 	type runner interface{ Status() bool }

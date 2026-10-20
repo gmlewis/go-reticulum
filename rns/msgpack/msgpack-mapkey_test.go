@@ -14,10 +14,8 @@ import (
 // TestUnpackMapWithKeysGoCannotHash pins what happens to a map key that Go
 // cannot use as a map key. MessagePack allows any value there, and real peers
 // send maps keyed by arrays and by extension values; storing one in a
-// map[any]any panicked the runtime ("hash of unhashable type []interface {}"),
-// which killed the process decoding it — on glenn-kamrui that was the
-// propagation node dying mid-transfer, several times an hour, taking fleet
-// messaging with it.
+// map[any]any panics the runtime ("hash of unhashable type []interface {}"),
+// which kills the process decoding it.
 //
 // Python's umsgpack, which Reticulum and LXMF use, never dies here: it converts
 // a list key to a tuple (hashable, compared by value) and raises

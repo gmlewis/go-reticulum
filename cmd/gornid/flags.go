@@ -28,7 +28,7 @@ func (c *counter) IsBoolFlag() bool { return true }
 // stringListFlag implements flag.Value for a multi-value flag that
 // accumulates repeated uses (e.g. -s a -s b) and, after Parse, also
 // collects leftover positional args (e.g. -s a b c), matching Python's
-// argparse nargs="*" behaviour for the sign/encrypt/decrypt/validate flags.
+// argparse nargs="*" behavior for the sign/encrypt/decrypt/validate flags.
 type stringListFlag struct {
 	vals []string
 	set  bool

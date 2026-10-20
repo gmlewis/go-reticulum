@@ -3,15 +3,9 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-// This file holds the bidirectional Morse translator. Morse is the one
-// signalling mode that survives a dead battery charger and a broken antenna: a
-// torch, a whistle, or a straight key and any piece of wire will do, and every
-// operator on the band already knows it.
-//
-// Both directions are supported, because both are needed. A person about to
-// signal wants the code for their message; a person who just heard a signal
-// wants to know what it said, and reading a code off a screen is far more
-// reliable than counting dashes in the dark.
+// This file holds the bidirectional Morse translator. Both directions are
+// supported: encoding for a person about to signal, decoding for a person who
+// heard a signal and wants to read it off a screen.
 //
 // The alphabet is the full ITU set — letters, digits, and the punctuation that
 // appears in real traffic — so a message is never silently mangled: a character

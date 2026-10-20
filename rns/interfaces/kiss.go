@@ -5,18 +5,21 @@
 
 package interfaces
 
-// Constants defining the structural boundaries and escape markers required by the
-// KISS (Keep It Simple, Stupid) framing protocol.
+// Constants defining the framing and escape markers of the KISS (Keep It
+// Simple, Stupid) protocol.
 const (
-	// KISSFend designates the Frame End marker, definitively signaling the start or conclusion of a discrete data packet.
+	// KISSFend is the frame-end marker that starts or ends a packet.
 	KISSFend = 0xC0
-	// KISSFesc specifies the Frame Escape character, utilized to safely obfuscate control bytes appearing within the payload.
+	// KISSFesc is the frame-escape byte.
 	KISSFesc = 0xDB
-	// KISSTfend is the Transposed Frame End byte, structurally substituted into the stream when a literal Fend appears in the data.
+	// KISSTfend is the transposed frame-end byte substituted for a literal
+	// Fend in the payload.
 	KISSTfend = 0xDC
-	// KISSTfesc is the Transposed Frame Escape byte, substituted when a literal Fesc is encountered in the payload.
+	// KISSTfesc is the transposed frame-escape byte substituted for a literal
+	// Fesc in the payload.
 	KISSTfesc = 0xDD
-	// KISSCmdData instructs the TNC that the accompanying payload consists of standard, routable network data rather than control commands.
+	// KISSCmdData marks a frame carrying routable network data rather than a
+	// control command.
 	KISSCmdData = 0x00
 
 	// KISS command bytes for radio configuration.
@@ -50,9 +53,8 @@ const (
 	RadioStateAsk = 0xFF
 )
 
-// KISSEscape scans and re-encodes a binary payload to adhere to the KISS
-// protocol's byte-stuffing rules. It neutralizes internal boundary markers and
-// returns a buffer safe for transmission over raw serial links.
+// KISSEscape applies KISS byte stuffing to data, so embedded boundary markers
+// survive transmission over a raw serial link.
 func KISSEscape(data []byte) []byte {
 	out := make([]byte, 0, len(data))
 	for _, b := range data {
@@ -68,9 +70,7 @@ func KISSEscape(data []byte) []byte {
 	return out
 }
 
-// KISSUnescape parses a received byte stream and strips KISS framing escapes to
-// restore the original payload. It reverses the obfuscation applied during
-// transmission so upper network layers receive unmodified data.
+// KISSUnescape reverses KISS byte stuffing, restoring the original payload.
 func KISSUnescape(data []byte) []byte {
 	out := make([]byte, 0, len(data))
 	escape := false

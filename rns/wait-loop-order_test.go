@@ -19,18 +19,18 @@ import (
 // Structural guard for the control-flow class of divergence: wait-and-retry
 // loops whose *ordering* of condition tests is part of the protocol.
 //
-// The path-wait bug was purely an ordering divergence — the deadline was tested
-// before has_path and never re-tested after the loop, so a path that arrived as
-// the wait elapsed was discarded (Python tests has_path first in the loop
-// condition and again after it, LXMRouter.py:1463,1466). No timeout value was
-// wrong, so no timeout test could have caught it.
+// Ordering is load-bearing: a loop that tests the deadline before has_path and
+// never re-tests after the loop discards a path that arrived as the wait
+// elapsed (Python tests has_path first in the loop condition and again after
+// it, LXMRouter.py:1463,1466). No timeout value is wrong in that shape, so no
+// timeout test can catch it.
 //
 // This guard scans every non-test source file for functions that sleep (the
 // shape of every wait/retry loop in the port) and requires each one to be
 // registered below, either with the ordered condition sequence it must keep or
 // with a reason it has no Python counterpart. A newly added wait loop therefore
-// fails this test until someone records why its ordering is safe, which is the
-// only way a future reordering cannot slip through unnoticed.
+// fails this test until someone records why its ordering is safe, so a
+// reordering cannot slip through unnoticed.
 
 // waitLoopEntry records one protocol wait loop's Python ordering contract.
 type waitLoopEntry struct {

@@ -21,20 +21,18 @@ import (
 	"github.com/gmlewis/go-reticulum/rns/interfaces"
 )
 
-// This file covers the RRC topology the live fleet actually runs: a shared
-// Reticulum instance (gornsd) that owns the interfaces, an RRC hub attached to
-// that instance as a local client (gorrcd), and a remote RRC client
-// (gonomadnet) that reaches the hub through the shared instance. The hub's
-// link is therefore an incoming link whose replies must travel back through
-// the shared instance, which is the path the incident report suspected.
+// This file covers the RRC topology the live fleet runs: a shared Reticulum
+// instance (gornsd) that owns the interfaces, an RRC hub attached to that
+// instance as a local client (gorrcd), and a remote RRC client (gonomadnet)
+// that reaches the hub through the shared instance. The hub's link is
+// therefore an incoming link whose replies must travel back through the
+// shared instance.
 
-// A port the kernel assigns by listening on 127.0.0.1:0 is free again the moment
-// that listener closes, and this package's rigs allocate dozens of them in
-// parallel: two rigs can be handed the same number, and whichever binds it second
-// fails with "address already in use". That is what CI reported from
-// TestFleetTwoInstancesDeliverWelcome — not an address genuinely in use, just bad
-// luck, of a kind that a randomised allocator cannot be asked to avoid and a map
-// can.
+// A port the kernel assigns by listening on 127.0.0.1:0 is free again the
+// moment that listener closes, and this package's rigs allocate dozens of them
+// in parallel: two rigs can be handed the same number, and whichever binds it
+// second fails with "address already in use". A map of reserved ports removes
+// that collision.
 //
 // Nothing is ever given back: the ports are bound by a rig that outlives the
 // allocation, so a port this run has handed out is a port a rig may be holding.
@@ -48,13 +46,9 @@ var (
 // ephemeral range (Linux 32768-60999, macOS 49152-65535). Net.Listen(":0") picks
 // from that range, and a port picked from it can be handed out again behind the
 // test's back as the source port of any outbound connection — and then the test
-// that reserved the port cannot bind it. That is the
-//
-//	relay TCP server: listen tcp 127.0.0.1:34629: bind: address already in use
-//
-// that made TestFleetTwoInstancesDeliverWelcome flake on CI. Below the range the
-// kernel never allocates a port on its own, so the only competitor left is
-// another process that bound the same number deliberately.
+// that reserved the port cannot bind it. Below the range the kernel never
+// allocates a port on its own, so the only competitor left is another process
+// that bound the same number deliberately.
 const (
 	freePortRangeFirst = 20000
 	freePortRangeLast  = 32000
@@ -361,11 +355,11 @@ func (r *sharedHubRig) waitWelcomeCount(n int, timeout time.Duration) bool {
 	return false
 }
 
-// TestSharedInstanceHubWelcomesClientAndHoldsLink covers the three live
-// symptoms in the fleet topology: the hub must deliver its WELCOME (and the
-// greeting that follows it) through the shared instance, the client must
-// HELLO and JOIN once per stored room, and the link must survive well past
-// ping_interval_s + ping_timeout_s with the hub answering every PONG.
+// TestSharedInstanceHubWelcomesClientAndHoldsLink covers the three fleet
+// behaviors in the shared-instance topology: the hub must deliver its WELCOME
+// (and the greeting that follows it) through the shared instance, the client
+// must HELLO and JOIN once per stored room, and the link must survive well
+// past ping_interval_s + ping_timeout_s with the hub answering every PONG.
 func TestSharedInstanceHubWelcomesClientAndHoldsLink(t *testing.T) {
 	t.Parallel()
 	const (
@@ -391,8 +385,8 @@ func TestSharedInstanceHubWelcomesClientAndHoldsLink(t *testing.T) {
 	if got := strings.Count(logs, "JOIN peer="); got != 2 {
 		t.Errorf("hub saw %v JOINs for 2 stored rooms, want 2; hub log:\n%v", got, logs)
 	}
-	// The greeting rides the immediate NOTICE-chunk path the incident log
-	// shows as "Falling back to chunking ... outgoing_is_none=true".
+	// The greeting rides the immediate NOTICE-chunk path
+	// ("Falling back to chunking ... outgoing_is_none=true").
 	if got := strings.Count(logs, "Falling back to chunking"); got != 1 {
 		t.Errorf("hub chunked the greeting %v times, want 1; hub log:\n%v", got, logs)
 	}

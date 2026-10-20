@@ -10,12 +10,12 @@
 // It exists because a device that knows where it is may have to hand that
 // knowledge to another process as a sensor stream — an Android app publishing
 // its own GNSS receiver and magnetometer to a bot and a network client that
-// live in a different application. The alternative is a second implementation
-// of the format on the producing side, which is a second place for the
-// checksum, the hemisphere marker, or the minute conversion to be wrong. Here
-// the parser in gps.go and compass.go is the oracle: the emitters are written
-// against it, and the round-trip property "parse(emit(fix)) equals fix" is a
-// unit test rather than a hope.
+// live in a different application. Rather than implement the format a second
+// time on the producing side, which would be a second place for the checksum,
+// the hemisphere marker, or the minute conversion to be wrong, the parser in
+// gps.go and compass.go is the oracle here: the emitters are written against
+// it, and the round-trip property "parse(emit(fix)) equals fix" is a unit test
+// rather than a hope.
 //
 // Two rules the emitters inherit from the parser, and both of them matter:
 //

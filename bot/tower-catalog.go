@@ -4,17 +4,10 @@
 // that can be found in the LICENSE file.
 
 // This file holds the embedded cell, repeater, and emergency-site catalog: the
-// communications sites an off-grid operator is most likely to need, selected so
-// that the answer to "what can I reach from here" is available with the binary
-// alone and no network.
-//
-// Why a catalog at all. A field operator with a weak signal and an omnidirectional
-// antenna cannot simply ask a map service: the whole point of the situation is
-// that there is no usable data connection. What such an operator needs is a
-// bearing and a distance to something that transmits — a cellular mast to aim a
-// directional antenna at, an amateur repeater to raise a voice on, an
-// emergency-services relay to hand a message to. Every one of those is a fixed
-// point, so the useful answer is geometry, and geometry needs no network.
+// communications sites an off-grid operator is most likely to need, so that the
+// answer to "what can I reach from here" is available with the binary alone and
+// no network. Every site is a fixed point, so the useful answer is a bearing and
+// a distance to something that transmits, and geometry needs no data connection.
 //
 // Coverage is deliberately balanced between the United States and China, with a
 // selection of major international hubs, because the same tool has to be equally
@@ -56,7 +49,7 @@ const (
 	// directional antenna is aimed at to regain coverage.
 	TowerTypeCellular TowerType = "CELL"
 	// TowerTypeEmergency is a public-safety, search-and-rescue, or civil
-	// defence relay.
+	// defense relay.
 	TowerTypeEmergency TowerType = "EMERG"
 	// TowerTypeMaritime is a coastal or marine VHF station, which is what a
 	// vessel or a shoreline party calls on.

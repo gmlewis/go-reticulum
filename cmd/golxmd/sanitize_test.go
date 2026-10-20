@@ -69,8 +69,7 @@ func TestSanitizeNameTruncationContract(t *testing.T) {
 	t.Parallel()
 	// Truncation to 45 runes (with ellipsis) is applied at the call site in
 	// remote-init.go, mirroring Python's `if len(nn) > 45: nn = f"{nn[:45]}..."`.
-	// Here we verify the raw sanitizeName output preserves rune count so the
-	// truncation contract at the call site is byte-free.
+	// sanitizeName itself must preserve the rune count the truncation relies on.
 	long := ""
 	for range 50 {
 		long += "x"

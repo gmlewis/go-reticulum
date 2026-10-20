@@ -14,9 +14,8 @@ import (
 // TestResourceAdvertisedHonoursTheConfiguredCap pins [rrc]
 // max_accepted_resource_size. Python reads the application's value at
 // advertisement time and falls back to 262144 when the app has none
-// (RRC.py:1206-1223); a value of zero or less refuses every resource. The port
-// hard-coded 262144 at this call site, so a configured cap could not take effect
-// on the client — where the key is read from the app, not from rrcd's own config.
+// (RRC.py:1206-1223); a value of zero or less refuses every resource. The
+// value is read from the app, not from rrcd's own config.
 func TestResourceAdvertisedHonoursTheConfiguredCap(t *testing.T) {
 	t.Parallel()
 

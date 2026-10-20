@@ -328,7 +328,7 @@ func compareBuoys(a, b buoyEntry) int {
 // surround the station rows. The whole file is generated, so the adapter the
 // discovery commands read and the catalog derived from it live here too: a
 // template that emitted only the table would drop them and leave the package
-// unable to build, which is exactly what an earlier version of this tool did.
+// unable to build.
 const buoyFileHead = `// Copyright 2026 Glenn Lewis. All rights reserved.
 //
 // Use of this source code is governed by the Reticulum License
@@ -476,7 +476,7 @@ func deriveRegion(name string, lat, lon float64) string {
 	}
 	// The Gulf of Mexico, bounded on the east so that Florida's Atlantic coast
 	// is not read as Gulf: Cape Canaveral and Fort Pierce sit at about 80.5W,
-	// which the old -80 bound swept into the Gulf.
+	// west of the -81 bound.
 	if lat >= 20 && lat <= 31 && lon >= -98 && lon <= -81 {
 		return "GOM"
 	}

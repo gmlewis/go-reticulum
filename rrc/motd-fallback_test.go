@@ -20,15 +20,14 @@ import (
 	"time"
 )
 
-// The 2026-09-03 fleet captures showed the hub's greeting MOTD rendered on
-// some nodes and missing on others. Two client-side causes: the roomless
+// A hub greeting MOTD can go missing for two client-side reasons: the roomless
 // MOTD notice is attributed to the manager's ACTIVE room only, which on a
-// fresh boot is empty, so the greeting lands in NO room buffer (Python drops
+// fresh boot is empty, so the greeting lands in no room buffer (Python drops
 // it the same way); and the 600 s ephemeral-notice purge removes it ten
 // minutes later. The greeting is room-agnostic hub info that rrcd re-sends
-// on every WELCOME, so the fix attributes it to every joined room when no
-// room is active (always visible somewhere the user opens) and pins it so
-// the ephemeral purge never erases it mid-session.
+// on every WELCOME, so this client attributes it to every joined room when no
+// room is active (always visible somewhere the user opens) and pins it so the
+// ephemeral purge never erases it mid-session.
 
 // motdEnvelope builds one inbound roomless T_NOTICE envelope with a chosen
 // timestamp (the greeting rides as a roomless notice from rrcd).
@@ -43,9 +42,9 @@ func motdEnvelope(t *testing.T, text, mid string, ts int64) []byte {
 }
 
 // TestRoomlessMOTDWithoutActiveRoomFallsBackToJoinedRooms pins the fresh-boot
-// fix: with no active room the roomless MOTD notice is recorded into EVERY
-// joined room's buffer (and marks none of them unread), so the greeting is
-// visible in whichever room the user opens.
+// behavior: with no active room the roomless MOTD notice is recorded into
+// EVERY joined room's buffer (and marks none of them unread), so the greeting
+// is visible in whichever room the user opens.
 func TestRoomlessMOTDWithoutActiveRoomFallsBackToJoinedRooms(t *testing.T) {
 	t.Parallel()
 
@@ -67,8 +66,7 @@ func TestRoomlessMOTDWithoutActiveRoomFallsBackToJoinedRooms(t *testing.T) {
 		}
 	}
 	// The greeting is hub info, not chat traffic: it must not flag the rooms
-	// unread (the olive-unread mask hid the joined-room highlight on the
-	// fleet).
+	// unread.
 	for room := range hub.UnreadRooms {
 		t.Errorf("fallback MOTD marked room %q unread", room)
 	}

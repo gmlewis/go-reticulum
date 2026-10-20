@@ -3,12 +3,11 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-// This file forwards the Open Location Code engine to package geo. The
-// implementation moved there so that consumers outside the bot — such as the
-// `` `L `` Micron extension in gonomadnet — can decode and render a Plus Code
-// without importing the bot engine, its station catalogs, or the Reticulum
-// stack. The names below are the bot's existing public surface and behave
-// exactly as they did when the code lived here.
+// This file forwards the Open Location Code engine to package geo, so that
+// consumers outside the bot — such as the `` `L `` Micron extension in
+// gonomadnet — can decode and render a Plus Code without importing the bot
+// engine, its station catalogs, or the Reticulum stack. The names below are the
+// bot's public surface and forward unchanged to that implementation.
 
 package bot
 

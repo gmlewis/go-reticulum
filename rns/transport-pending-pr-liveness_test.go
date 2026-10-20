@@ -45,10 +45,9 @@ func newRecordingInterface(name string) *recordingInterface {
 // Python bounds that record by the requester's own lifetime and never by a
 // timer: "Cull invalidated path requests" pops it only when the recording
 // interface is no longer among Transport.interfaces (Transport.py:660-672), and
-// the delivery path pops it when the reply arrives (Transport.py:1975). A timer
-// is the wrong instrument — on the fleet's multi-hop LoRa links a relayed round
-// trip routinely outlives any fixed bound, while on a LAN it is
-// sub-millisecond, so a timed cull fails only on the slow paths.
+// the delivery path pops it when the reply arrives (Transport.py:1975). A
+// fixed bound would fail on slow multi-hop links, where a relayed round trip
+// routinely outlives it, while never mattering on a LAN.
 func TestPendingPathRequesterSurvivesUntilItIsGone(t *testing.T) {
 	t.Parallel()
 

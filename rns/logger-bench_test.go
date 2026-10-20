@@ -24,8 +24,8 @@ import (
 //   - Filtered path:  LogNone and below-threshold early returns
 //   - Setters:        reconfiguration cost
 //
-// All benchmarks call logger.log directly with a constant message string to
-// avoid measuring fmt.Sprintf throughput — we are benchmarking the Logger
+// All benchmarks call logger.log directly with a constant message string so
+// that fmt.Sprintf throughput is not measured: the benchmarks target the Logger
 // implementation, not the Go standard library.
 
 const benchMsg = "benchmark log message"
@@ -379,8 +379,8 @@ func BenchmarkLoggerSetCompactLogFmt(b *testing.B) {
 
 // ---------------------------------------------------------------------------
 // File destination with rotation stat check — measures the os.Stat overhead
-// present on every file write (since LogMaxSize is a package const we cannot
-// shrink from tests; this just captures the per-write stat cost).
+// present on every file write. LogMaxSize is a package const, so tests cannot
+// shrink it; this captures the per-write stat cost.
 // ---------------------------------------------------------------------------
 
 func BenchmarkLoggerFileWithStatCheck(b *testing.B) {

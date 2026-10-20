@@ -99,7 +99,7 @@ func TestLinkTrafficCountersZero(t *testing.T) {
 
 // TestLinkTrafficCountersWired asserts that link-traffic counters increment
 // during a real handshake and a subsequent outbound send, with txbytes
-// reflecting the ciphertext length. It is the Go port of Python Link.py
+// reflecting the ciphertext length. Mirrors Python Link.py
 // (self.tx += 1; self.txbytes += len(self.ciphertext) in Packet.send for a
 // LINK destination, and self.rx += 1; self.rxbytes += len(packet.data) in
 // Link.receive). The ciphertext length is deterministic for a given plaintext
@@ -186,7 +186,7 @@ func TestLinkPacketSendUpdatesLastOutbound(t *testing.T) {
 
 	initiator, _, _, _ := establishLoopbackLinkPair(t)
 
-	// Artificially age the timestamps so we can reliably detect their update.
+	// Artificially age the timestamps so their update is reliably detectable.
 	staleTime := time.Now().Add(-10 * time.Second)
 	initiator.mu.Lock()
 	initiator.lastOutbound = staleTime

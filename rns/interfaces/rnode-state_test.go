@@ -127,8 +127,8 @@ func TestRNodeDecoderLiveRadioTelemetry(t *testing.T) {
 }
 
 // TestRNodeDecoderAllCommands covers every KISS command the radio can emit,
-// asserting the decoder produces the intended values (Python's decode logic,
-// NOT its latent Python-3 ord() bug on STAT_RX/TX).
+// asserting the decoder produces the intended values (STAT_RX/TX decode a
+// uint32, unlike Python-3's ord() path).
 func TestRNodeDecoderAllCommands(t *testing.T) {
 	t.Parallel()
 

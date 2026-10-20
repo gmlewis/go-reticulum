@@ -6,13 +6,12 @@
 // This file holds the /whereami subsystem: the operational location card a
 // field operator reads before moving, and the geodetic synthesis behind it.
 //
-// The card is deliberately assembled entirely from in-tree, offline engines —
-// the Open Location Code encoder, the Maidenhead grid converter, the GCJ-02
-// datum conversion, and the solar ephemeris — so a node in a slot canyon, under
-// tree canopy, or after a disaster still answers instantly with no radio hop,
-// no airtime, and no RF emission. That is the Autonomous Local Intelligence
-// Rule the Go Reticulum Buddy is built around: the one question that must
-// never depend on a link is "where am I?".
+// The card is assembled entirely from in-tree, offline engines — the Open
+// Location Code encoder, the Maidenhead grid converter, the GCJ-02 datum
+// conversion, and the solar ephemeris — so a node in a slot canyon, under tree
+// canopy, or after a disaster still answers instantly with no radio hop, no
+// airtime, and no RF emission. The one question that must never depend on a
+// link is "where am I?".
 //
 // Every notation on the card exists because somebody else needs it: a Plus Code
 // is what a rescue dispatcher can paste into a map, a Maidenhead square is what

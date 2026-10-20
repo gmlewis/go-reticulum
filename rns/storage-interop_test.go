@@ -22,9 +22,7 @@ import (
 // Cross-implementation (Go <-> Python RNS) round-trip tests for every on-disk
 // RNS storage format both implementations write to the shared
 // ~/.reticulum/storage/ tree. These lock in the on-disk msgpack contract so a
-// future change cannot silently break interoperability (see the
-// known_destinations str-vs-bin map-key regression that made Python RNS throw
-// InvalidStringException on Go-written files).
+// future change cannot silently break interoperability.
 //
 // Each test runs only when `python3` + RNS are importable (SkipIfNoPythonRNS),
 // so the suite stays green on machines without the Python side.
@@ -32,21 +30,21 @@ import (
 // hexHash returns the lowercase hex of a hash, for building Python scripts.
 func hexHash(b []byte) string { return hex.EncodeToString(b) }
 
-// TestStorageInteropKnownDestinations verifies the format that triggered the
-// original rnpath InvalidStringException: Go must emit msgpack BIN map keys
-// (raw destination_hash bytes), matching Python, not str keys. Both directions.
+// TestStorageInteropKnownDestinations verifies that Go emits msgpack BIN map
+// keys (raw destination_hash bytes), matching Python, not str keys. Both
+// directions.
 func TestStorageInteropKnownDestinations(t *testing.T) {
 	t.Parallel()
 	testutils.SkipIfNoPythonRNS(t)
 
-	// 0x87 is exactly the byte Python choked on in the rnpath log; use it as
-	// the first key byte to prove the fix end-to-end.
+	// 0x87 is the msgpack fixmap marker; using it as a key byte exercises the
+	// decoder on a value it must not confuse with a container header.
 	destHash := bytes.Repeat([]byte{0x87}, 16)
 	packetHash := bytes.Repeat([]byte{0x11}, 16)
 	publicKey := bytes.Repeat([]byte{0x22}, 32)
 	appData := []byte("app-data")
 
-	// --- Go writes, Python reads (the direction that was broken) ---
+	// --- Go writes, Python reads ---
 	dir := testutils.TempDir(t, tempDirPrefix)
 	ts := NewTransportSystem(nil)
 	ts.Remember(packetHash, destHash, publicKey, appData)
@@ -165,9 +163,9 @@ print("OK")
 `
 
 // TestStorageInteropBlackhole verifies storage/blackhole/<file>: BIN identity
-// hash map keys with str-keyed {source, until, reason} sub-maps (the one
-// format Go already encodes correctly). Both directions: Go packBlackholeList
-// -> Python, and a Python-written "local" file -> Go ReloadBlackhole.
+// hash map keys with str-keyed {source, until, reason} sub-maps. Both
+// directions: Go packBlackholeList -> Python, and a Python-written "local"
+// file -> Go ReloadBlackhole.
 func TestStorageInteropBlackhole(t *testing.T) {
 	t.Parallel()
 	testutils.SkipIfNoPythonRNS(t)
@@ -301,8 +299,8 @@ idn.to_file(sys.argv[1])
 print(idn.get_public_key().hex())
 `
 
-// TestStorageInteropDestinationTable verifies the destination_table format is
-// now Python-compatible BOTH directions through the real persist/load paths:
+// TestStorageInteropDestinationTable verifies the destination_table format in
+// BOTH directions through the real persist/load paths:
 //
 //   - Go writes (via persistPathTable) the Python layout
 //     [destHash, timestamp(float s), next_hop, hops, expires(float s),
@@ -313,10 +311,6 @@ print(idn.get_public_key().hex())
 //   - Python writes the same layout + cache file; Go loads it via
 //     LoadPathTable and the entry is reconstructed (Packet from the cache,
 //     Interface reattached by interface_hash, float-second timestamps).
-//
-// See memory destination-table-timestamp-unit-mismatch for the history: this
-// was previously a structural-only test because the layouts diverged; the
-// transport.go pathTablePersist/load rewrite made them match.
 func TestStorageInteropDestinationTable(t *testing.T) {
 	t.Parallel()
 	testutils.SkipIfNoPythonRNS(t)

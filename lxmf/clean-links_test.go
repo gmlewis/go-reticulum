@@ -220,13 +220,13 @@ func TestCleanLinksPropagationSweep(t *testing.T) {
 	}
 }
 
-// TestCleanLinksSweepsStaleAcceptedOfferLinks covers the 1.1.0 delta
-// (LXMRouter.py d909619): CleanLinks walks activePropagationLinks, collects
-// their link_ids, and deletes any acceptedOfferLinks entry whose link is no
-// longer active, so a propagation link dying mid-transfer without the
-// concluded/failure callback stops counting against propagation_max_inbound
-// _syncs. An orphaned entry (link not in activePropagationLinks) is reaped;
-// an entry whose link is still active survives.
+// TestCleanLinksSweepsStaleAcceptedOfferLinks verifies that CleanLinks walks
+// activePropagationLinks, collects their link_ids, and deletes any
+// acceptedOfferLinks entry whose link is no longer active, so a propagation
+// link dying mid-transfer without the concluded/failure callback stops
+// counting against propagation_max_inbound_syncs. An orphaned entry (link not
+// in activePropagationLinks) is reaped; an entry whose link is still active
+// survives.
 func TestCleanLinksSweepsStaleAcceptedOfferLinks(t *testing.T) {
 	t.Parallel()
 

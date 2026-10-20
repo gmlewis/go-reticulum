@@ -15,11 +15,10 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// Committed multi-hop topology tests: the shape the "two transport ids in one
-// frame" bug needed, and which no committed test had.
+// Multi-hop topology tests.
 //
-// The chain is the fleet's: an appliance that is a client of a shared instance,
-// reaching a peer three hops out through two relaying transports.
+// The chain is an appliance that is a client of a shared instance, reaching a
+// peer three hops out through two relaying transports:
 //
 //	C  (client of S1)  --pipe-->  S1 (shared instance, transport enabled)
 //	S1 --pipe--> S2 (relay, transport enabled) --pipe--> R (peer)
@@ -30,10 +29,8 @@ import (
 //	hop 2  S1 replaces that transport id with S2       (Transport.py:1149-1162)
 //	hop 3  S2 strips the transport header              (Transport.py:1163-1171)
 //
-// The bug the chain was built for made unicast die two hops out while announces
-// (which never take the insert branch) kept flowing, so both a real link
-// round-trip and a real path request/response are asserted here, in both
-// directions, rather than a single packet's arrival.
+// Both a real link round-trip and a real path request/response are asserted, in
+// both directions, rather than a single packet's arrival.
 
 // topologyTransport builds one member of the chain.
 func topologyTransport(t *testing.T, name string, sharedInstance, enabled bool) *TransportSystem {

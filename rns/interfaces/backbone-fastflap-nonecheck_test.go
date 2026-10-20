@@ -106,7 +106,7 @@ func TestRecordFlapEmptyRemoteIPNoOp(t *testing.T) {
 
 // TestRecordFlapNilBackboneNoCrash verifies that a nil receiver is a
 // defensive no-op (the guard at the top of recordFlap), so the teardown path
-// never crashes on an uninitialised BackboneInterface.
+// never crashes on an uninitialized BackboneInterface.
 func TestRecordFlapNilBackboneNoCrash(t *testing.T) {
 	t.Parallel()
 	var b *BackboneInterface

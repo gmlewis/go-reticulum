@@ -11,15 +11,15 @@
 // chunk reaches the client as its own line and half a word reads as corruption;
 // the cut falls back to a rune boundary only when one unbroken run leaves no
 // choice, and every continuation is marked, so a reader can see the bot did not
-// simply stop mid-sentence. The
-// reply travels as a direct NOTICE (K_DST) only when the request itself arrived
-// that way, because a room request has to be answered where the asker can read
-// it: a standard rrcd hub advertises its own capabilities in WELCOME and never
-// publishes the capabilities another client announced in HELLO, so no bot can
-// learn whether a requester could display a private answer. Two guards keep an
-// always-on bot from becoming a nuisance: a per-requester cooldown, which answers
-// a repeat once but never a new question, and a duplicate-envelope window so a
-// redelivered message is never answered twice.
+// simply stop mid-sentence. The reply travels as a direct NOTICE (K_DST) only
+// when the request itself arrived that way, because a room request has to be
+// answered where the asker can read it: a standard rrcd hub advertises its own
+// capabilities in WELCOME and never publishes the capabilities another client
+// announced in HELLO, so no bot can learn whether a requester could display a
+// private answer. Two guards keep an always-on bot from becoming a nuisance: a
+// per-requester cooldown, which answers a repeat once but never a new question,
+// and a duplicate-envelope window so a redelivered message is never answered
+// twice.
 
 package bot
 

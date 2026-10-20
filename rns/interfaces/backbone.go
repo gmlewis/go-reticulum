@@ -46,9 +46,8 @@ type fastFlapEntry struct {
 	flaps           int
 }
 
-// BackboneInterface provides a robust, highly available TCP listener used as a
-// core routing nexus. It encapsulates TCP server logic and accepts point-to-
-// point links from downstream clients.
+// BackboneInterface is a TCP listener that accepts point-to-point links from
+// downstream clients; it is used as a core routing node.
 type BackboneInterface struct {
 	*TCPServerInterface
 
@@ -66,9 +65,9 @@ type BackboneInterface struct {
 	lastICPrBurstActivated      time.Time
 
 	// Fast-flap blocking state (BackboneInterface.py:57-62,126-145,820-843).
-	// The registry is per-instance for test isolation under -race; Python uses
-	// a class-level dict shared across all BackboneInterface instances, which
-	// is observationally identical for the single-interface case.
+	// The registry is per-instance; Python uses a class-level dict shared across
+	// all BackboneInterface instances, which is observationally identical in
+	// practice.
 	blockFastFlapping bool
 	fastFlapThreshold float64 // seconds
 	fastFlapGrace     int
@@ -122,7 +121,7 @@ func (b *BackboneInterface) HashString() string {
 }
 
 // ConfigureFastFlapping sets the fast-flap blocking parameters and lazily
-// initialises the per-instance registry. It mirrors Python's config parsing of
+// initializes the per-instance registry. It mirrors Python's config parsing of
 // block_fast_flapping / fast_flapping_threshold / fast_flapping_grace /
 // fast_flapping_block_time (BackboneInterface.py:126-145, v1.3.9). The
 // threshold and expiry are in seconds; the registry is left untouched so a
@@ -443,9 +442,8 @@ func (b *BackboneInterface) snapshotSpawned() []*TCPClientInterface {
 	return out
 }
 
-// BackboneClientInterface represents an outbound TCP session that connects to
-// a remote BackboneInterface listener, providing reliable point-to-point
-// delivery to core network nodes.
+// BackboneClientInterface is an outbound TCP session connected to a remote
+// BackboneInterface listener.
 type BackboneClientInterface struct {
 	*TCPClientInterface
 }

@@ -90,5 +90,5 @@ func TestHandleOutgoingAnnouncesStableEqualHops(t *testing.T) {
 	}
 }
 
-// ensure interfaces import is used even if the file grows only mock helpers.
+// Compile-time reference to the interfaces package used with these mocks.
 var _ = interfaces.ModeFull

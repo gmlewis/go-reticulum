@@ -16,15 +16,14 @@ import (
 // configured TCP client interface gets its own local-destination re-announce
 // when it registers/connects.
 //
-// Background: on a fresh boot every configured client connects within a few
-// seconds of START_ANNOUNCE_DELAY, so the app's first announce races out over
-// whichever interfaces happen to be established at that instant (often none of
-// the slow dials). The v0.53 onConnect re-announce compensates for exactly
-// that race — but with ONE shared lastReannounce timestamp the first client's
-// re-announce suppressed every sibling within minReannounceInterval, so the
-// Local TCP Hub client (and any later dial) stayed silent and remote peers saw
-// nothing until the next 6-hour periodic announce. Rate limiting must be
-// PER INTERFACE.
+// On a fresh boot every configured client connects within a few seconds of
+// START_ANNOUNCE_DELAY, so the app's first announce races out over whichever
+// interfaces happen to be established at that instant (often none of the slow
+// dials). The onConnect re-announce compensates for exactly that race, so its
+// rate limiting must be per interface: a single shared timestamp would let the
+// first client's re-announce suppress every sibling within
+// minReannounceInterval, leaving the Local TCP Hub client (and any later dial)
+// silent until the next 6-hour periodic announce.
 func TestReannouncePerInterfaceNotGloballySuppressed(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(testSilentLogger())
@@ -95,13 +94,11 @@ func TestReannounceSameInterfaceRateLimited(t *testing.T) {
 
 // TestReconnectAnnounceRequiresGenuineOutage pins the announce-parity
 // behavior: an interface reconnecting after a BRIEF blip (down under
-// reconnectAnnounceMinDown) must stay silent — path tables expire by age,
-// not link state, python never re-announces on reconnect, and public
-// transport operators police high-rate announcers (the fleet measured a
-// flapping relay link driving node announces every ~4-5 min for 7 hours
-// straight). A GENUINE outage (down >= reconnectAnnounceMinDown) still
-// re-announces on recovery, and a first-time connect (no down record — the
-// slow-dial boot race) always announces.
+// reconnectAnnounceMinDown) must stay silent — path tables expire by age, not
+// link state, Python never re-announces on reconnect, and public transport
+// operators police high-rate announcers. A GENUINE outage (down >=
+// reconnectAnnounceMinDown) still re-announces on recovery, and a first-time
+// connect (no down record — the slow-dial boot race) always announces.
 func TestReconnectAnnounceRequiresGenuineOutage(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(testSilentLogger())
@@ -126,7 +123,7 @@ func TestReconnectAnnounceRequiresGenuineOutage(t *testing.T) {
 	}
 
 	// A first-time connect with no down record (slow dial at boot) must
-	// announce — the v0.53 boot-race compensation is preserved.
+	// announce — the boot-race compensation.
 	first := mkClient("client-first")
 	if !ts.reconnectAnnounceAllowed(first, now) {
 		t.Fatal("first connect without any down record must re-announce (boot-race compensation)")

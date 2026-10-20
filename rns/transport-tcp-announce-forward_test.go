@@ -14,26 +14,19 @@ import (
 	"github.com/gmlewis/go-reticulum/rns/interfaces"
 )
 
-// TestTCPServerForwardsAnnounceToItsOtherClients is the "two clients of one hub
-// never hear each other" defect, in the topology the fleet actually runs: every
-// node, and both Android appliances, dial glenn-kamrui's TCPServerInterface.
+// TestTCPServerForwardsAnnounceToItsOtherClients verifies that an announce
+// arriving on a TCP server's spawned client interface is forwarded to that
+// server's OTHER spawned clients, so two clients of one hub hear each other's
+// paths, identities and display names.
 //
-// An announce that arrives on a TCP server's spawned client interface must be
-// forwarded to that server's OTHER spawned clients. Python gets this for free:
-// Transport rebroadcasts on every interface except the receiving one, and the
-// receiving one is the per-client *spawned* interface (TCPInterface.py:612), not
-// the listener — so the listener is still an eligible out-interface and fans the
-// announce out to its remaining clients. Go's forwardAnnounceToLocalClients
-// collected only LocalServerInterface spawns (the Unix-socket shared instance),
-// so it never covered TCP-server clients; and after the duplicate-frame fix the
-// server's own process_outgoing is a no-op, so there was no second path either.
-//
-// Field symptom, measured on the two appliances on 2026-10-16: the tablet, a
-// client of the hub, received announces from peers the hub had heard on its OTHER
-// interfaces (127 of them) but never once from the phone, the hub's other client —
-// so the phone's display name and app-data never arrived, the tablet's
-// conversation header sat at "<hex>…", and only a propagation-node sync could get
-// a message across.
+// Python gets this for free: Transport rebroadcasts on every interface except
+// the receiving one, and the receiving one is the per-client *spawned*
+// interface (TCPInterface.py:612), not the listener — so the listener is still
+// an eligible out-interface and fans the announce out to its remaining clients.
+// Go's forwardAnnounceToLocalClients collects only LocalServerInterface spawns
+// (the Unix-socket shared instance), so TCP-server clients need this path
+// explicitly; the server's own process_outgoing is a no-op, so there is no
+// second path either.
 func TestTCPServerForwardsAnnounceToItsOtherClients(t *testing.T) {
 	t.Parallel()
 
@@ -119,9 +112,8 @@ func TestTCPServerForwardsAnnounceToItsOtherClients(t *testing.T) {
 	// The hub must relay that announce to its other client exactly ONCE. Reads are
 	// bounded (readFramesUntilQuiet sets a read deadline), so a frame that never
 	// arrives fails here instead of hanging the test — and the exact count matters:
-	// a server's clients were once delivered every frame twice (see
-	// TestTCPClientReceivesOneCopyOfEachFrame), and forwarding co-located clients
-	// explicitly is exactly the kind of second path that reintroduces that.
+	// forwarding co-located clients explicitly is exactly the kind of second path
+	// that re-delivers frames twice (see TestTCPClientReceivesOneCopyOfEachFrame).
 	frames := readFramesUntilQuiet(t, connB, 2*time.Second)
 	switch len(frames) {
 	case 0:

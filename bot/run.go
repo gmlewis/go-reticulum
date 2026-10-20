@@ -312,12 +312,7 @@ func parseLogLevel(name string) (int, error) {
 
 // applyConfiguredPaths returns the paths the bot will actually use. Precedence,
 // highest first, is the command line, then the configuration file, then the home
-// directory defaults. The config keys exist and are documented, and the template
-// restates the defaults, so a default configuration is unchanged; before this,
-// however, a deliberate override was parsed, validated, and then never consulted,
-// which meant a bot told to keep its identity elsewhere quietly used the default
-// path instead — and the LXMF state honoured the setting while the room history
-// next to it did not.
+// directory defaults, so a command-line option suppresses the configured value.
 func applyConfiguredPaths(paths BotPaths, cfg *BotConfig, opts *Options) BotPaths {
 	if cfg == nil {
 		return paths

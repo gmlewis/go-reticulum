@@ -7,8 +7,8 @@
 
 // This file is the stub announce observer host, compiled whenever the wago
 // runtime is not linked into the build (no -tags wago, or an unsupported
-// platform). It keeps gornsd compiling with zero wasm overhead; announce
-// handling keeps its existing behavior.
+// platform). Every observer operation reports that support is absent, and the
+// announce handler is never registered.
 
 package main
 

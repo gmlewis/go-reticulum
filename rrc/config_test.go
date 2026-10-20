@@ -248,7 +248,7 @@ func TestFormatReloadValue(t *testing.T) {
 		{"spaced   out\ttext", "spaced out text"},
 		{strings.Repeat("x", 81), strings.Repeat("x", 77) + "..."},
 		{strings.Repeat("x", 80), strings.Repeat("x", 80)},
-		// G16.20 The truncation counts code points, not bytes: 81
+		// The truncation counts code points, not bytes: 81
 		// two-byte runes (162 bytes) truncate at 77 runes.
 		{strings.Repeat("é", 81), strings.Repeat("é", 77) + "..."},
 		{strings.Repeat("é", 80), strings.Repeat("é", 80)},
@@ -329,7 +329,7 @@ func TestEnsurePrivateDir(t *testing.T) {
 	}
 }
 
-// G16.1 TOML integer values pass through into the float config fields
+// TOML integer values pass through into the float config fields
 // (Python's dataclasses.replace stores the raw value and the use sites
 // float() it), and TOML floats truncate into the int fields the way
 // Python's int() does. Golden: ConfigManager().apply_config_data(
@@ -394,7 +394,7 @@ func TestApplyConfigDataTOMLIntPassthrough(t *testing.T) {
 	}
 }
 
-// G16.2 Boolean config fields follow Python truthiness: 1, "true", and
+// Boolean config fields follow Python truthiness: 1, "true", and
 // even the string "false" are all truthy, while 0, "", and false are not.
 func TestApplyConfigDataTruthinessBoolFields(t *testing.T) {
 	t.Parallel()
@@ -435,7 +435,7 @@ func TestApplyConfigDataTruthinessBoolFields(t *testing.T) {
 	}
 }
 
-// G16.2 The legacy announce key coerces with bool() at apply time: the
+// The legacy announce key coerces with bool() at apply time: the
 // string "false" is a non-empty string and therefore TRUE, while 0 and ""
 // are falsy.
 func TestApplyConfigDataLegacyAnnounceTruthiness(t *testing.T) {
@@ -462,7 +462,7 @@ func TestApplyConfigDataLegacyAnnounceTruthiness(t *testing.T) {
 	}
 }
 
-// G16.2 A non-list trusted_identities value must not boot the hub with
+// A non-list trusted_identities value must not boot the hub with
 // empty trust: Python's load_from_config iterates the string and every
 // character fails identity-hash parsing, crashing the start. The Go port
 // keeps the character split so the parse fails the same way.

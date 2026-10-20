@@ -69,11 +69,10 @@ func DefaultBotPaths() BotPaths {
 
 // defaultConfigTemplate is the first-run config.toml. It is written verbatim
 // and is a working configuration: the one live hub below is the gonomadnet
-// Public Hub, which is the hub this bot is developed and tested against. No
-// other hub appears in it, not even commented out, so a first run can only
-// ever talk to that one hub; reaching any other hub takes a deliberate
-// [[hubs]] block. The template must always parse through this program's own
-// reader, so any change here has to keep the schema valid.
+// Public Hub. No other hub appears in it, not even commented out, so a first
+// run can only ever talk to that one hub; reaching any other hub takes a
+// deliberate [[hubs]] block. The template must always parse through this
+// program's own reader, so any change here has to keep the schema valid.
 const defaultConfigTemplate = `# gorrcbot configuration (TOML)
 #
 # This file was created on first run. Edit it, then start gorrcbot again.

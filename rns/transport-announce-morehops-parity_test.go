@@ -10,12 +10,11 @@ import (
 	"time"
 )
 
-// TestAnnounceMoreHopsReplacesOnNewerEmission verifies the missing `else`
-// branch of handleAnnounce for packet.Hops > entry.Hops. Python
-// (Transport.py:1846-1890) replaces a known path with a longer-hop announce
-// when the announce was more recently emitted (new random blob + newer
-// emission timestamp), even though it has more hops. The Go port was missing
-// this entire branch, so a longer-hop but newer announce was silently dropped.
+// TestAnnounceMoreHopsReplacesOnNewerEmission verifies the `else` branch of
+// handleAnnounce for packet.Hops > entry.Hops. Python (Transport.py:1846-1890)
+// replaces a known path with a longer-hop announce when the announce was more
+// recently emitted (new random blob + newer emission timestamp), even though
+// it has more hops.
 func TestAnnounceMoreHopsReplacesOnNewerEmission(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)
@@ -55,8 +54,7 @@ func TestAnnounceMoreHopsReplacesOnNewerEmission(t *testing.T) {
 	}
 
 	// Second announce: emission=base+1h (newer), wire hops=3 → packet.Hops=4.
-	// This has MORE hops but a NEWER emission. Python replaces; Go pre-fix
-	// silently dropped it.
+	// This has MORE hops but a NEWER emission, so Python replaces the path.
 	p2 := mustTestAnnouncePacketWithEmission(t, ts, id, dest, base+3600)
 	p2.Hops = 3
 	if err := p2.Pack(); err != nil {
@@ -64,8 +62,8 @@ func TestAnnounceMoreHopsReplacesOnNewerEmission(t *testing.T) {
 	}
 	ts.Inbound(append([]byte(nil), p2.Raw...), iface)
 
-	// After the fix, the path should be replaced with the 4-hop path
-	// (packet.Hops after inbound++ = 4), because the emission is newer.
+	// The path should be replaced with the 4-hop path (packet.Hops after
+	// inbound++ = 4), because the emission is newer.
 	ts.mu.Lock()
 	entry, ok = ts.pathTable[string(dest.Hash)]
 	ts.mu.Unlock()

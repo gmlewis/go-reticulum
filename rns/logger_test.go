@@ -114,9 +114,9 @@ func TestNewLoggerWritesToCallbackAndFile(t *testing.T) {
 	}
 }
 
-// TestLogPathingLevelAndLabel verifies the v1.3.9/1.4.1 log-level additions
-// (RNS/__init__.py:73-74,106-107): LogPathing=7 sits between LogDebug and the
-// bumped LogExtreme=8, with the "[Pathing] " label.
+// TestLogPathingLevelAndLabel verifies the log-level values
+// (RNS/__init__.py:73-74,106-107): LogPathing=7 sits between LogDebug and
+// LogExtreme=8, with the "[Pathing] " label.
 func TestLogPathingLevelAndLabel(t *testing.T) {
 	t.Parallel()
 	if LogPathing != 7 {
@@ -133,9 +133,8 @@ func TestLogPathingLevelAndLabel(t *testing.T) {
 	}
 }
 
-// TestSetLogLevelClampsToLogExtreme verifies the loglevel clamp ceiling was
-// bumped from 7 to LogExtreme (8) alongside the new LogPathing level
-// (RNS/Reticulum.py:306, v1.4.1).
+// TestSetLogLevelClampsToLogExtreme verifies the loglevel clamp ceiling is
+// LogExtreme (8) and the floor is LogCritical (RNS/Reticulum.py:306).
 func TestSetLogLevelClampsToLogExtreme(t *testing.T) {
 	t.Parallel()
 	logger := NewLogger()
@@ -154,8 +153,8 @@ func TestSetLogLevelClampsToLogExtreme(t *testing.T) {
 }
 
 // TestLogTimestampsGatesPrefix verifies the logtimestamps config
-// (RNS/__init__.py:86,133 / RNS/Reticulum.py:463-465, v1.3.2): the timestamp
-// prefix is present by default and omitted when SetLogTimestamps(false).
+// (RNS/__init__.py:86,133 / RNS/Reticulum.py:463-465): the timestamp prefix is
+// present by default and omitted when SetLogTimestamps(false).
 func TestLogTimestampsGatesPrefix(t *testing.T) {
 	t.Parallel()
 

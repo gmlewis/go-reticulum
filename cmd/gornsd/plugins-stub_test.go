@@ -6,8 +6,7 @@
 //go:build !wago || (!linux && !darwin && !windows) || (!amd64 && !arm64)
 
 // This file verifies the stub announce observer host: without the wago
-// build tag no observer host activates and announce handling keeps its
-// existing behavior.
+// build tag no observer host activates and no announce handler is registered.
 
 package main
 
@@ -60,7 +59,6 @@ func TestSetupAnnounceHostsStub(t *testing.T) {
 	closeAnnounceHosts(hosts)
 }
 
-// TestErrAnnouncesNotLinked documents the stub-build error sentinel.
 func TestErrAnnouncesNotLinked(t *testing.T) {
 	t.Parallel()
 

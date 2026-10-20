@@ -57,8 +57,8 @@ func TestLinkTableReturnsSnapshot(t *testing.T) {
 // TestLinkTableSnapshotNoRace exercises the snapshot under the race detector:
 // one goroutine mutates the internal table (as the forwarding path and janitor
 // do, under ts.mu) while another repeatedly fetches and iterates LinkTable().
-// With the pre-fix live-map leak this is a fatal `concurrent map read and map
-// write` (or a -race report); with the snapshot it is clean.
+// Leaking the live map is a fatal `concurrent map read and map write` (or a
+// -race report); the snapshot must stay clean.
 func TestLinkTableSnapshotNoRace(t *testing.T) {
 	t.Parallel()
 

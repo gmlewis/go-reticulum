@@ -63,9 +63,9 @@ func feedSensor(t *testing.T, opts *options, input string) (string, string) {
 	return sentences.String(), status.String()
 }
 
-// TestGonsensorFeedsGPSReader is the end-to-end property that makes the whole
-// Android design safe: what gonsensor writes is read back by the same reader the
-// bot and the network client use, over a real pipe, as the fix that went in.
+// TestGonsensorFeedsGPSReader is the end-to-end property: what gonsensor writes
+// is read back, over a real pipe, by the same reader the bot and the network
+// client use, and yields the fix that went in.
 func TestGonsensorFeedsGPSReader(t *testing.T) {
 	t.Parallel()
 
@@ -177,7 +177,7 @@ func TestGonsensorDropsMalformedLines(t *testing.T) {
 			if strings.Contains(got, ",V,") {
 				t.Fatalf("malformed line %q produced a void sentence: %q", tc.line, got)
 			}
-			// The good fix deserves its position, quality, and error
+			// The good fix produces its position, quality, and error
 			// sentences, and nothing more.
 			if count := strings.Count(got, "\r\n"); count != 3 {
 				t.Fatalf("%q produced %v sentences, want the 3 the good fix deserves: %q", tc.line, count, got)
@@ -292,15 +292,10 @@ func TestGonsensorStatusReportsProgress(t *testing.T) {
 
 // TestGonsensorCountsAWithheldSampleAsWithheld asserts a sample the producer
 // sent with no measurement in it is reported as withheld rather than as a loss.
-//
-// The Android appliance withholds its heading while the reference axis is
-// ill-conditioned — a tablet lying flat, whose back points nearly straight
-// down — and says so once in its own log when the condition begins. What
-// reaches the converter is therefore fifty empty samples a second, and counting
-// those as dropped would show a perfectly healthy pipeline losing several
-// hundred thousand readings an hour, burying the one number that would mean a
-// fault. Withheld and dropped are different claims: one is about the producer's
-// decision, the other about this program's ability to read what it was sent.
+// The Android appliance withholds its heading while its reference axis is
+// ill-conditioned, so those samples are a deliberate silence: withheld is a
+// claim about the producer's decision, dropped about this program's ability to
+// read what it was sent.
 func TestGonsensorCountsAWithheldSampleAsWithheld(t *testing.T) {
 	t.Parallel()
 

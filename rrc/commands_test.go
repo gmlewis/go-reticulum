@@ -200,7 +200,7 @@ func envelopeToTest(m *cbor.Map) testEnvelope {
 	return e
 }
 
-// G9.1 skeleton: the text must strip to a "/"-prefixed command line whose
+// The text must strip to a "/"-prefixed command line whose
 // argument list is non-empty, and unimplemented or unknown commands return
 // false.
 func TestHandleOperatorCommandSkeleton(t *testing.T) {
@@ -232,7 +232,7 @@ func TestHandleOperatorCommandSkeleton(t *testing.T) {
 	}
 }
 
-// G9.4 /reload and /stats mirror the Python reload and stats commands:
+// /reload and /stats mirror the Python reload and stats commands:
 // both are server-op-gated with a room-nil `not authorized` ERROR for
 // non-ops (skipped entirely when the hub identity is nil), /reload
 // delegates to the reload hook with room=nil, and /stats emits the
@@ -330,7 +330,7 @@ func TestHandleOperatorCommandReloadStats(t *testing.T) {
 	}
 }
 
-// G9.5 /list mirrors the Python list command: registered public rooms come
+// /list mirrors the Python list command: registered public rooms come
 // from the live state (registered && !private), registry-only rooms join
 // when not private (the registry loop checks only the private flag), a
 // room present in both counts once via the state, the empty case emits the
@@ -388,7 +388,7 @@ func TestHandleOperatorCommandList(t *testing.T) {
 	}
 }
 
-// G9.6 /who and /names mirror the Python who command: the target defaults
+// /who and /names mirror the Python who command: the target defaults
 // to the command room, an absent or empty target emits the usage notice,
 // a normalization failure emits `bad room: {e}`, a private room hides its
 // member list from non-server-ops, and the members line renders
@@ -524,7 +524,7 @@ func identSession(rm *RoomManager, sm *SessionManager, link *rns.Link, peer []by
 	return sess
 }
 
-// G9.2 target resolution mirrors _find_target_links: the hex-candidate
+// Target resolution mirrors _find_target_links: the hex-candidate
 // path takes precedence over the nick-index path, the hex prefix must be
 // at least 6 characters, an odd-length candidate falls through, and the
 // room filter applies to both paths.
@@ -660,7 +660,7 @@ func TestFindTargetLinks(t *testing.T) {
 	}
 }
 
-// G9.2 ResolveIdentityHashWithMatches mirrors _resolve_identity_hash_with_matches:
+// ResolveIdentityHashWithMatches mirrors _resolve_identity_hash_with_matches:
 // one online match yields the peer hash, several yield no hash, and an
 // offline token falls back to parsing.
 func TestResolveIdentityHashWithMatches(t *testing.T) {
@@ -735,7 +735,7 @@ func TestResolveIdentityHashWithMatches(t *testing.T) {
 	}
 }
 
-// G9.3 FormatAmbiguousTargets mirrors _format_ambiguous_targets: the
+// FormatAmbiguousTargets mirrors _format_ambiguous_targets: the
 // not-found text, one "  - {hash16} nick={nick!r}" line per identified
 // match, and the disambiguation hint.
 func TestFormatAmbiguousTargets(t *testing.T) {
@@ -820,7 +820,7 @@ func TestFormatAmbiguousTargets(t *testing.T) {
 	}
 }
 
-// G9.7 /kick mirrors the Python kick command: usage and bad-room notices,
+// /kick mirrors the Python kick command: usage and bad-room notices,
 // the room-op gate, the room-scoped target resolution, the in-room check,
 // the force-removal that bypasses remove_member (no PARTED fanout, the
 // empty room lingers in the membership map), the `kicked from {r}` ERROR
@@ -968,7 +968,7 @@ func TestHandleOperatorCommandKick(t *testing.T) {
 	}
 }
 
-// G9.8 /kline mirrors the Python kline command: the server-op gate, the
+// /kline mirrors the Python kline command: the server-op gate, the
 // usage notices, the sorted list rendering, the online/offline/ambiguous
 // add paths (an online but unidentified target still tears down and
 // reports added without a ban), the parse failure text, and the
@@ -1159,7 +1159,7 @@ func TestHandleOperatorCommandKline(t *testing.T) {
 	}
 }
 
-// G9.9 /register mirrors the Python register command: the usage and
+// /register mirrors the Python register command: the usage and
 // bad-room notices, the presence check against the raw command room (with
 // the over-long-room silent abort), the founder-only gate, the missing
 // registry-path notice, the state flag updates with the founder op, the
@@ -1317,7 +1317,7 @@ func TestHandleOperatorCommandRegister(t *testing.T) {
 	}
 }
 
-// G9.10 /unregister mirrors the Python unregister command: the usage and
+// /unregister mirrors the Python unregister command: the usage and
 // bad-room notices, the presence check with the over-long-room silent
 // abort, the founder-only gate, the not-registered notice, and the
 // registry/state teardown (the state is popped only when the room has no
@@ -1462,7 +1462,7 @@ func TestHandleOperatorCommandUnregister(t *testing.T) {
 	}
 }
 
-// G9.11 /topic mirrors the Python topic command: the usage and bad-room
+// /topic mirrors the Python topic command: the usage and bad-room
 // notices, the permission-less view, the +t gate for non-ops, the
 // set/clear behavior, and the member fanout.
 func TestHandleOperatorCommandTopic(t *testing.T) {
@@ -1584,7 +1584,7 @@ func TestHandleOperatorCommandTopic(t *testing.T) {
 	}
 }
 
-// G9.12 /op, /deop, /voice, and /devoice mirror the Python commands: the
+// /op, /deop, /voice, and /devoice mirror the Python commands: the
 // usage and bad-room notices, the room-op gate, the room-scoped target
 // resolution, the founder deop guard, and the op/voice set updates with
 // persistence.
@@ -1739,7 +1739,7 @@ func TestHandleOperatorCommandOpDeopVoice(t *testing.T) {
 	}
 }
 
-// G9.13 /mode mirrors the Python mode command: the usage and bad-room
+// /mode mirrors the Python mode command: the usage and bad-room
 // notices, the room-op gate, the simple flag toggles with the room-mode
 // broadcast, the +k key handling, the +r redirection, the ±o/±v fanout
 // with the founder deop guard, and the supported-modes fallback.
@@ -1919,7 +1919,7 @@ func TestHandleOperatorCommandMode(t *testing.T) {
 	}
 }
 
-// G9.14 /ban mirrors the Python ban command: the usage and bad-room
+// /ban mirrors the Python ban command: the usage and bad-room
 // notices, the permission-less list, the unknown-op and short-arg usages,
 // the room-op gate, the ban set updates, and the force-removal of online
 // banned members (direct membership discard, no PARTED).
@@ -2088,7 +2088,7 @@ func TestHandleOperatorCommandBan(t *testing.T) {
 	}
 }
 
-// G9.16 /invite mirrors the Python invite command: the usage and bad-room
+// /invite mirrors the Python invite command: the usage and bad-room
 // notices, the room-op gate that runs before the subcommand parse, the
 // list rendering with expiry seconds, the global (not room-scoped) target
 // resolution on add, the keyed vs plain invite texts, the TTL bookkeeping
@@ -2294,10 +2294,10 @@ func TestHandleOperatorCommandInvite(t *testing.T) {
 	}
 }
 
-// G16.4 `/mode ±o/±v` with a short target hash must not panic: Python's
+// A `/mode ±o/±v` with a short target hash must not panic: Python's
 // `target_hash.hex()[:12]` truncates safely and ParseIdentityHash accepts
-// 4+ byte hashes, so `/mode #room +o aabbccdd` fans out the truncated
-// notice while the old Go slice killed the daemon.
+// 4+ byte hashes, so `/mode <room> +o aabbccdd` fans out the truncated
+// notice instead of slicing past the end of the hash.
 func TestHandleOperatorCommandModeShortHashFanout(t *testing.T) {
 	t.Parallel()
 
@@ -2348,7 +2348,7 @@ func TestHandleOperatorCommandModeShortHashFanout(t *testing.T) {
 	}
 }
 
-// G16.10 A repeated /invite add for the same target must overwrite the
+// A repeated /invite add for the same target must overwrite the
 // stored invite the way Python's invited dict does: one entry with the
 // fresh expiry, not a duplicate that keeps keyless access alive after
 // the invite is consumed.
@@ -2408,7 +2408,7 @@ func TestInviteAddOverwritesSameTarget(t *testing.T) {
 	}
 }
 
-// G16.11 The slash-command tokenizer must split on the \x1c-\x1f file
+// The slash-command tokenizer must split on the \x1c-\x1f file
 // separators the way Python's str.split() does, so `/who\x1clounge`
 // dispatches /who for lounge instead of an unrecognized command word.
 func TestHandleOperatorCommandControlCharSplit(t *testing.T) {
@@ -2454,7 +2454,7 @@ type customCall struct {
 	outgoing *OutgoingList
 }
 
-// G17.1 CustomHandler: when a slash command is unrecognized by the built-in
+// CustomHandler: when a slash command is unrecognized by the built-in
 // switch, the optional CustomHandler hook is called with the original link,
 // peer hash, room pointer, parsed parts, and outgoing list; returning true
 // marks the command handled, and returning false keeps the unknown-command

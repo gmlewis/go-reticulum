@@ -13,8 +13,8 @@ package interfaces
 // Vport is the virtual-port index the device reports via the CMD_INTERFACES
 // serial response (RNodeMultiInterface.py:234 "vport"). The dynamic spawn
 // matches each enabled config to the device's reported interface types by this
-// index; a zero Vport means the first available virtual port (the legacy
-// pre-create path ignores Vport and uses array order).
+// index; a zero Vport means the first available virtual port (the pre-create
+// path ignores Vport and uses array order).
 type RNodeMultiSubinterfaceConfig struct {
 	Name            string
 	Enabled         bool

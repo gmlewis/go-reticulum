@@ -10,16 +10,12 @@ import (
 	"time"
 )
 
-// The fleet symptom this locks down: on a node whose link table routes an
-// LRPROOF out interface A while the proof first arrives via interface B
-// (normal for multi-plane hosts — LAN + TCP hub + public relays), the
-// first-seen copy was remembered in packetHashes and every later copy —
-// including the correct-path one — hit "dropping duplicate packet". The
-// initiator then sat pending until its watchdog fired ("Link establishment
-// timed out"). Python never remembers PROOF+LRPROOF hashes at all
-// (Transport.py:1526-1545 remember_packet_hash=False) and removes a rejected
-// proof's hash from the list so a corrected copy can arrive
-// (Transport.py:2181-2189).
+// An LRPROOF can first arrive on an interface other than the one the link
+// table routes it out, which is normal on a multi-plane host (LAN + TCP hub +
+// public relays). Python never remembers PROOF+LRPROOF hashes at all
+// (Transport.py:1526-1545 remember_packet_hash=False), and it removes a
+// rejected proof's hash from the list so a corrected copy can arrive
+// (Transport.py:2181-2189). The tests below pin both halves of that rule.
 
 func TestLRProofExemptFromRememberOnFirstSight(t *testing.T) {
 	t.Parallel()

@@ -71,10 +71,9 @@ type ax25KISSInterface struct {
 	mu      sync.Mutex
 }
 
-// NewAX25KISSInterface instantiates a low-level AX.25 amateur-radio packet
-// interface over a standard serial TTY port using the KISS protocol framing.
-// It orchestrates hardware-level flow control, termios configuration, and
-// asynchronous read/write queues to ensure robust RF communication.
+// NewAX25KISSInterface opens and configures a serial TTY as an AX.25 packet
+// radio interface using KISS framing, then starts its read loop. It sets up
+// termios parameters and the flow-control queue used for RF transmission.
 func NewAX25KISSInterface(name, port string, speed, databits, stopbits int, parity, callsign string, ssid, preambleMS, txTailMS, persistence, slotTimeMS int, flowControl bool, handler InboundHandler) (Interface, error) {
 	if strings.TrimSpace(port) == "" {
 		return nil, fmt.Errorf("no port specified for serial interface")

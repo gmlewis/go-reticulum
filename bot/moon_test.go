@@ -12,13 +12,13 @@ import (
 	"time"
 )
 
-// The golden values in this file were captured by running the Python `pymeeus`
-// package, a faithful implementation of the same Meeus algorithms, against the
-// same UTC-consistent definitions this code uses: positions evaluated in
-// Terrestrial Time, sidereal time in UT, and Delta T applied with the
-// Espenak-Meeus polynomial. Agreement therefore checks the transcription of the
-// periodic terms, the ecliptic-to-equatorial step, the event search, and the
-// phase solver — not merely that the code agrees with itself.
+// The golden values in this file come from the Python `pymeeus` package, a
+// faithful implementation of the same Meeus algorithms, evaluated with the same
+// UTC-consistent definitions this code uses: positions in Terrestrial Time,
+// sidereal time in UT, and Delta T applied with the Espenak-Meeus polynomial.
+// Agreement therefore checks the transcription of the periodic terms, the
+// ecliptic-to-equatorial step, the event search, and the phase solver — not
+// merely that the code agrees with itself.
 
 // moonGoldenTT is one position golden: a Terrestrial Time Julian day and the
 // Moon's place at it.
@@ -32,7 +32,7 @@ type moonGoldenTT struct {
 	Dec         float64
 }
 
-// moonPositionGoldens are the captured geocentric positions.
+// moonPositionGoldens are the reference geocentric positions.
 var moonPositionGoldens = []moonGoldenTT{
 	{2461299.0, 225.329844, -5.072532, 396269.017, 0.922243, 221.282183, -21.278271},
 	{2461305.25, 300.370847, -2.554789, 399977.745, 0.913691, 303.161685, -22.564392},

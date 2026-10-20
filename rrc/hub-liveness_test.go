@@ -29,9 +29,9 @@ import (
 // object still looks active. The RNS link watchdog cannot be relied on for
 // this — its stale window is 2*clamp(rtt*(KEEPALIVE_MAX/KEEPALIVE_MAX_RTT),
 // 5s, 360s) with the rtt measured once at establishment, so a link
-// established during a load spike (rtt ~15 s observed live on the
-// raspberrypi) stays "active" for up to 12 minutes after the hub died: the
-// TUI shows Connected while the user's joins and messages vanish.
+// established during a load spike (rtt ~15 s) stays "active" for up to 12
+// minutes after the hub died: the TUI shows Connected while the user's joins
+// and messages vanish.
 
 func TestHubLivenessWatchdogTearsDownSilentHub(t *testing.T) {
 	mgr, hub, sent := pingFixture(t)
@@ -58,18 +58,13 @@ func TestHubLivenessWatchdogTearsDownSilentHub(t *testing.T) {
 	}
 }
 
-// TestHubLivenessWatchdogRidesOutTransientSilence pins the 2026-09-13
-// glenn-kamrui incident: the client sat on the RNS Community hub
-// (rrc.hub.62b73cc9ecd8d9eceb66ce539b1c0060) from 08:26, heard its last
-// envelope at 08:40:36, and stayed disconnected for three hours. The hub was
-// healthy — the Beleth TCP interface's egress path had stalled (a 10 s write
-// deadline expired at 08:44:44 and the interface reconnected at 08:44:49), so
-// for ~4 minutes the hub looked exactly like a dead one from the client. A
-// single unanswered probe torn the link down there (auto-reconnect is off by
-// default, Python RRC.py:238), while Python's watchdog-less client rides the
-// same outage out on the RNS link stale window. The watchdog must therefore
-// re-probe a silent hub before it blames it — and still tear down a hub that
-// never comes back.
+// TestHubLivenessWatchdogRidesOutTransientSilence pins the watchdog's
+// escalation: a silent hub is probed again rather than torn down on the first
+// unanswered probe, an outage that heals restarts the escalation, and a hub
+// that stays silent for the whole budget is still declared gone. Auto-reconnect
+// is off by default (Python RRC.py:238), so a premature teardown strands the
+// client; Python's watchdog-less client rides the same outage out on the RNS
+// link stale window.
 func TestHubLivenessWatchdogRidesOutTransientSilence(t *testing.T) {
 	mgr, hub, _ := pingFixture(t)
 	_ = mgr
@@ -100,7 +95,7 @@ func TestHubLivenessWatchdogRidesOutTransientSilence(t *testing.T) {
 	hub.startHubLivenessLoop()
 
 	// A silent hub is probed again instead of being torn down on the first
-	// unanswered probe (the pre-fix behavior tore down here).
+	// unanswered probe.
 	deadline := time.Now().Add(3 * time.Second)
 	for probeCount() < 2 && time.Now().Before(deadline) {
 		select {
@@ -171,8 +166,8 @@ func TestHubLivenessWatchdogResetByTraffic(t *testing.T) {
 
 // TestHubLivenessWatchdogKeepsLinkToHubWithoutPings covers the hub
 // configuration rrcd documents as its default: ping_interval_s = 0.0 disables
-// hub pings (rrcd/config.py:35-36, EX1-RRCD.md:479-482 "Default: Disabled
-// (because Reticulum already has link-level keepalives)"). A healthy hub that
+// hub pings (rrcd/config.py:35-36, disabled because Reticulum already has
+// link-level keepalives). A healthy hub that
 // does not ping therefore sends an idle room nothing at all for minutes at a
 // time, and the client must keep the link: tearing it down reconnects to a hub
 // that was never gone, which the hub's owner sees as a flapping connection.
@@ -269,11 +264,9 @@ func TestHubLivenessWatchdogDetectsWedgedHubAndReconnects(t *testing.T) {
 	// Order matters here. rns.Link dispatches its link-closed callback on its
 	// own goroutine after the status already reads LinkClosed, so the client
 	// still reports the torn-down session's WELCOME for a moment after
-	// waitLinkClosed returns — and reading that stale flag as "reconnected"
-	// is exactly what made this test flake. So first wait for the close
-	// handling to clear it (which also proves the reconnect it schedules is
-	// armed), and only then open the inbound path, keeping the reconnect from
-	// firing into a still-wedged hub.
+	// waitLinkClosed returns. Wait for the close handling to clear it (which
+	// also proves the reconnect it schedules is armed), and only then open the
+	// inbound path, keeping the reconnect from firing into a still-wedged hub.
 	if !rig.waitNotWelcomed(5 * time.Second) {
 		t.Fatalf("the client never dropped its WELCOME after the wedged link was torn down; hub log:\n%v", rig.logs.String())
 	}

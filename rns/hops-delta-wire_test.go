@@ -14,11 +14,10 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// TestHopsDeltaRewritesTheEmittedHopByte puts the local_hops_delta disguise on a real
-// wire and checks the byte that arrives. The gate, transform and forwarding expressions
-// are pinned against Python by TestHopsDeltaVectorsAgainstPython
-// (rns/hops-delta-vectors_test.go); what no test did was emit a frame and read its hop
-// byte back.
+// TestHopsDeltaRewritesTheEmittedHopByte puts the local_hops_delta disguise on a
+// real wire and checks the byte that arrives. The gate, transform and forwarding
+// expressions are pinned against Python by TestHopsDeltaVectorsAgainstPython
+// (rns/hops-delta-vectors_test.go); this test exercises the emitted frame.
 //
 // Python draws the delta once per transport as `(ord(os.urandom(1))%6)+2`
 // (Transport.py:328) and rewrites the hop byte of a locally-originated unicast frame

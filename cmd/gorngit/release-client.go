@@ -3,7 +3,7 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-// release_client.go implements the gorngit client release operations,
+// release-client.go implements the gorngit client release operations,
 // mirroring the list_releases/view_release/fetch_release/create_release/
 // delete_release/latest_release methods of ReticulumGitClient
 // (RNS/Utilities/rngit/server.py, rngit v1.4.2).
@@ -228,10 +228,9 @@ func (c *reticulumGitClient) fetchRelease(target, signerHex string, offline bool
 	tag := parts[0]
 	artifactSpec := parts[1]
 
-	// Every artifact is written into one fetch directory that lives only as
-	// long as this call: fetchArtifact hands back a path to a file inside it
-	// and the caller reads (or renames) that file, so the directory has to
-	// outlive each individual fetch but nothing more.
+	// Every artifact is written into one fetch directory owned by this call:
+	// fetchArtifact returns a path inside it and the caller reads or renames
+	// that file, so the directory must outlive each fetch but nothing more.
 	fetchDir := ""
 	if !offline {
 		dir, err := os.MkdirTemp("/tmp", "gorngit-fetch-art-")

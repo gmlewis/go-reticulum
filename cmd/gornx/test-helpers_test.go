@@ -27,14 +27,11 @@ func prepareGornxConfig(t *testing.T, configDir string) {
 
 // prepareGornxConfigWithInstance writes a per-test Reticulum configuration.
 //
-// The no-port variant (listenPort == 0) configures a standalone instance, as
-// every other tool's integration helper here does. It must not ask for a shared
-// instance: gornx requires one when the configuration shares one
-// (WithRequireSharedInstance in run()), so share_instance = Yes makes these
-// tests attach to whatever shared instance the machine happens to be running —
-// the developer's own daemon locally, nothing in CI — instead of exercising the
-// tool. A test that passes only because an unrelated instance is listening on
-// the default port is not testing the tool at all.
+// The no-port variant (listenPort == 0) configures a standalone instance. It
+// must not ask for a shared instance: gornx requires one when the configuration
+// shares one (WithRequireSharedInstance in run()), so share_instance = Yes would
+// make these tests attach to whatever shared instance the machine happens to be
+// running instead of exercising the tool.
 //
 // The ported variant configures two peers on private UDP loopback ports, so a
 // listener and an initiator can talk to each other without a shared instance.

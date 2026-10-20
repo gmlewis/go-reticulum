@@ -35,12 +35,9 @@ func testAcceptedAdvertisement(t *testing.T, receiver *Link, data []byte) *Packe
 // A sender re-advertises a resource it believes has not started: its
 // advertisement watchdog fires, or the receiver's first request is lost on a
 // multi-hop path. Python's Link.receive accepts every advertisement it sees
-// (Link.py:1048) and this port did the same, so the receiving link ended up with
-// a resource per copy. Because every delivered part makes every registered
-// receiver request more parts, the copies multiply the traffic instead of
-// converging: a page fetch from a two-hop node was measured registering up to
-// five resources for one hash and stalling short of the whole page while tens
-// of thousands of duplicate parts crossed the link.
+// (Link.py:1048), so without dedup the receiving link ends up with a resource
+// per copy, and because every delivered part makes every registered receiver
+// request more parts, the copies multiply the traffic instead of converging.
 //
 // The resource hash covers the payload together with the transfer's random
 // hash, so an equal hash is the same data from the same sender and there is

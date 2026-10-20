@@ -28,14 +28,6 @@ type Token struct {
 	isAES256      bool
 }
 
-// ASIC suitability: Token (AES-CBC + SHA-256 HMAC, the Fernet-like envelope
-// used for every LXMF packet payload and link packet) decomposes into two
-// fixed-function blocks that almost every foundry library already ships:
-// an AES core and a SHA-256 core streaming through an HMAC wrapper. In an
-// RNode-class device the host MCU would keep key storage and IV generation
-// and simply spool ciphertext through the coprocessor over SPI, mirroring
-// how the stamp grind offload is described in lxmf/stamper.go.
-
 // GenerateTokenKey derives a cryptographically random key for Token
 // operations. It returns 32 bytes for AES-128 mode or 64 bytes for AES-256.
 func GenerateTokenKey(aes256 bool) ([]byte, error) {
@@ -50,8 +42,9 @@ func GenerateTokenKey(aes256 bool) ([]byte, error) {
 	return key, nil
 }
 
-// NewToken validates the provided symmetric key and initializes a Token instance ready for cryptographic operations.
-// It splits the provided key material into distinct signing and encryption components, inferring the correct AES block mode based on the key's length.
+// NewToken validates key and returns a Token. A 32-byte key selects AES-128
+// and a 64-byte key AES-256; the first half is the signing (HMAC) key and the
+// second half the encryption key.
 func NewToken(key []byte) (*Token, error) {
 	if len(key) == 32 {
 		return &Token{

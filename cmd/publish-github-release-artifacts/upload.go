@@ -20,7 +20,7 @@
 // publishes — and if any upload fails it deletes the draft it made. So a single
 // "HTTP 500: Error saving asset" from GitHub's upload endpoint discards every
 // artifact of a run that has just spent minutes building the platform matrix
-// and uploading most of a gigabyte, and all it can do is start over.
+// and uploading most of a gigabyte.
 //
 // This file makes those same three steps, on its own terms:
 //

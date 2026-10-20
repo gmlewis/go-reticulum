@@ -112,9 +112,7 @@ func TestMain(m *testing.M) {
 
 	exitCode := m.Run()
 
-	// This section used to be in a `defer func() {...}()` but the `os.Exit` was
-	// preventing it from being run, so this section ensures that it actually runs
-	// before the process exits.
+	// Run cleanup before os.Exit, which skips deferred calls.
 	cleanup()
 	out, err := exec.Command("/usr/bin/pkill", "-f", binDir).CombinedOutput()
 	if err != nil && err.Error() != "exit status 1" {
@@ -164,17 +162,15 @@ func TestIntegrationListenPrintIdentityOutputFormatParity(t *testing.T) {
 	configDir := testutils.TempDir(t, tempDirPrefix)
 	prepareGornshConfigNoNetwork(t, configDir)
 
-	// Run the original (acehoss) rnsh through the wrapper so it shares gornsh's
-	// CLI semantics and identity storage path (see runRnshViaWrapper). The
-	// wrapper's exit code is ignored: rnsh's print-identity path raises SystemExit.
-	// The wrapper runs v0.1.7 acehoss rnsh, where --config selects the RNS
-	// config directory and the identity lives at <configdir>/storage/identities/
-	// rnsh.<service>. gornsh follows v1.4.2 semantics: --rnsconfig selects the
-	// RNS config directory and --config selects the rnsh config directory (with
-	// the identity at <rnshconfigdir>/identity.<service>). This test only checks
-	// output FORMAT, not hash equality, so the two sides may use different
-	// identity storage paths. gornsh's rnsh config is pointed at the same temp
-	// configDir so no identity is written under the real ~/.rnsh.
+	// The wrapper runs acehoss rnsh v0.1.7, where --config selects the RNS
+	// config directory and the identity lives at
+	// <configdir>/storage/identities/rnsh.<service>. gornsh follows v1.4.2:
+	// --rnsconfig selects the RNS config directory and --config the rnsh config
+	// directory (identity at <rnshconfigdir>/identity.<service>). This test
+	// checks output FORMAT only, so the storage paths may differ. Both sides
+	// get the same temp configDir, so no identity lands under the real ~/.rnsh.
+	// The wrapper's exit code is ignored: its print-identity path raises
+	// SystemExit.
 	pythonOut := runRnshViaWrapper(t, "--config", configDir, "-l", "-p")
 	goOut, err := exec.Command(gornshBin, "--rnsconfig", configDir, "--config", configDir, "-l", "-p").CombinedOutput()
 	if err != nil {
@@ -207,14 +203,13 @@ func TestIntegrationPrintIdentityOutputFormatParity(t *testing.T) {
 	configDir := testutils.TempDir(t, tempDirPrefix)
 	prepareGornshConfigNoNetwork(t, configDir)
 
-	// Both sides must load the SAME identity so the printed hashes are
-	// comparable. The wrapper runs v0.1.7 acehoss rnsh (--config = RNS config,
+	// Both sides must load the same identity for the printed hashes to be
+	// comparable. The wrapper runs acehoss rnsh v0.1.7 (--config = RNS config,
 	// identity at <configdir>/storage/identities/rnsh); gornsh follows v1.4.2
-	// (--rnsconfig = RNS config, --config = rnsh config). Rather than rely on
-	// coincident default storage paths, pre-create one identity and pass it
-	// explicitly with -i to both. The wrapper runs first and would create it,
-	// but pre-creating makes the test order-independent. The wrapper's exit
-	// code is ignored: rnsh's print-identity path raises SystemExit.
+	// (--rnsconfig = RNS config, --config = rnsh config). Pre-create one
+	// identity and pass it explicitly with -i to both, so the test does not
+	// depend on coincident default storage paths or on run order. The wrapper's
+	// exit code is ignored: its print-identity path raises SystemExit.
 	sharedIDPath := filepath.Join(configDir, "shared.id")
 	mustCreateIdentity(t, configDir, "shared.id")
 
@@ -965,14 +960,10 @@ func TestIntegrationNetworkPartitionRecovery(t *testing.T) {
 	// The partition leaves a stale link on the listener: the step-2 link
 	// request, buffered while the listener was SIGSTOP'd, is accepted after
 	// SIGCONT but never reaches ACTIVE, because its initiator already timed
-	// out and exited. A healthy, non-partitioned listener activates every
-	// link it accepts, so observing more accepted links than activated
-	// links is a reliable, portable symptom that the listener experienced
-	// the partition and gracefully tore the orphaned link down before
-	// recovering for step 3. (This replaces an earlier "broken pipe" log
-	// check: the command-stdin teardown path now produces a benign
-	// "file already closed" double-close that also appears on normal runs,
-	// so it no longer distinguishes a partition from a clean session.)
+	// out and exited. A healthy listener activates every link it accepts, so
+	// more accepted links than activated links is a portable symptom that the
+	// listener saw the partition and tore the orphaned link down before
+	// recovering for step 3.
 	logOut := listener.output()
 	accepted := strings.Count(logOut, "accepted, proof key ready")
 	activated := strings.Count(logOut, "is now ACTIVE")
@@ -1088,7 +1079,6 @@ func parseListenerHash(line string) string {
 	if len(matches) > 0 && len(matches[0]) > 1 {
 		return matches[0][1]
 	}
-	// log.Printf("[DEBUG] parseListenerHash: no match for %q", line)
 	return ""
 }
 
@@ -1142,8 +1132,7 @@ func (p *gornshListenerProcess) stop(t *testing.T) {
 func waitForPathInSharedInstance(t *testing.T, configDir, hash string, timeout time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
-	// We use gornpath to poll the shared instance.
-	// It will exit with 0 if it finds a path.
+	// gornpath polls the shared instance and exits 0 once it finds a path.
 	for time.Now().Before(deadline) {
 		cmd := exec.Command(gornpathBinaryPath, "--config", configDir, "-w", "1", hash)
 		cmd.Env = gornshIntegrationEnv(t, "")
@@ -1226,7 +1215,6 @@ func waitForPathReadiness(name string, hasPath func() bool, requestPath func() e
 func runGornshCommand(t *testing.T, configDir string, timeout time.Duration, args ...string) (string, int) {
 	t.Helper()
 
-	// Create a context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
@@ -1248,11 +1236,9 @@ func runGornshCommand(t *testing.T, configDir string, timeout time.Duration, arg
 		t.Logf("Command exited with code: %v", exitErr.ExitCode())
 		return string(out), exitErr.ExitCode()
 	}
-	// Check if it's a context deadline exceeded error
 	if ctx.Err() == context.DeadlineExceeded {
 		t.Fatalf("timeout running gornsh %v after %v: %v\n%v", args, timeout, err, string(out))
 	}
-	// Log the error for debugging
 	t.Logf("failed to run gornsh %v: %v\n%v", args, err, string(out))
 	return string(out), -1
 }
@@ -1292,16 +1278,13 @@ func gornshIntegrationEnv(t *testing.T, pythonPathOverride string) []string {
 }
 
 // prepareGornshConfigNoNetwork writes a minimal RNS config with no network
-// interfaces and share_instance disabled. It is intended for parity tests
-// that only exercise rnsh/gornsh's print-identity path, which never sends or
-// receives traffic. Using an interface-less config matters under the full
-// integration suite: when many packages run in parallel each spawns its own
-// RNS.Reticulum, and the Python RNS stack calls os._exit(255) ("RNS.panic")
-// from _synthesize_interface if an AutoInterface fails to come up under the
-// concurrent multicast-socket load. That hard-exits python3 with no flushed
-// output, so the wrapper observes an empty result + exit 255. With no
-// interfaces configured, RNS skips interface synthesis entirely and the
-// print-identity path runs cleanly regardless of suite-wide load.
+// interfaces and share_instance disabled, for parity tests that only exercise
+// the print-identity path. An interface-less config matters under the full
+// integration suite: many packages run in parallel, each spawning its own
+// RNS.Reticulum, and Python's _synthesize_interface calls os._exit(255)
+// ("RNS.panic") when an AutoInterface cannot come up under concurrent
+// multicast-socket load, hard-exiting python3 with no flushed output. With no
+// interfaces, RNS skips interface synthesis and the path runs cleanly.
 func prepareGornshConfigNoNetwork(t *testing.T, configDir string) {
 	t.Helper()
 	configText := strings.Join([]string{
@@ -1380,28 +1363,17 @@ func getRnshBinaryPath(t *testing.T) string {
 	return path
 }
 
-// runRnshViaWrapper executes the original (acehoss) rnsh v0.1.7 via the
-// pythonListenerWrapper, using the same PYTHONPATH-based import path as the
-// listener tests. v0.1.7 rnsh treats --config/-c as the Reticulum config
-// directory and stores its identity at <configdir>/storage/identities/rnsh.
-// gornsh instead follows the newer v1.4.2 rnsh CLI: --rnsconfig selects the
-// Reticulum config directory and --config selects the rnsh config directory
-// (identity at <rnshconfigdir>/identity[.<service>]). The parity tests
-// therefore point gornsh's --rnsconfig at the same RNS configDir the wrapper
-// receives via --config, and either rely on output-format comparison only
-// (listener test) or pass an explicit -i to both sides so the same identity
-// file is loaded (print-identity hash test). The wrapper's exit code is
-// ignored: rnsh's print-identity path raises SystemExit, which the wrapper
-// does not treat as an error.
-// runRnshViaWrapper executes the original (acehoss) rnsh via the wrapper
-// script. The whole gornsh suite runs its subtests in parallel, each spawning
-// gornsh/python3 subprocesses; under that load a python3 invocation can
-// transiently fail to start (or produce no output before exiting) with a
-// non-nil error from CombinedOutput. Such a transient failure is not a real
-// parity regression, so the helper retries a few times and only returns once
-// it has captured output. If every attempt fails it returns the last
-// (empty) output plus a diagnostic trailer so the failing test reports the
-// underlying error instead of a bare "missing identity prefix".
+// runRnshViaWrapper executes the original (acehoss) rnsh v0.1.7 through the
+// pythonListenerWrapper script. v0.1.7 treats --config/-c as the Reticulum
+// config directory and stores its identity at
+// <configdir>/storage/identities/rnsh; gornsh instead follows v1.4.2 (see the
+// per-test comments). Callers therefore pass gornsh's --rnsconfig the same RNS
+// configDir the wrapper receives via --config.
+//
+// The suite runs its subtests in parallel, so a python3 invocation can
+// transiently fail to start or exit without output. The helper retries until
+// it captures output and, if every attempt is empty, returns the last result
+// plus a diagnostic trailer naming the underlying error.
 func runRnshViaWrapper(t *testing.T, args ...string) string {
 	t.Helper()
 	wrapperDir := t.TempDir()
@@ -1410,16 +1382,10 @@ func runRnshViaWrapper(t *testing.T, args ...string) string {
 		t.Fatalf("failed to write rnsh wrapper script: %v", err)
 	}
 	fullArgs := append([]string{wrapperPath}, args...)
-	// rnsh's print-identity path calls exit(0), which rnsh_cli turns into a
-	// SystemExit that the wrapper re-raises as a non-zero process exit. So a
-	// non-nil error from CombinedOutput is expected and not, by itself, a
-	// failure: what matters is that rnsh produced output. The only real
-	// transient failure mode is an empty result — python3 failing to start
-	// (or exiting before printing) under the gornsh suite's concurrent
-	// subprocess load. Retry on empty output only; accept the first non-empty
-	// result regardless of exit code. If every attempt is empty, return the
-	// last result plus a diagnostic trailer so the failing test reports the
-	// underlying error instead of a bare "missing identity prefix".
+	// rnsh's print-identity path raises SystemExit, which the wrapper turns
+	// into a non-zero process exit, so a non-nil error from CombinedOutput is
+	// expected: what matters is that rnsh produced output. Retry on empty
+	// output only; accept the first non-empty result regardless of exit code.
 	const maxAttempts = 5
 	var lastErr error
 	var lastOut []byte
@@ -1432,9 +1398,7 @@ func runRnshViaWrapper(t *testing.T, args ...string) string {
 		}
 		lastErr = err
 		lastOut = out
-		// Brief backoff before retrying; the gornsh suite spawns many
-		// concurrent subprocesses and a short yield is enough for the
-		// transient resource pressure to clear.
+		// Brief backoff so transient subprocess pressure can clear.
 		time.Sleep(250 * time.Millisecond)
 	}
 	if lastErr != nil {

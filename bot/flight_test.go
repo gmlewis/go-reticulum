@@ -13,11 +13,11 @@ import (
 	"time"
 )
 
-// The bodies below are trimmed copies of what the two providers really answer,
-// captured live: adsbdb's route object for BAW123, its "invalid callsign" answer
-// for a number it does not publish, and adsb.lol's live state for an aircraft
-// that is in the air. Every test that parses a provider answer parses one of
-// these, so the shapes stay the provider's and not the test's invention.
+// The bodies below are trimmed copies of the two providers' real answers:
+// adsbdb's route object for BAW123, its "invalid callsign" answer for a number
+// it does not publish, and adsb.lol's live state for an aircraft that is in the
+// air. Every test that parses a provider answer parses one of these, so the
+// shapes stay the provider's and not the test's invention.
 const (
 	flightRouteBody = `{"response":{"flightroute":{"callsign":"BAW123","callsign_icao":"BAW123",
       "callsign_iata":"BA123","airline":{"name":"British Airways","icao":"BAW","iata":"BA","country":"United Kingdom"},
@@ -563,7 +563,7 @@ func TestFlightSaysWhenSeveralAircraftShareACallsign(t *testing.T) {
 	})
 }
 
-// TestFlightTruncatesFieldsAndBodies assert the two bounds that keep a provider
+// TestFlightTruncatesFieldsAndBodies asserts the two bounds that keep a provider
 // from filling a room or the bot's memory: one field is shortened, and an answer
 // larger than the command will read is refused as unreadable.
 func TestFlightTruncatesFieldsAndBodies(t *testing.T) {

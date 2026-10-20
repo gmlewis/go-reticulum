@@ -22,30 +22,25 @@ func TestFetchModeSavesReceivedFiles(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
 
-	// Create temp directories
 	listenerDir := testutils.TempDir(t, "gorncp-test-")
 	fetcherDir := testutils.TempDir(t, "gorncp-test-")
 	saveDir := testutils.TempDir(t, "gorncp-test-")
 	testFileDir := testutils.TempDir(t, "gorncp-test-")
 
-	// Create test file on listener side
 	testContent := []byte("Hello from listener!")
 	testFilePath := filepath.Join(testFileDir, "testfile.txt")
 	if err := os.WriteFile(testFilePath, testContent, 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
-	// Create identities
 	listenerID := mustCreateIdentity(t, listenerDir, "listener")
 	fetcherID := mustCreateIdentity(t, fetcherDir, "fetcher")
 
-	// Create transport systems with identities
 	listenerTS := rns.NewTransportSystem(nil)
 	listenerTS.SetNetworkIdentity(listenerID)
 	fetcherTS := rns.NewTransportSystem(nil)
 	fetcherTS.SetNetworkIdentity(fetcherID)
 
-	// Create pipe interfaces
 	pipeA := interfaces.NewPipeInterface("listener", func(data []byte, iface interfaces.Interface) {
 		listenerTS.Inbound(data, iface)
 	})
@@ -61,19 +56,16 @@ func TestFetchModeSavesReceivedFiles(t *testing.T) {
 		_ = pipeB.Detach()
 	}()
 
-	// Create listener destination with fetch handler
 	listenerDest, err := rns.NewDestination(listenerTS, listenerID, rns.DestinationIn, rns.DestinationSingle, "test", "receive")
 	if err != nil {
 		t.Fatalf("Failed to create listener destination: %v", err)
 	}
 
-	// Track receiver-side link establishment
 	listenerLinkEstablished := make(chan *rns.Link, 1)
 	listenerDest.SetLinkEstablishedCallback(func(l *rns.Link) {
 		listenerLinkEstablished <- l
 	})
 
-	// Register fetch handler that reads the test file
 	listenerDest.RegisterRequestHandler("fetch_file", func(path string, data any, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 		fileData, err := os.ReadFile(testFilePath)
 		if err != nil {
@@ -107,13 +99,13 @@ func TestFetchModeSavesReceivedFiles(t *testing.T) {
 		return true
 	}, rns.AllowAll, nil, false)
 
-	// Create link - must target the listener destination (receiver side)
 	link, err := rns.NewLink(fetcherTS, listenerDest)
 	if err != nil {
 		t.Fatalf("Failed to create link: %v", err)
 	}
 
-	// Set callback BEFORE establishing
+	// The established callback must be registered before Establish, or the
+	// notification can be missed.
 	established := make(chan bool, 1)
 	link.SetLinkEstablishedCallback(func(l *rns.Link) {
 		established <- true
@@ -136,12 +128,10 @@ func TestFetchModeSavesReceivedFiles(t *testing.T) {
 		t.Fatal("Receiver link establishment timed out")
 	}
 
-	// Identify
 	if err := link.Identify(fetcherID); err != nil {
 		t.Fatalf("Failed to identify: %v", err)
 	}
 
-	// Set up resource callback to save file
 	savedFileChan := make(chan string, 1)
 	if err := link.SetResourceStrategy(rns.AcceptAll); err != nil {
 		t.Fatalf("Failed to set resource strategy: %v", err)
@@ -197,7 +187,6 @@ func TestFetchModeSavesReceivedFiles(t *testing.T) {
 		}()
 	})
 
-	// Send fetch request
 	_, err = link.Request("fetch_file", []byte("testfile.txt"), func(rr *rns.RequestReceipt) {
 		if rr.Status != rns.RequestReady {
 			t.Logf("Request failed with status: %v", rr.Status)
@@ -212,7 +201,6 @@ func TestFetchModeSavesReceivedFiles(t *testing.T) {
 		t.Fatalf("Request failed: %v", err)
 	}
 
-	// Wait for file to be saved
 	var savedFilePath string
 	select {
 	case savedFilePath = <-savedFileChan:
@@ -220,7 +208,6 @@ func TestFetchModeSavesReceivedFiles(t *testing.T) {
 		t.Fatal("Timed out waiting for file to be saved")
 	}
 
-	// Verify file was saved
 	if savedFilePath == "" {
 		t.Fatal("File was not saved")
 	}

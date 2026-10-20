@@ -20,8 +20,8 @@ import (
 // user-facing program (gonomadnet, gorrcd) attaches to gornsd as a local client
 // and owns no interface of its own, so the RRC client's link to a remote hub is
 // a link whose packets leave through the shared instance and whose replies must
-// come back through it. That reverse path is what the incident report found
-// dead, so it is tested here with the hub one interface away from the instance.
+// come back through it. The test puts the hub one interface away from the
+// instance to exercise that reverse path.
 
 // TestClientBehindSharedInstanceReachesRemoteHub dials a remote hub from a
 // client that is attached to a shared instance, the way gonomadnet attaches to

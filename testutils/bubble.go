@@ -48,7 +48,7 @@ import (
 //     unrelated tickers run in the bubble: virtual time can overshoot. Assert
 //     the effect (event fired, state advanced) instead of the elapsed time.
 //
-// Converted tests keep working under the repo's -race driver.
+// Tests using this helper work under the repo's -race driver.
 func RunInBubble(t *testing.T, fn func(t *testing.T)) {
 	t.Helper()
 	synctest.Test(t, fn)

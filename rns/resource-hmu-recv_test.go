@@ -86,9 +86,7 @@ func hmRequestPackets(ct *captureTransport) []*Packet {
 // with more parts than HASHMAP_MAX_LEN sees the tail of its hashmap as unknown.
 // Python stops the scan there, sets HASHMAP_IS_EXHAUSTED (0xFF), appends the
 // last known map hash so the sender can locate the segment, sets
-// waiting_for_hmu and sends. Until this port did the same it silently skipped
-// the unknown entries, requested nothing more, and the transfer stalled at the
-// end of the first segment. The request must be sent exactly once: every retry
+// waiting_for_hmu and sends. The request must be sent exactly once: every retry
 // re-sends it only after the watchdog clears waiting_for_hmu.
 func TestReceiverRequestsExhaustedHashmap(t *testing.T) {
 	t.Parallel()
@@ -176,8 +174,7 @@ func TestReceiverRequestsExhaustedHashmap(t *testing.T) {
 
 // TestReceiverAssemblesAfterHashmapUpdate drives the same truncated-hashmap
 // receiver to completion: it asks for the missing segment, the update names the
-// remaining parts, and once they are delivered the resource assembles. This is
-// the "assembles the resource once the segment arrives" half of the unit.
+// remaining parts, and once they are delivered the resource assembles.
 func TestReceiverAssemblesAfterHashmapUpdate(t *testing.T) {
 	t.Parallel()
 

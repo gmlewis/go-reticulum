@@ -15,8 +15,8 @@ import (
 // SaveKnownDestinationsWithRecombine loads known-destinations
 // entries currently on disk that are NOT in the in-memory table and merges
 // them in before persisting, so a disk-only entry survives the save
-// (historical recombine=True behavior, RNS/Identity.py pre-b408699e). The
-// merge is "memory wins": a disk entry already in memory is not overwritten.
+// (recombine=True compatibility, RNS/Identity.py). The merge is
+// "memory wins": a disk entry already in memory is not overwritten.
 func TestSaveKnownDestinationsWithRecombineMergesMissingDiskEntries(t *testing.T) {
 	t.Parallel()
 	storagePath := testutils.TempDir(t, "rns-kd-recombine-")

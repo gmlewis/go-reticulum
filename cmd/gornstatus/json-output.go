@@ -56,15 +56,13 @@ type jsonInterfaceStat struct {
 	HeldAnnounces      *int     `json:"held_announces,omitempty"`
 	InAnnounceFreq     *float64 `json:"incoming_announce_frequency,omitempty"`
 	OutAnnounceFreq    *float64 `json:"outgoing_announce_frequency,omitempty"`
-	// Parity fields. Python's ifstats dict always
-	// emits these (RNS/Reticulum.py:1478-1489); the value fields (pr frequency,
-	// burst flags/activation) are emitted unconditionally so the `rnstatus -j`
-	// key set matches Python, while the pointer-nullable announce-rate and
-	// announces_to_internal use omitempty (Python emits them as null when the
-	// interface leaves them unset, but the Go stat already resolves them to
-	// their defaults earlier in the pipeline, so a nil here means "not
-	// applicable to this interface type" and is omitted, matching the Go
-	// InterfaceStat's nil-vs-default distinction).
+	// Parity fields. Python's ifstats dict always emits these
+	// (RNS/Reticulum.py:1478-1489). The value fields (pr frequency, burst
+	// flags/activation) are emitted unconditionally so the `rnstatus -j` key
+	// set matches Python. The pointer-nullable announce-rate and
+	// announces_to_internal fields use omitempty: the Go stat resolves them to
+	// their defaults earlier, so a nil here means "not applicable to this
+	// interface type" and is omitted.
 	InPrFreq            *float64 `json:"incoming_pr_frequency,omitempty"`
 	OutPrFreq           *float64 `json:"outgoing_pr_frequency,omitempty"`
 	AnnounceRateTarget  *int     `json:"announce_rate_target,omitempty"`

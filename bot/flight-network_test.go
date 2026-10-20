@@ -8,8 +8,7 @@
 // This file checks the flight command against the real providers, which is the one
 // thing the offline tests cannot do: they prove the parsing, the wording and the
 // degradation against captured answers, while this proves that the two keyless
-// endpoints still answer in the shape that parsing expects, and that the default
-// templates in the README are the ones that work.
+// endpoints still answer in the shape that parsing expects.
 //
 // It is behind the "network" build tag, so no default test run touches the
 // network: go test -tags network ./cmd/gorrcbot/.
@@ -23,8 +22,8 @@ import (
 	"time"
 )
 
-// flightLiveTemplates are the documented defaults, so this test fails if the
-// README's advice stops working.
+// flightLiveTemplates are the default provider endpoints, so this test fails
+// when a provider changes the shape of its answer.
 const (
 	flightLiveTemplate  = "https://api.adsb.lol/v2/callsign/{flight}"
 	flightRouteTemplate = "https://api.adsbdb.com/v0/callsign/{flight}"

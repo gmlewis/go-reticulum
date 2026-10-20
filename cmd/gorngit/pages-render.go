@@ -3,7 +3,7 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-// pages_render.go implements the pure rendering helpers used by the
+// pages-render.go implements the pure rendering helpers used by the
 // nomadnetwork page-node handlers, mirroring the m_* helpers, icons,
 // colors, formatters, default templates and chart renderers of
 // RNS/Utilities/rngit/pages.py (NomadNetworkNode, rngit v1.4.2). These
@@ -473,8 +473,8 @@ func renderTemplate(pageContent, navContent, template, nodeName, version string,
 
 // renderChartFullBlock renders a half-block-step bar chart using the full
 // block ramp, mirroring render_chart_full_block (pages.py:2508-2534). The
-// label rendering portion of the Python original (pages.py:2536-2542) is
-// omitted as it is cosmetic and not asserted by any test.
+// label rendering of the Python original (pages.py:2536-2542) is omitted as
+// it is cosmetic.
 func renderChartFullBlock(data []int, labels []string, color string, height int) string {
 	if len(data) == 0 || allZero(data) {
 		return "No data available\n"
@@ -517,8 +517,8 @@ func renderChartFullBlock(data []int, labels []string, color string, height int)
 }
 
 // renderChart renders a chart via the half-block renderer, mirroring
-// render_chart (pages.py:2505-2506). For the Go port the simpler full-block
-// renderer is used as the half-block gradient variant is purely cosmetic.
+// render_chart (pages.py:2505-2506). The simpler full-block renderer is used
+// because the half-block gradient variant is purely cosmetic.
 func renderChart(data []int, labels []string, color string, height int) string {
 	return renderChartFullBlock(data, labels, color, height)
 }

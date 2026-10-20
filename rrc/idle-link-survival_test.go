@@ -17,10 +17,8 @@
 
 package rrc
 
-// Idle-link survival against a REAL Python RNS link watchdog: the fleet
-// symptom is an RRC hub link that dies every ~45s whenever the client goes
-// silent (the RaspPi's connect/disconnect storm). Python's Link watchdog
-// shrinks keepalive to max(min(rtt*(KEEPALIVE_MAX/KEEPALIVE_MAX_RTT),
+// Idle-link survival against a REAL Python RNS link watchdog. Python's Link
+// watchdog shrinks keepalive to max(min(rtt*(KEEPALIVE_MAX/KEEPALIVE_MAX_RTT),
 // KEEPALIVE_MAX), KEEPALIVE_MIN) at establishment (Link.py:795-797), so on a
 // fast link the hub stales an idle link after ~2*5s=10s unless the client
 // sends RNS keepalives. This test holds an established link SILENT (no

@@ -14,17 +14,16 @@ import (
 )
 
 // TestLinkWatchdogOutboundTriggerSendsKeepalive covers the
-// v1.4.0 link-watchdog fix that adds the outbound-inactivity trigger. Python
-// Link.py:749 fires the keepalive/stale check when
+// outbound-inactivity trigger: Python Link.py:749 fires the keepalive/stale
+// check when
 // `now >= last_inbound + keepalive OR now >= last_outbound + keepalive`.
 //
 // The scenario is a silent initiator that is still receiving destination
 // traffic: last_inbound is fresh (so the inbound-only trigger would NOT fire
 // and the link cannot go stale), but last_outbound is a full keepalive interval
-// in the past. With the fix the outbound trigger fires, the initiator sends a
-// keepalive, and the link stays Active. Without the fix the trigger never
-// fires and no keepalive is sent, so the remote side would eventually time the
-// silent initiator out.
+// in the past. The outbound trigger must fire there, send a keepalive and keep
+// the link Active; otherwise no keepalive is sent and the remote side
+// eventually times the silent initiator out.
 func TestLinkWatchdogOutboundTriggerSendsKeepalive(t *testing.T) {
 	t.Parallel()
 
@@ -107,8 +106,8 @@ func TestLinkWatchdogOutboundTriggerDoesNotStaleOnFreshInbound(t *testing.T) {
 	}
 }
 
-// TestLinkKeepaliveResponseGuard covers the v1.4.0 keepalive
-// response guard. Python Link.py:1124-1127 only echoes a 0xFE keepalive when
+// TestLinkKeepaliveResponseGuard covers the keepalive response guard. Python
+// Link.py:1124-1127 only echoes a 0xFE keepalive when
 // `time.time() >= self.last_outbound + self.keepalive` — recent outbound
 // traffic already serves as the keepalive echo, so a redundant 0xFE would
 // just waste bandwidth. A responder that sent traffic less than a keepalive

@@ -86,7 +86,7 @@ func tcpSensorListener(t *testing.T) (net.Listener, string) {
 }
 
 // TestSensorEndpointSchemeValidation asserts every supported sensor source is
-// recognised, and that a malformed one is refused with a clear error rather than
+// recognized, and that a malformed one is refused with a clear error rather than
 // silently ignored — a silently ignored endpoint is a node that never gets a
 // position and never says why.
 func TestSensorEndpointSchemeValidation(t *testing.T) {
@@ -364,8 +364,8 @@ func TestSensorReconnectBacksOff(t *testing.T) {
 	}
 }
 
-// TestDevicePathBehaviourUnchanged asserts a plain path is still an ordinary
-// read-only file, with the same error text an operator already knows.
+// TestDevicePathBehaviourUnchanged asserts a plain path is an ordinary
+// read-only file, with the error text an operator expects.
 func TestDevicePathBehaviourUnchanged(t *testing.T) {
 	t.Parallel()
 

@@ -761,8 +761,8 @@ func noopRequestLink(*rns.Link, string, any, func(*rns.RequestReceipt), func(*rn
 	return nil, nil
 }
 
-// TestPeerSyncLinkReadyDropsPurgedAndCollectsEntries covers 24.B.1: the
-// Peer.Sync LINK_READY branch collects an [transient_id, weight, size] entry
+// TestPeerSyncLinkReadyDropsPurgedAndCollectsEntries pins the collection pass:
+// the Peer.Sync LINK_READY branch collects an [transient_id, weight, size] entry
 // for every unhandled transient ID that still exists in the propagation store,
 // and drops (removeUnhandledMessage) any that have been purged. A purged ID is
 // not collected; the surviving IDs are collected with their stored size and a
@@ -840,12 +840,12 @@ func TestPeerSyncLinkReadyDropsPurgedAndCollectsEntries(t *testing.T) {
 	}
 }
 
-// TestPeerSyncLinkReadyDropsLowStampValueMessages covers 24.B.2: the
-// Peer.Sync LINK_READY branch drops unhandled messages whose stamp value is
+// TestPeerSyncLinkReadyDropsLowStampValueMessages pins the low-stamp-value drop:
+// the Peer.Sync LINK_READY branch drops unhandled messages whose stamp value is
 // below the minimum accepted cost (max(0, propagation_stamp_cost -
 // propagation_stamp_cost_flexibility)) via removeUnhandledMessage, and retains
-// the rest in pendingOfferEntries (LXMPeer.py:347-348, 4a93697). A dropped
-// entry is removed from the peer's unhandledBy set; a retained entry is not.
+// the rest in pendingOfferEntries (LXMPeer.py:347-348). A dropped entry is
+// removed from the peer's unhandledBy set; a retained entry is not.
 func TestPeerSyncLinkReadyDropsLowStampValueMessages(t *testing.T) {
 	t.Parallel()
 
@@ -920,11 +920,12 @@ func TestPeerSyncLinkReadyDropsLowStampValueMessages(t *testing.T) {
 	}
 }
 
-// TestPeerSyncLinkReadyAppliesTransferAndSyncSizeLimits covers 24.B.3: the
-// Peer.Sync LINK_READY branch sorts unhandled entries by weight ascending, then
-// drops + marks handled any single message whose transfer size (size+16)
-// exceeds propagation_transfer_limit*1000, and stops adding IDs once the
-// cumulative size reaches propagation_sync_limit*1000 (LXMPeer.py:367-381).
+// TestPeerSyncLinkReadyAppliesTransferAndSyncSizeLimits pins the transfer and
+// sync size limits: the Peer.Sync LINK_READY branch sorts unhandled entries by
+// weight ascending, then drops + marks handled any single message whose
+// transfer size (size+16) exceeds propagation_transfer_limit*1000, and stops
+// adding IDs once the cumulative size reaches propagation_sync_limit*1000
+// (LXMPeer.py:367-381).
 func TestPeerSyncLinkReadyAppliesTransferAndSyncSizeLimits(t *testing.T) {
 	t.Parallel()
 
@@ -1025,12 +1026,11 @@ func TestPeerSyncLinkReadyAppliesTransferAndSyncSizeLimits(t *testing.T) {
 	}
 }
 
-// TestPeerSyncLinkReadyEarlyReturnsWhenNoUnhandledRemain covers 24.B.4: after
-// the transfer/sync size-limit filtering, if no unhandled IDs survive the
-// Peer.Sync LINK_READY branch logs "no unhandled messages exist after offer
-// preparation" and returns without sending an offer — state stays
-// PeerStateLinkReady and lastOffer is not set (1.1.0 delta, 982c9fc,
-// LXMPeer.py:383-385).
+// TestPeerSyncLinkReadyEarlyReturnsWhenNoUnhandledRemain pins the post-filter
+// early return: after the transfer/sync size-limit filtering, if no unhandled
+// IDs survive, the Peer.Sync LINK_READY branch logs "no unhandled messages
+// exist after offer preparation" and returns without sending an offer — state
+// stays PeerStateLinkReady and lastOffer is not set (LXMPeer.py:383-385).
 func TestPeerSyncLinkReadyEarlyReturnsWhenNoUnhandledRemain(t *testing.T) {
 	t.Parallel()
 
@@ -1115,7 +1115,7 @@ func pythonPackHex(t *testing.T, expr string) string {
 	return strings.TrimSpace(testutils.RunPython(t, script))
 }
 
-// TestPeerSyncLinkReadySendsOfferRequest covers 24.B.5 (the keystone): the
+// TestPeerSyncLinkReadySendsOfferRequest pins the offer send: the
 // Peer.Sync LINK_READY branch builds the offer msgpack [peering_key[0],
 // unhandled_ids], records it in lastOffer, sends it over the link via
 // OFFER_REQUEST_PATH with the OfferResponse/RequestFailed callbacks, and
@@ -1211,11 +1211,10 @@ func TestPeerSyncLinkReadySendsOfferRequest(t *testing.T) {
 	}
 }
 
-// TestPeerOfferResponseErrorNoIdentity covers 24.B.6: when an offer response
-// carries ERROR_NO_IDENTITY (0xf0), OfferResponse re-identifies the link with
-// the router's identity, resets state to PeerStateLinkReady, and re-enters
-// Sync to rebuild and resend the offer (1.1.0 delta, 548be10,
-// LXMPeer.py:405-411).
+// TestPeerOfferResponseErrorNoIdentity pins the ERROR_NO_IDENTITY path: when an
+// offer response carries ERROR_NO_IDENTITY (0xf0), OfferResponse re-identifies
+// the link, resets state to PeerStateLinkReady, and re-enters Sync to rebuild
+// and resend the offer (LXMPeer.py:405-411).
 func TestPeerOfferResponseErrorNoIdentity(t *testing.T) {
 	t.Parallel()
 
@@ -1286,8 +1285,8 @@ func TestPeerOfferResponseErrorNoIdentity(t *testing.T) {
 	}
 }
 
-// TestPeerOfferResponseErrorNoAccessAndThrottled covers 24.B.7: an offer
-// response carrying ERROR_NO_ACCESS (0xf1) breaks the peering via
+// TestPeerOfferResponseErrorNoAccessAndThrottled pins the error responses: an
+// offer response carrying ERROR_NO_ACCESS (0xf1) breaks the peering via
 // router.Unpeer, and ERROR_THROTTLED (0xf6) postpones the next sync attempt by
 // PN_STAMP_THROTTLE. Neither changes peer state or tears down the link
 // (LXMPeer.py:413-421).
@@ -1357,10 +1356,10 @@ func TestPeerOfferResponseErrorNoAccessAndThrottled(t *testing.T) {
 	})
 }
 
-// TestPeerOfferResponseWantsNothing covers 24.B.8: a `false` offer response
-// (the remote peer already has every advertised message) marks every lastOffer
-// ID handled + removed, tears down the link, increments offered by the offer
-// size, and returns the peer to Idle (LXMPeer.py:423-428, 467-474).
+// TestPeerOfferResponseWantsNothing pins the wants-nothing response: a `false`
+// offer response (the remote peer already has every advertised message) marks
+// every lastOffer ID handled + removed, tears down the link, and returns the
+// peer to Idle (LXMPeer.py:423-428, 467-474).
 func TestPeerOfferResponseWantsNothing(t *testing.T) {
 	t.Parallel()
 
@@ -1414,13 +1413,14 @@ func TestPeerOfferResponseWantsNothing(t *testing.T) {
 	}
 }
 
-// TestPeerOfferResponseWantsEverything covers 24.B.9: a `true` offer response
-// (the remote peer wants every advertised message) packs all offered messages'
-// stored LXM data into a single Resource as msgpack [time, [lxm_data, ...]],
-// starts the transfer, records the transferring IDs, and enters
-// PeerStateResourceTransferring (LXMPeer.py:430-435, 452-465). The resource
-// data is golden-captured from Python umsgpack for a fixed timestamp and two
-// payloads, proving Go/Python wire parity of the sync-transfer container.
+// TestPeerOfferResponseWantsEverything pins the wants-everything response: a
+// `true` offer response (the remote peer wants every advertised message) packs
+// all offered messages' stored LXM data into a single Resource as msgpack
+// [time, [lxm_data, ...]], starts the transfer, records the transferring IDs,
+// and enters PeerStateResourceTransferring (LXMPeer.py:430-435, 452-465). The
+// resource data is golden-captured from Python umsgpack for a fixed timestamp
+// and two payloads, proving Go/Python wire parity of the sync-transfer
+// container.
 func TestPeerOfferResponseWantsEverything(t *testing.T) {
 	t.Parallel()
 
@@ -1475,9 +1475,9 @@ func TestPeerOfferResponseWantsEverything(t *testing.T) {
 	}
 }
 
-// TestPeerOfferResponseWantedList covers 24.B.10: a list offer response (the
-// remote peer wants a subset of the advertised messages) marks every
-// offered-but-not-wanted ID handled + removed, and starts a sync transfer
+// TestPeerOfferResponseWantedList pins the wanted-list response: a list offer
+// response (the remote peer wants a subset of the advertised messages) marks
+// every offered-but-not-wanted ID handled + removed, and starts a sync transfer
 // carrying only the wanted messages' LXM data (LXMPeer.py:476-484, 452-465).
 // The resource data is golden-captured from Python umsgpack for the wanted
 // subset.

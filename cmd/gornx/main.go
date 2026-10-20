@@ -576,7 +576,6 @@ func (rt *runtimeT) doExecute(ts rns.Transport, destHashHex string, command stri
 	// Wait for link establishment
 	select {
 	case <-linkEstablished:
-		// OK
 	case <-time.After(time.Duration(app.timeout * float64(time.Second))):
 		fatalf(rt.logger, "Link establishment timed out\n")
 	}
@@ -773,7 +772,6 @@ func (rt *runtimeT) doInteractive(ts rns.Transport, destHashHex string) {
 	// Wait for link establishment
 	select {
 	case <-linkEstablished:
-		// OK
 	case <-time.After(time.Duration(app.timeout * float64(time.Second))):
 		fatalf(rt.logger, "Link establishment timed out\n")
 	}

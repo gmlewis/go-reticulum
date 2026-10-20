@@ -14,9 +14,8 @@ import (
 
 // TestHandleStatsChunksAreWholeLines pins the readable /stats reply:
 // FormatStats lines must be newline-separated so QueueNoticeChunks emits
-// one complete stat line per NOTICE. Joining with "" made the authorized
-// reply a single 600+ byte blob that chunked mid-word on the wire
-// (live capture: "…rate_limi" / "ted=0pings: …").
+// one complete stat line per NOTICE. A single joined body is one 600+ byte
+// blob that chunks mid-word on the wire.
 func TestHandleStatsChunksAreWholeLines(t *testing.T) {
 	t.Parallel()
 

@@ -19,8 +19,7 @@ import (
 
 // TestRNodePortReportsAnIdleLineAsNothingAndACloseAsEIO pins, on a real
 // pseudo-terminal, the two facts the RNode read loop's error handling is built
-// out of. It is the test that would have caught the mistake of treating every
-// io.EOF as the end of the link.
+// out of: an idle line reads as io.EOF and a close reads as EIO.
 //
 // The port is opened and configured exactly as openPort does it — os.OpenFile,
 // then configureTermios over File.Fd() — because how a descriptor is opened and
@@ -76,11 +75,9 @@ func TestRNodePortReportsAnIdleLineAsNothingAndACloseAsEIO(t *testing.T) {
 	// The other end going away is reported as EIO, once, and ONLY to a read that
 	// is already parked when it happens: a read started after the close hands back
 	// a zero-byte read (io.EOF) for ever, indistinguishable from the line being
-	// idle. So the close has to land on a parked read — and with the idle timer
-	// above, "parked" is only a tenth-of-a-second window, which a loaded machine
-	// misses about one run in ten (this test failed that often on CI, reading
-	// io.EOF three million times in the two-second budget). Switching the port to
-	// a read that waits for a byte removes the window: a read with no idle timeout
+	// idle. So the close has to land on a parked read, and with the idle timer
+	// above "parked" is only a tenth-of-a-second window. Switching the port to a
+	// read that waits for a byte removes the window: a read with no idle timeout
 	// cannot return on its own, so once the reader is parked it stays parked until
 	// the close reaches it.
 	if runtime.GOOS == "darwin" {

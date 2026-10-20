@@ -25,19 +25,15 @@ import (
 // failure with TryPropagationOnFail still set retries the message as
 // propagated, through HandleOutbound, synchronously — and HandleOutbound takes
 // r.mu itself (router.go:2129 for a propagated message with no propagation node,
-// :2187 for the queue append). Go's sync.Mutex is not reentrant, so the caller
-// waits on a lock it already holds, forever: on the tablet this was the client
-// freezing solid on Ctrl-D — no drawing, no keys, no resize, nothing but a
-// console restart.
+// :2187 for the queue append). Go's sync.Mutex is not reentrant, so holding r.mu
+// across the callback while the callback re-enters makes the caller wait on a
+// lock it already holds, forever.
 //
-// The Python original cannot deadlock here, and that is what makes this a port
-// defect rather than a design: its process_outbound returns immediately when the
-// outbound lock is already taken (LXMRouter.py:2683, `if
+// Python permits this re-entrancy: its process_outbound returns immediately when
+// the outbound lock is already taken (LXMRouter.py:2683, `if
 // self.outbound_processing_lock.locked(): return`) and its handle_outbound takes
 // no lock at all, so a retry issued from a failure callback re-enters freely.
-//
-// This is the same class of defect as the client-side send freeze: the router
-// holds a lock across foreign code.
+// The router must not hold a lock across foreign code.
 func TestFailedSendRetryCallbackDoesNotDeadlock(t *testing.T) {
 	t.Parallel()
 

@@ -105,8 +105,7 @@ func TestPluginHostWagoCommandEcho(t *testing.T) {
 // that the invocation deadline interrupts the native loop: the call returns
 // context.DeadlineExceeded and does not block. The 50 ms budget leaves the
 // interrupt mechanism (loop safepoints or signals) ample headroom; the
-// generous wall-clock bound only guards against a hung process, matching
-// the engine's own cancellation tests which observe about 20 ms.
+// generous wall-clock bound only guards against a hung process.
 func TestPluginHostWagoSpinTimeout(t *testing.T) {
 	t.Parallel()
 

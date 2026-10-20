@@ -124,17 +124,12 @@ func transportDataFrame(transportID, dest []byte, seq int) []byte {
 }
 
 // TestForwardFailureLoggingDoesNotStorm pins the once-per-down-transition
-// logging of the packet-forwarding paths. Both of them used to report every
-// relayed packet that failed to leave a down interface at Error level: during
-// the 2026-09-13 glenn-kamrui outage (a WiFi re-association that black-holed
-// the Beleth TCP path) the link-transport path logged 2278 of these lines in
-// 0.3 s, and an earlier one logged 9994 — bursts that tripped journald's rate
-// limiter and hid the incident's own diagnostics. A send that fails on an
-// interface already known to be down carries no information: the interface
-// reports its own down transition (TCPClientInterface.failConn). Only a real
-// failure on an interface that was up is logged, once, through the
-// claimDownNotify latch that sendRebroadcast and dispatchForwardSend already
-// use (Transport.transmit's "not running" fast-fail is expected, not news).
+// logging of the packet-forwarding paths. A send that fails on an interface
+// already known to be down carries no information: the interface reports its
+// own down transition (TCPClientInterface.failConn). Only a real failure on an
+// interface that was up is logged, once, through the claimDownNotify latch
+// that sendRebroadcast and dispatchForwardSend already use
+// (Transport.transmit's "not running" fast-fail is expected, not news).
 func TestForwardFailureLoggingDoesNotStorm(t *testing.T) {
 	t.Parallel()
 

@@ -17,9 +17,8 @@ import (
 var probeBaudRates = []int{115200, 57600, 38400, 19200, 9600}
 
 // runScan lists all serial ports on the system and probes each for an RNode
-// detect response at the default baud (115200). This is the "which /dev port is
-// my RNode on?" diagnostic — the question that comes up every time a radio is
-// plugged into a new machine.
+// detect response at the default baud (115200). This is the "which /dev port
+// is my RNode on?" diagnostic.
 func runScan(rt cliRuntime) error {
 	ports := listSerialPorts()
 	if len(ports) == 0 {
@@ -56,9 +55,9 @@ func runScan(rt cliRuntime) error {
 }
 
 // runProbe probes a specific serial port at multiple baud rates for an RNode
-// detect response. This is the "is my RNode even responding, and at what baud?"
-// diagnostic — the question that distinguishes a baud mismatch from a
-// wiring/cable/power problem.
+// detect response. This is the "is my RNode even responding, and at what
+// baud?" diagnostic, which distinguishes a baud mismatch from a wiring, cable
+// or power problem.
 func runProbe(rt cliRuntime, port string) error {
 	fmt.Printf("Probing %v at %v baud rate(s)...\n\n", port, len(probeBaudRates))
 	for _, baud := range probeBaudRates {

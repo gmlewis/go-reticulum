@@ -89,11 +89,9 @@ const (
 	ResourceAdvOverhead = 134
 )
 
-// Resource watchdog timing/state constants. These mirror the class-level
-// constants on Python's RNS.Resource (Resource.py:97-137) and drive the
-// transfer-loss-recovery state machine in WatchdogJob / watchdogStep. Golden
-// values captured from a live `import RNS` run (rns 1.3.5); see
-// TestResourceConstants.
+// Resource watchdog timing/state constants mirror the class-level constants on
+// Python's RNS.Resource (Resource.py:97-137) and drive the
+// transfer-loss-recovery state machine in WatchdogJob / watchdogStep.
 const (
 	// ResourceProcessingGrace is the extra grace added to the advertisement
 	// timeout before the ADVERTISED-state watchdog resends (seconds).
@@ -339,15 +337,13 @@ func Accept(packet *Packet, callback func(*Resource), startedCallback func(*Reso
 	}
 
 	// A repeat advertisement for a transfer this link is already receiving is
-	// not a new transfer. The resource hash covers the payload together with the
+	// not a new transfer: the resource hash covers the payload together with the
 	// transfer's random hash, so an equal hash is the same data from the same
-	// sender: registering a second receiver for it gains nothing and costs a
-	// great deal. Every delivered part makes every registered receiver ask for
-	// more parts, so the copies multiply the request and part traffic instead of
-	// converging, and both stall. A sender re-advertises whenever it believes the
-	// transfer has not started — its advertisement watchdog fires, or the
-	// receiver's first request is lost on a multi-hop path — so this is
-	// reachable in normal operation, not only from a broken peer.
+	// sender. Registering a second receiver gains nothing and costs a great deal
+	// — every delivered part makes every copy ask for more parts, so request and
+	// part traffic multiply instead of converging. A sender re-advertises
+	// whenever its advertisement watchdog fires or the receiver's first request
+	// is lost, so this is reachable in normal operation.
 	l.mu.Lock()
 	for _, existing := range l.incomingResources {
 		if existing != nil && bytes.Equal(existing.hash, adv.H) {
@@ -879,10 +875,8 @@ func (r *Resource) cancelLocked() {
 
 // cancelCorruptLocked runs the CORRUPT branch of Python Resource.cancel
 // (Resource.py:1090-1093): cancel_incoming_resource + reject(advertisement) +
-// link.teardown. It assumes r.mu is already held (the caller — currently
-// Assemble's decompression-bomb guard — holds it) and that r.status has
-// already been set to ResourceStatusCorrupt. The full Cancel rewrite
-// (ICL/RCL packets, FAILED branch) is handled separately.
+// link.teardown. The caller must hold r.mu and must already have set r.status
+// to ResourceStatusCorrupt.
 func (r *Resource) cancelCorruptLocked() {
 	if r.link != nil {
 		r.link.CancelIncomingResource(r)
@@ -935,14 +929,12 @@ func (r *Resource) SetCallback(cb func(*Resource)) {
 	r.callback = cb
 }
 
-// SetProgressCallback registers a function to execute periodically as parts of the resource are successively delivered.
-// It is the Go port of Python Resource.progress_callback (Resource.py:1136-
-// 1138): the callback is stored on this resource and, when a next segment
-// exists, forwarded to it recursively — so a multi-segment transfer reports
-// progress from every segment via the single callback installed on the head.
-// (The prepare-time propagation — setting the callback on nextSegment as it is
-// created, Python Resource.py:785 — is handled by the same cascade once the
-// segment-splitting machinery wires nextSegment during preparation.)
+// SetProgressCallback registers a function to execute periodically as parts of
+// the resource are successively delivered. It is the Go port of Python
+// Resource.progress_callback (Resource.py:1136-1138): the callback is stored on
+// this resource and forwarded recursively to a pending next segment, so a
+// multi-segment transfer reports progress through the callback installed on the
+// head.
 func (r *Resource) SetProgressCallback(cb func(*Resource)) {
 	r.mu.Lock()
 	r.progressCallback = cb
@@ -991,7 +983,7 @@ func (r *Resource) requestNextLockedAt(now time.Time) error {
 	// position that has not been received yet (Resource.py:944-961). An
 	// unknown map hash means the advertised segment ended here: quote the
 	// last known hash and ask the sender for the next segment instead of
-	// silently skipping past it, which used to stall the transfer.
+	// silently skipping past it.
 	r.outstandingParts = 0
 	hashmapExhausted := false
 	requestedHashes := make([]byte, 0, r.window*ResourceMapHashLen)
@@ -1195,16 +1187,13 @@ func (r *Resource) Request(requestData []byte) error {
 	// for an advertised resource moves the sender to TRANSFERRING, and every
 	// request restarts the retry budget.
 	//
-	// Staying in ADVERTISED is not cosmetic. The advertisement watchdog keeps
-	// re-sending the advertisement on its own timer while the resource is
-	// ADVERTISED, and a receiver that sees the same advertisement again accepts
-	// it a second time — neither Python's Link.receive (Link.py:1048) nor this
-	// port dedups by resource hash — so one transfer becomes several. Each copy
-	// requests parts independently and every delivered part makes each copy
-	// request again, so the request/part traffic multiplies instead of
-	// converging and the link stalls with the transfer unfinished. Resetting
-	// the retry budget is the other half: a peer that is actively asking for
-	// parts must not have its sender give up mid-transfer.
+	// Staying in ADVERTISED is not cosmetic: the advertisement watchdog keeps
+	// re-sending the advertisement while the resource is ADVERTISED, and
+	// neither Python's Link.receive (Link.py:1048) nor this port dedups by
+	// resource hash, so a second accept turns one transfer into several that
+	// each request parts independently and multiply the traffic. Resetting the
+	// retry budget is the other half: a peer that is actively asking for parts
+	// must not have its sender give up mid-transfer.
 	if r.status != ResourceStatusTransferring {
 		r.status = ResourceStatusTransferring
 	}
@@ -1358,7 +1347,8 @@ func (r *Resource) updateEifr() {
 	}
 }
 
-// line 1290): expected_rate = (resource.size*8) / max(concluded_at -
+// recordExpectedRate updates the link's expected rate as Python does
+// (Resource.py:1290): expected_rate = (resource.size*8) / max(concluded_at -
 // started_transferring, 0.0001). It is invoked when an outgoing resource
 // transfer is proven complete.
 func (r *Resource) recordExpectedRate() {
@@ -1449,15 +1439,12 @@ func (r *Resource) ReceivePart(packet *Packet) error {
 	}
 	// Python Resource.receive_part (Resource.py:903-909) asks for the next
 	// parts only when no request is already outstanding, and lets the window
-	// grow on each such round. Requesting after every single received part, as
-	// this port did, multiplies the request traffic by the number of parts in
-	// flight, and every extra request makes the sender re-send parts it has
-	// already sent: the link fills with duplicates, the watchdog shrinks the
-	// window to its floor to recover, and with nothing to grow it back the
-	// transfer then advances at two parts per backoff round — a page that
-	// should cross a two-hop path in a fraction of a second measured 138
-	// seconds. Progress is a part that was actually missing; a duplicate
-	// changes nothing here.
+	// grow on each such round. Requesting after every received part multiplies
+	// the request traffic by the number of parts in flight, and every extra
+	// request makes the sender re-send parts it has already sent: the link
+	// fills with duplicates and the watchdog shrinks the window to its floor.
+	// Progress is a part that was actually missing; a duplicate changes
+	// nothing here.
 	shouldRequest := !shouldAssemble && newlyFilled && r.outstandingParts <= 0
 	if shouldRequest && r.window < r.windowMax {
 		r.window++
@@ -1533,8 +1520,8 @@ func (r *Resource) Assemble() {
 	// :330 packs data = self.metadata + resource_data, then compresses that
 	// whole at :388), so Python decompresses first and only extracts metadata
 	// afterward (Resource.py:688-691 then :700-710). Extracting metadata from
-	// the still-compressed bytes — as Go previously did — corrupts both the
-	// decompression input and the metadata.
+	// the still-compressed bytes corrupts both the decompression input and the
+	// metadata.
 	if r.compressed {
 		maxLen := r.maxDecompressedSize
 		if maxLen <= 0 {
@@ -1565,9 +1552,8 @@ func (r *Resource) Assemble() {
 	// Python Resource.assemble (Resource.py:698): calculated_hash is computed
 	// over self.data — the full uncompressed data, BEFORE metadata extraction
 	// — concatenated with random_hash. Hashing only the metadata-stripped
-	// payload (as Go previously did) diverges whenever the sender attached
-	// metadata, which every rncp transfer does (the "name" field), causing the
-	// receiver to mark the resource CORRUPT and never deliver the file.
+	// payload diverges whenever the sender attached metadata, causing the
+	// receiver to mark the resource CORRUPT.
 	calculatedHash := FullHash(append(copyBytes(fullData), r.randomHash...))
 	if !bytes.Equal(calculatedHash, r.hash) {
 		r.link.logger.Debug("Assembled resource %x failed payload hash validation", r.hash)
@@ -1607,10 +1593,9 @@ func (r *Resource) Assemble() {
 	// metadata into a local variable (Resource.py:708 reassigns `data`, not
 	// `self.data`), and prove() runs before that local is used. Hashing the
 	// metadata-stripped payload instead produces a proof the sender's
-	// validate_proof (Resource.py:790) rejects, so the sender never reaches
-	// COMPLETE and reports the transfer as failed even though the file
-	// arrived. Temporarily set r.data to the full data for the proof, then
-	// restore the metadata-stripped payload for the application callback.
+	// validate_proof (Resource.py:790) rejects. Temporarily set r.data to the
+	// full data for the proof, then restore the metadata-stripped payload for
+	// the application callback.
 	r.data = copyBytes(fullData)
 	r.status = ResourceStatusComplete
 	r.recordExpectedRate()
@@ -1672,16 +1657,13 @@ const resourceWindowMax = 75
 // matching the reference.
 const collisionGuardSize = 2*resourceWindowMax + hashmapMaxLen
 
-// hashmapSegment returns the hashes advertisement segment carries, mirroring
-// ResourceAdvertisement.pack's slice (Resource.py:1319-1324):
+// hashmapSegment returns the hashes one advertisement segment carries,
+// mirroring ResourceAdvertisement.pack's slice (Resource.py:1319-1324):
 //
 //	start = segment*HASHMAP_MAX_LEN
 //	end   = min((segment+1)*HASHMAP_MAX_LEN, totalParts)
 //
-// A segment past the end yields nothing. The full multi-segment protocol (the receiver
-// asking for a later segment via RESOURCE_HMU) is not implemented yet; this is the
-// arithmetic that advertisement building will use, pinned against the reference so the
-// wire change cannot land on a mistaken slice.
+// A segment past the end yields nothing.
 func hashmapSegment(hashmap [][]byte, segment int) [][]byte {
 	if segment < 0 {
 		return nil
@@ -1704,8 +1686,8 @@ func (r *Resource) buildAdvertisementPacket() (*Packet, error) {
 	// Resource.py:1319-1324). A resource of more than HASHMAP_MAX_LEN parts
 	// therefore advertises at most HASHMAP_MAX_LEN map hashes; the receiver
 	// asks for the rest with a HASHMAP_IS_EXHAUSTED request and the sender
-	// answers with RESOURCE_HMU. Emitting the whole map, as this port did,
-	// made an advertisement far larger than the link MDU allows.
+	// answers with RESOURCE_HMU. Emitting the whole map would make an
+	// advertisement far larger than the link MDU allows.
 	segment := hashmapSegment(r.hashmap, 0)
 	hashmapRaw := make([]byte, 0, len(segment)*ResourceMapHashLen)
 	for _, mh := range segment {
@@ -1798,9 +1780,8 @@ func (r *Resource) GetParts() [][]byte {
 }
 
 // GetSegments returns the segment hashes for the resource. It is
-// the Go port of Python's Resource.get_segments(). The Go port
-// currently tracks segment hashes via ResourcePart and the
-// per-resource map; we return the distinct hashes seen.
+// the Go port of Python's Resource.get_segments(). Segment hashes are
+// tracked via ResourcePart, so this returns the distinct hashes seen.
 func (r *Resource) GetSegments() [][]byte {
 	if r == nil {
 		return nil
@@ -1888,9 +1869,9 @@ func (r *Resource) currentRtt() float64 {
 // watchdogStep performs one iteration of the Python __watchdog_job loop
 // (Resource.py:564-671) at instant now, returning the sleep duration (in
 // seconds) the loop should wait before the next step and whether the loop
-// should continue. It does not sleep. now replaces time.time() so golden
-// tests can advance a virtual clock. It is the single-step analogue of the
-// Go Link watchdog step.
+// should continue. It does not sleep. now replaces time.time() so callers can
+// advance a virtual clock. It is the single-step analogue of the Go Link
+// watchdog step.
 //
 // The four states mirror Python exactly:
 //
@@ -2061,10 +2042,7 @@ func (r *Resource) watchdogStep(now time.Time) (sleep float64, cont bool) {
 // WatchdogJob is the Go port of Python's Resource.watchdog_job
 // (Resource.py:560-562): it spawns (once per resource) the watchdog loop
 // that drives watchdogStep until the resource reaches a terminal state
-// (status >= ASSEMBLING). The single-step state machine is golden-tested by
-// TestWatchdogAdvertised / WatchdogTransferringReceiver /
-// WatchdogTransferringSender / WatchdogAwaitingProof; the wired loop is
-// exercised end-to-end by the lossy-link recovery test.
+// (status >= ASSEMBLING).
 func (r *Resource) WatchdogJob() {
 	if r == nil {
 		return
@@ -2085,8 +2063,8 @@ func (r *Resource) WatchdogJob() {
 // It repeatedly runs one watchdogStep at the current instant, sleeps for the
 // returned duration (capped at WatchdogMaxSleep), and stops when the step
 // reports the resource is no longer active (status >= ASSEMBLING) or when the
-// resource is torn down via stopWatchdog. The now instant uses wall time;
-// golden tests drive watchdogStep directly with an injected clock.
+// resource is torn down via stopWatchdog. The loop steps on wall time;
+// watchdogStep takes its instant as a parameter for deterministic callers.
 func (r *Resource) watchdogLoop(stop, done chan struct{}) {
 	defer close(done)
 	for {

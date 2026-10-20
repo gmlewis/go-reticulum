@@ -1740,11 +1740,9 @@ func TestManagerSaveLoadPartedRoomsParity(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// E1 — hub connection lifecycle (setAuto*, reconnect backoff, scheduleReconnect,
-// onClosed, connectWorker). Mirrors Python RRC.py connect/_connect_worker/
+// Hub connection lifecycle (setAuto*, reconnect backoff, scheduleReconnect,
+// onClosed, connectWorker), mirroring Python RRC.py connect/_connect_worker/
 // _on_closed/_schedule_reconnect/set_auto_*.
-// ---------------------------------------------------------------------------
 
 // TestSetAutoReconnectPersists verifies setAutoReconnect flips the field,
 // persists to disk when save=true, and fires the change callback.
@@ -2314,18 +2312,16 @@ func TestConnectAsyncGuard(t *testing.T) {
 }
 
 // TestHandleWelcomeParsesFieldsAfterCBORRoundTrip asserts the WELCOME envelope
-// is fully parsed after a real CBOR encode→decode cycle. This is the
-// prerequisite for the cross-process HELLO/WELCOME test (task 2.1): a WELCOME
-// arriving from a Python hub (or even a Go hub over a real link) is CBOR bytes,
-// and fxamacker decodes integer map keys/values as uint64, so handleWelcome
-// must use the int/uint64-tolerant *Val helpers — not raw bodyMap[intKey]
-// indexing, which silently misses every field except Welcomed.
+// is fully parsed after a real CBOR encode→decode cycle: a WELCOME arriving
+// from a remote hub is CBOR bytes whose integer map keys/values may decode as
+// int64 or uint64, so handleWelcome must use the int/uint64-tolerant *Val
+// helpers rather than raw bodyMap[intKey] indexing, which silently misses
+// every field except Welcomed.
 //
-// Golden WELCOME body mirrors Python's RRC server contract (RRC.py:73-82) as an
-// inbound fixture: a hub that advertises ver "0.1", empty caps, and limits
-// {0:32, 1:64, 2:350, 3:32, 4:240}. The value is deliberately unlike
-// rns.VERSION so the parse path is exercised with a foreign hub's version; the
-// Go hub sender announces rns.VERSION.
+// The fixture body mirrors Python's RRC server contract (RRC.py:73-82): ver
+// "0.1", empty caps, and limits {0:32, 1:64, 2:350, 3:32, 4:240}. The version
+// is deliberately unlike rns.VERSION so the parse path is exercised with a
+// foreign hub's version.
 func TestHandleWelcomeParsesFieldsAfterCBORRoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -2433,11 +2429,10 @@ func TestHubListViewAccessors(t *testing.T) {
 	}
 }
 
-// SetTransport must stamp the manager AND every hub created before the
-// transport arrived: the manager is constructed before initRNS completes, so
-// hubs added via the New Hub dialog carry a nil transport. Without the
-// stamping, Ctrl-R (connect) failed with "no transport configured" — silently
-// (the differential explorer's Bug #2 on the Channels screen).
+// TestRRCManagerSetTransportStampsHubs asserts SetTransport stamps the manager
+// AND every hub created before the transport arrived: the manager is
+// constructed before initRNS completes, so hubs added via the New Hub dialog
+// would otherwise carry a nil transport and fail to connect.
 func TestRRCManagerSetTransportStampsHubs(t *testing.T) {
 	t.Parallel()
 

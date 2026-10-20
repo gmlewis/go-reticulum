@@ -201,7 +201,7 @@ func assertEnvelope(t *testing.T, name string, m *cbor.Map, wantType int64, want
 	}
 }
 
-// G15.1 The router's JOIN fanout shapes: the JOINED fanout to existing
+// The router's JOIN fanout shapes: the JOINED fanout to existing
 // members carries the actor hash body only when
 // include_joined_member_list is set plus a nick; the joiner's own copy
 // carries the full member list (when configured) but no nick; the room
@@ -252,7 +252,7 @@ func TestRouterJoinFanoutShapes(t *testing.T) {
 
 		// Envelope 1: the fanout copy to the existing member. The body is
 		// the one-element actor list only when the flag is set, and the
-		// nick rides along (quirk 10: fanout copies carry K_NICK).
+		// nick rides along (fanout copies carry K_NICK).
 		wantFanoutBody := any(nil)
 		if includeList {
 			wantFanoutBody = wantHashList(joinerHash)
@@ -284,7 +284,7 @@ func TestRouterJoinFanoutShapes(t *testing.T) {
 	}
 }
 
-// G15.1 (invite consumption) A JOIN consumes the joiner's invite from the
+// A JOIN consumes the joiner's invite from the
 // room state; only the matching peer's invite is removed.
 func TestRouterJoinConsumesInvite(t *testing.T) {
 	t.Parallel()
@@ -315,7 +315,7 @@ func TestRouterJoinConsumesInvite(t *testing.T) {
 	}
 }
 
-// G15.2 The router's PART fanout shapes: the remaining members receive
+// The router's PART fanout shapes: the remaining members receive
 // PARTED with the actor nick (suppressed while the same peer remains via
 // another link), the parting client receives the self PARTED with the
 // body iff include_joined_member_list, and room cleanup follows the
@@ -402,7 +402,7 @@ func TestRouterPartFanoutShapes(t *testing.T) {
 	}
 }
 
-// G15.2 A non-member PART still fans PARTED out to the room's members and
+// A non-member PART still fans PARTED out to the room's members and
 // returns the self PARTED to the parting client (Python ground truth:
 // both happen even though the client was never in the room).
 func TestRouterPartNonMemberStillFansOut(t *testing.T) {
@@ -443,7 +443,7 @@ func TestRouterPartNonMemberStillFansOut(t *testing.T) {
 	}
 }
 
-// G15.2 The last member's PART cleans up an unregistered room's state but
+// The last member's PART cleans up an unregistered room's state but
 // keeps a registered room's state and persists it.
 func TestRouterPartRoomCleanup(t *testing.T) {
 	t.Parallel()
@@ -509,7 +509,7 @@ registered = true
 	}
 }
 
-// G15.3 The PING→PONG echo: every PONG echoes the PING body verbatim —
+// The PING→PONG echo: every PONG echoes the PING body verbatim —
 // 8-byte bytes, the empty byte string, text, and float bodies — while an
 // absent or CBOR-null body produces a PONG without K_BODY. The
 // pings_in/pongs_out counters advance once per PING.
@@ -586,7 +586,7 @@ func TestHandlePingEchoesBodyVerbatim(t *testing.T) {
 	}
 }
 
-// G15.3 A PING without K_BODY and a PING whose body is CBOR null both
+// A PING without K_BODY and a PING whose body is CBOR null both
 // produce a PONG that omits K_BODY, and the empty byte string echo is the
 // two-byte CBOR 0x40 on the wire.
 func TestHandlePingBodyEdgeCases(t *testing.T) {
@@ -642,7 +642,7 @@ func containsHexSuffix(payload []byte, hexTail string) bool {
 	return strings.HasSuffix(text, hexTail)
 }
 
-// G15.4 A PONG clears the session's pending-ping marker and increments
+// A PONG clears the session's pending-ping marker and increments
 // pongs_in; the link is then eligible for a fresh PING.
 func TestHandlePongClearsAwaitingPong(t *testing.T) {
 	t.Parallel()

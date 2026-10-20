@@ -13,9 +13,8 @@ import (
 )
 
 // TestHandleStatsRealFormatStatsChunks pins that handleStats delivers the
-// REAL StatsManager.FormatStats body as MTU-safe NOTICE chunks. The live
-// fleet symptom (authorized /stats does nothing) was a single oversized
-// EmitNotice envelope that RNS dropped.
+// real StatsManager.FormatStats body as MTU-safe NOTICE chunks: a single
+// oversized EmitNotice envelope would be dropped by RNS.
 func TestHandleStatsRealFormatStatsChunks(t *testing.T) {
 	t.Parallel()
 

@@ -22,23 +22,22 @@ import (
 // set Python's LXMRouter.clean_available_tickets (LXMRouter.py:1247-1269)
 // reaps, and no more.
 //
-// The reaping rule (captured from the Python source and confirmed by a live
-// Python run) is a STRICT comparison against time.time():
+// The reaping rule is a STRICT comparison against time.time():
 //
 //   - outbound: reap when now > expires        (so expires == now is KEPT)
 //   - inbound:  reap when now > expires + GRACE (so expires+GRACE == now is KEPT)
 //
 // where GRACE = LXMessage.TICKET_GRACE = 5*24*60*60 = 432000 = DefaultTicketGraceSeconds.
 //
-// The live Python capture confirmed the non-boundary cases:
+// Non-boundary cases:
 //
 //	outbound: fresh (now+3600) kept, expired (now-3600) reaped.
 //	inbound:  fresh (now+3600) kept, within-grace (now-100) kept,
 //	          beyond-grace (now-GRACE-3600) reaped.
 //
 // The exact-boundary cases (expires == now; expires+GRACE == now) are
-// deterministic only with a fixed clock, so they are asserted here against the
-// strict-`>` semantics read from the Python source.
+// deterministic only with a fixed clock, so they are asserted against the
+// strict-`>` semantics.
 func TestCleanAvailableTicketsGolden(t *testing.T) {
 	t.Parallel()
 

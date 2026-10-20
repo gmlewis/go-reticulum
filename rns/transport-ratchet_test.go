@@ -76,8 +76,8 @@ func TestSetRatchetStandalonePersists(t *testing.T) {
 	}
 
 	// Wait() is a quiescence barrier: the persist goroutine has no timers, so
-	// the bubble cannot settle until its file I/O has finished. That makes the
-	// former 10 ms poll loop unnecessary.
+	// the bubble cannot settle until its file I/O has finished, making a
+	// wall-clock poll unnecessary.
 	testutils.RunInBubble(t, func(t *testing.T) {
 		ts := NewTransportSystem(nil)
 		ts.storagePath = storagePath

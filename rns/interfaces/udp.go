@@ -55,8 +55,8 @@ func NewUDPInterface(name, listenIP string, listenPort int, forwardIP string, fo
 
 	// hostPortAddr brackets an IPv6 literal. Python builds these coordinates as
 	// (host, port) tuples, which is inherently IPv6-safe; joining them by hand
-	// turned "::" into ":::port" and net.ResolveUDPAddr rejected it with
-	// "too many colons in address", so no IPv6 UDP interface could start.
+	// would turn "::" into ":::port", which net.ResolveUDPAddr rejects with
+	// "too many colons in address".
 	lAddr, err := net.ResolveUDPAddr("udp", hostPortAddr(listenIP, listenPort))
 	if err != nil {
 		return nil, err
@@ -112,7 +112,7 @@ func (ui *UDPInterface) listenLoop() {
 			// (ICMP-driven ECONNREFUSED after sendto on macOS et al.)
 			// must not terminate the reader forever with Status()==true
 			// — that blackholes the interface silently. Back off and
-			// keep reading instead of the previous permanent break.
+			// keep reading.
 			if ui.IsDetached() || atomic.LoadInt32(&ui.running) != 1 {
 				break
 			}

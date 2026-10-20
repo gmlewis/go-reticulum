@@ -159,8 +159,8 @@ func TestPermanentGHFailure(t *testing.T) {
 		want   bool
 	}{
 		{
-			// The failure that motivated all of this.
-			"the upload 500 this tool has hit",
+			// A transient upload failure the server retries.
+			"an upload the server fails with HTTP 500",
 			"HTTP 500: Error saving asset (https://uploads.github.com/repos/gmlewis/go-reticulum/releases/391019507/assets?label=&name=golxmd-0.131.0-linux-amd64)",
 			false,
 		},
@@ -275,7 +275,7 @@ func TestReleaseStateFor(t *testing.T) {
 
 // TestUploaderResumesAndRetries exercises the upload pass against a stand-in
 // gh: an artifact the release already holds byte-for-byte is skipped (that is
-// the resume), one that fails twice with the HTTP 500 this tool hit is retried
+// the resume), one that fails twice with a transient HTTP 500 is retried
 // until it goes up, and one rejected outright (a 422, which retrying cannot
 // fix) fails after a single attempt. The release is left as a draft holding
 // what did arrive, so the re-run the error message suggests can finish it.
@@ -426,8 +426,8 @@ func TestUploaderSuccess(t *testing.T) {
 // The stand-in answers `release view` from GH_FAKE_VIEW_JSON, failing with
 // GH_FAKE_VIEW_STDERR when that is set; and answers `release upload` by
 // rejecting the artifact named GH_FAKE_PERMANENT_ASSET with a 422 every time,
-// and failing the one named GH_FAKE_TRANSIENT_ASSET with the HTTP 500 this tool
-// hit for its first GH_FAKE_TRANSIENT_TIMES attempts.
+// and failing the one named GH_FAKE_TRANSIENT_ASSET with a transient HTTP 500
+// for its first GH_FAKE_TRANSIENT_TIMES attempts.
 //
 // It sets PATH for the whole process, so a test using it must not be parallel.
 func fakeGH(t *testing.T) string {

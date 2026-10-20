@@ -4,9 +4,9 @@
 // that can be found in the LICENSE file.
 
 // This file holds the announce cache: the one place in the bot that listens to
-// Reticulum announces and remembers what it heard. It exists because announces
-// are the only way a peer's display name, identity hash, and aspect become known,
-// and because the watch command needs to be told the moment something announces.
+// Reticulum announces and remembers what it heard. Announces are the only way a
+// peer's display name, identity hash, and aspect become known, and the watch
+// command must be told the moment something announces.
 //
 // Two rules shape it. First, the transport calls the handler on an interface
 // read-loop goroutine: the callback must never block, never take a lock that a
@@ -32,13 +32,10 @@ const (
 	// real, hyphenless RNS destination names: a filter with a wrong separator
 	// silently matches nothing, which is why they are named here once.
 	announceFilters = "lxmf.delivery lxmf.propagation nomadnetwork.node rrc.hub"
-	// maxAnnounceEntries bounds the cache table. It has to hold more than a busy
-	// mesh sends in one announce cycle of the fleet's own nodes: those announce
-	// every six hours by design, and at 512 entries the public mesh evicted the
-	// fleet's own announces within about forty minutes, so a name lookup or an
-	// arm-time report could not see them at all. 4096 entries of a few hundred
-	// bytes each is a megabyte or so, which is nothing next to losing the only
-	// memory the bot has of a sparse announcement.
+	// maxAnnounceEntries bounds the cache table. It must hold more than a busy
+	// mesh sends per announce cycle, or the oldest entries are evicted before a
+	// name lookup can see them. 4096 entries of a few hundred bytes each is
+	// about a megabyte.
 	maxAnnounceEntries = 4096
 	// announceTTL is how long one announce stays usable for lookups.
 	announceTTL = 24 * time.Hour

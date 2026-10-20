@@ -22,13 +22,12 @@ import (
 )
 
 // Byte-level framing golden vectors, derived fresh from the Python Reticulum
-// reference on every run — the pattern nomadnet/micron's
-// TestRenderParityFixtures and lxmf's Python-signed message test established.
-// Nothing here is a checked-in golden file: the expected bytes come from the
-// installed Python RNS each time, so upstream drift or a Go change to the wire
-// format surfaces immediately instead of silently. Every case cites the Python
-// source line that defines it, and every reviewed divergence is listed with its
-// reason, so an unexplained difference cannot pass.
+// reference on every run. Nothing here is a checked-in golden file: the
+// expected bytes come from the installed Python RNS each time, so upstream drift
+// or a Go change to the wire format surfaces immediately instead of silently.
+// Every case cites the Python source line that defines it, and every reviewed
+// divergence is listed with its reason, so an unexplained difference cannot
+// pass.
 //
 // Three suites:
 //
@@ -36,8 +35,8 @@ import (
 //     packet type, context, context flag and destination type Python allows.
 //   - TestFramingVectorsOutboundFraming pins Outbound's transmit/no-transmit
 //     decision and the exact frame it emits for a known path, a shared-instance
-//     one-hop path and no path at all. This is the decision the "two transport
-//     ids in one frame" bug lived in.
+//     one-hop path and no path at all, including the transport-header insert
+//     rules.
 //   - TestFramingVectorsAnnounceExclusions pins announceTransmitDecision
 //     against Python's announce-broadcast elif chain.
 //
@@ -618,11 +617,8 @@ type outboundVectorCase struct {
 }
 
 // acceptedOutboundDiffs lists reviewed scenarios where Go and Python
-// deliberately differ. It is empty: the two entries it held were fixed rather
-// than tolerated. Outbound now leaves the sent flag alone when no interface
-// accepted the packet (matching Packet.py:299-303), and its broadcast fallback
-// runs the announce exclusion chain (matching Transport.py:1196-1345). A future
-// entry needs a reason on its line, so an unexplained difference cannot pass.
+// deliberately differ, keyed by case name. It is empty. A new entry needs a
+// reason on its line, so an unexplained difference cannot pass.
 var acceptedOutboundDiffs = map[string]string{}
 
 // framingOutboundCases returns the Outbound scenarios.
@@ -724,9 +720,8 @@ func framingOutboundCases() []outboundVectorCase {
 
 // TestFramingVectorsOutboundFraming pins Outbound's transmit decision and the
 // exact frame it emits against the Python reference, for both header-insert
-// rules and the broadcast fallback. The pre-stamped HEADER_2 cases are the
-// regression pin for the "two transport ids in one frame" bug, now derived from
-// Python rather than from a hand-written expectation.
+// rules and the broadcast fallback. The pre-stamped HEADER_2 cases verify that
+// an already-framed packet is never given a second transport id.
 func TestFramingVectorsOutboundFraming(t *testing.T) {
 	t.Parallel()
 
@@ -995,10 +990,7 @@ print(json.dumps(out))
 `
 
 // acceptedAnnounceDiffs lists reviewed announce-exclusion divergences, keyed by
-// case name. It is empty: the one entry it held (Python reading the next hop's
-// announces_to_internal while the port read the outbound interface's) was fixed
-// in shouldTransmitAnnounce branch B4b, and the table now matches Python for
-// every cell in the matrix. A future entry needs a reason on its line, so an
+// case name. It is empty. A new entry needs a reason on its line, so an
 // unexplained difference cannot pass.
 var acceptedAnnounceDiffs = map[string]string{}
 
@@ -1132,14 +1124,13 @@ func TestFramingVectorsAnnounceExclusions(t *testing.T) {
 	}
 }
 
-// TestFramingVectorsPrestampedHeader2NotRestamped is the regression pin for the
-// "two transport ids in one frame" bug, driven from a genuine received frame
-// rather than from a hand-built packet. A frame that arrives as HEADER_2
-// already carries the transport id of the hop it was addressed to; Python
-// inserts a transport header only into a HEADER_1 packet, and only when the
-// packet is a HEADER_1 one is anything transmitted, so a HEADER_2 packet gains
-// no second id and nothing goes out (RNS/Transport.py:1149 and :1174 both gate
-// their insert on `if packet.header_type == RNS.Packet.HEADER_1`).
+// TestFramingVectorsPrestampedHeader2NotRestamped pins that a frame arriving as
+// HEADER_2 keeps its existing transport id and is not retransmitted. A HEADER_2
+// frame already carries the transport id of the hop it was addressed to; Python
+// inserts a transport header only into a HEADER_1 packet, and it transmits only
+// a HEADER_1 packet, so such a frame gains no second id and nothing goes out
+// (RNS/Transport.py:1149 and :1174 both gate their insert on
+// `if packet.header_type == RNS.Packet.HEADER_1`).
 //
 // Python's own outbound cannot be driven for this case: its pack() assigns a
 // ciphertext only for a HEADER_2 ANNOUNCE (RNS/Packet.py:226-234), and a

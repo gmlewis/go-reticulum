@@ -20,10 +20,8 @@ import (
 // This file covers the whole fleet topology at once: a shared Reticulum
 // instance on the client's machine (gornsd) with gonomadnet attached to it, a
 // second shared instance on the hub's machine with gorrcd attached, and a
-// network hop between them. The live incident happened on exactly this shape
-// but over the internet, where the hub measured an RTT of 1.45 s, so the hop is
-// a real TCP link through a transport node that can delay every frame to
-// reproduce production timing on loopback.
+// network hop between them. The hop is a real TCP link through a transport node
+// that can delay every frame, reproducing production latency on loopback.
 
 // fleetInstanceConfig renders an RNS configuration whose [interfaces] section
 // declares the network hop between the two instances, matching the fleet's TCP

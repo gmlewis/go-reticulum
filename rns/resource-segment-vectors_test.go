@@ -19,9 +19,7 @@ import (
 // segmentation against the reference. Python carries one segment of the map per
 // advertisement, sized floor((Link.MDU - OVERHEAD)/MAPHASH_LEN), where Link.MDU is derived
 // from the STATIC Reticulum MTU (Resource.py:1246, Link.py:73); `pack(segment)` slices
-// [segment*max, min((segment+1)*max, n)) (Resource.py:1319-1324). The port advertises the
-// whole map today, so this arithmetic has to agree with Python's before the multi-segment
-// wire change can land.
+// [segment*max, min((segment+1)*max, n)) (Resource.py:1319-1324).
 //
 // The expected segment size and slices come from the installed reference on every run,
 // not from a transcribed constant.

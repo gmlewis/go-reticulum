@@ -26,8 +26,8 @@ type TrustHooks struct {
 }
 
 // TrustManager manages trusted and banned identities for the hub, mirroring
-// Python's TrustManager. update_from_config is intentionally not ported
-// (dead code in rrcd 0.3.2).
+// Python's TrustManager. update_from_config is omitted because rrcd 0.3.2
+// never calls it.
 type TrustManager struct {
 	hooks TrustHooks
 

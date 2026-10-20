@@ -941,9 +941,9 @@ func (n *reticulumGitNode) workSetPermissions(workPath string, data map[any]any,
 // parsePermission parses a single "perm:target" permission line, mirroring
 // parse_permission (server.py). It returns the perm byte (0 when unknown)
 // and the target (permTargetNone, permTargetAll, or a []byte identity hash;
-// nil when invalid). The identity-alias resolution is deferred (the full
-// permissions subsystem is a later task); a 32-hex-char target is accepted
-// as a literal identity hash, matching the Python length check.
+// nil when invalid). Identity aliases are not resolved here; a 32-hex-char
+// target is accepted as a literal identity hash, matching the Python length
+// check.
 func parsePermission(permissionString string) (byte, any) {
 	comps := strings.Split(permissionString, ":")
 	if len(comps) != 2 {

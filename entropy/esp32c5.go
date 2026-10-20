@@ -75,7 +75,7 @@ func (s *ESP32C5Source) Read(b []byte) (int, error) {
 	defer s.mu.Unlock()
 
 	n := 0
-	// 1. Drain any remaining bytes from previous word read.
+	// Drain any bytes left over from a previous word read.
 	if s.remLen > 0 {
 		start := 4 - s.remLen
 		avail := s.rem[start:4]
@@ -84,7 +84,7 @@ func (s *ESP32C5Source) Read(b []byte) (int, error) {
 		s.remLen -= copied
 	}
 
-	// 2. Read full 32-bit words until b is satisfied.
+	// Read whole 32-bit words until b is satisfied.
 	var wordBuf [4]byte
 	for n < len(b) {
 		w, err := s.readWord()
@@ -100,7 +100,6 @@ func (s *ESP32C5Source) Read(b []byte) (int, error) {
 		} else {
 			copy(b[n:], wordBuf[:need])
 			n += need
-			// Save remainder
 			s.remLen = 4 - need
 			copy(s.rem[4-s.remLen:], wordBuf[need:])
 		}

@@ -19,11 +19,10 @@
 //   - a bare "<destination hash>" is a NomadNet node, which the client turns into
 //     a link that opens the node browser.
 //
-// The full destination specifier is deliberately absent here. It is the tool form
-// — what `gornid -H` prints and what a configuration file stores — and a chat body
-// containing one makes the client underline it as a node link with a nonsense page
-// path, which is a worse answer than not printing it at all. The qr command prints
-// the specifier under the picture, where the reader is already copying text out.
+// The full destination specifier is deliberately absent: it is the tool form
+// (what `gornid -H` prints and what a configuration file stores), and a chat body
+// containing one makes the client underline it as a node link with a nonsense
+// page path. The qr command prints the specifier under the picture instead.
 package bot
 
 import (
@@ -36,17 +35,15 @@ import (
 const (
 	// addrUsage is the usage line for the addr command.
 	addrUsage = "addr [<nick|hash|me>]"
-	// addrIdentityNote explains what the identity hash is not, because that is the
-	// confusion the command exists to remove: an identity is not a destination and
-	// its hash is not one either.
+	// addrIdentityNote names the identity hash for what it is: an identity is not
+	// a destination.
 	addrIdentityNote = "the RNS identity, not a destination"
 	// addrUnknownPurpose is the wording for a destination with no purpose of its
 	// own, which keeps the reply honest if the destination list ever grows.
 	addrUnknownPurpose = "an RNS destination"
 )
 
-// addrPurpose says what each destination is for, in a reader's terms: a list of
-// names is not an answer to "which of these do I want?".
+// addrPurpose says what each destination is for, in a reader's terms.
 var addrPurpose = map[string]string{
 	"lxmf.delivery":     "where LXMF messages go",
 	"nomadnetwork.node": "the node to browse",

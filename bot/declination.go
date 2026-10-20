@@ -7,21 +7,18 @@
 // direction a magnetic compass points and true north, computed from a position
 // alone.
 //
-// A compass, whether it is a QMC5883L on the I2C bus or a marine compass
+// A compass, whether it is a magnetometer on the I2C bus or a marine compass
 // sentence, reports a heading relative to magnetic north. Magnetic north is not
 // the north a map, a bearing, or a rescue grid uses, and the gap between them —
 // the declination, or variation — ranges from a fraction of a degree to more
 // than twenty depending on where on Earth the operator is standing. An operator
 // who aims a Yagi at "042" while the local variation is +13 degrees is aiming
-// thirteen degrees off, which at fourteen kilometers is more than three
-// kilometers of error.
+// thirteen degrees off.
 //
 // The engine is the World Magnetic Model, the same spherical-harmonic model the
 // US National Centers for Environmental Information and the British Geological
-// Survey publish, evaluated from its coefficient table. It is a few hundred
-// lines of arithmetic and no data files, no network, and no third-party
-// library, which is the only way the Go Reticulum Buddy can convert a
-// magnetic heading to a true one in a slot canyon with the radio off.
+// Survey publish, evaluated from its coefficient table. It needs no data files,
+// no network, and no third-party library.
 
 package bot
 
@@ -36,9 +33,8 @@ const (
 	// is the model in force from 2025.0 to 2030.0.
 	wmmEpoch = 2025.0
 	// wmmValidityYears is how long the model is published for. A date outside
-	// the window is clamped to its edge rather than extrapolated into nonsense:
-	// a declination fifteen years past the model's epoch is a guess dressed up
-	// as a measurement.
+	// the window is clamped to its edge rather than extrapolated: a declination
+	// invented from a stale model is worse than one reported at the edge.
 	wmmValidityYears = 5.0
 	// wmmMaxOrder is the degree and order the model is truncated at.
 	wmmMaxOrder = 12

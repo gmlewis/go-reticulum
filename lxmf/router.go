@@ -3020,13 +3020,10 @@ func (r *Router) ProcessDeferredStamps() {
 // is foreign code and must not run while r.mu is held: the nomadnet client's
 // callback (Conversation.MessageNotification) retries a permanently failed
 // message as propagated, through HandleOutbound, which takes r.mu itself. Go's
-// sync.Mutex is not reentrant, so invoking the callback here made the caller wait
-// on a lock its own goroutine held, for good. The client runs its whole send —
-// Ctrl-D, HandleOutbound, ProcessOutbound and this failure — on the tview event
-// loop, so it stopped dead on the first send that failed: no drawing, no keys, no
-// resize, nothing but a console restart.
+// sync.Mutex is not reentrant, so invoking the callback here deadlocks the
+// caller on a lock its own goroutine holds.
 //
-// Python cannot deadlock here: its process_outbound returns at once when the
+// Python permits the re-entry: its process_outbound returns at once when the
 // outbound lock is already held (LXMRouter.py:2683) and its handle_outbound takes
 // no lock at all, so a retry issued from a failure callback re-enters freely.
 //
@@ -4091,7 +4088,7 @@ func (r *Router) CleanAvailableTickets() {
 // transient_id, ticket). Go maps cannot key on []byte (non-comparable), so the
 // in-memory representation stays map[string]any and only the on-disk
 // serialization uses bin keys. The read path (anyToBytes/anyToMap/Unpack)
-// already accepts both str and bin keys, so no read-side change is needed.
+// accepts both str and bin keys.
 func orderedBinMap(m map[string]any) msgpack.OrderedMap {
 	om := make(msgpack.OrderedMap, 0, len(m))
 	for k, v := range m {
@@ -4671,11 +4668,8 @@ func (r *Router) handlePropagatedInboundAllowDuplicate(payload []byte, allowDupl
 	// payload), the same encrypted envelope a paper (URI) message carries. Decrypt
 	// it with the local delivery destination and rebuild the full LXMF bytes
 	// before unpacking, exactly as Python's lxmf_propagation local-delivery branch
-	// does (LXMRouter.py:2508-2516) and as ingestURIOutcome already does for the
-	// paper path. Unpacking the envelope as-is fails on the ciphertext, so every
-	// downloaded message was counted by messageGetResponse and then discarded
-	// here — the sync reported "Downloaded N new messages" while the recipient's
-	// conversation stayed empty.
+	// does (LXMRouter.py:2508-2516) and as ingestURIOutcome does for the
+	// paper path.
 	decrypted, err := deliveryDest.Decrypt(payload[DestinationLength:])
 	if err != nil || decrypted == nil {
 		r.logger().Debug("Could not decrypt propagated message %x for %x", transientID, destinationHash)
@@ -5626,11 +5620,9 @@ func (r *Router) requestMessagesFromPropagationNodeWithIdentity(identity *rns.Id
 // condition is `while not RNS.Transport.has_path(...) and time.time() <
 // path_timeout` (LXMRouter.py:1463) and the path is tested AGAIN after the loop
 // (LXMRouter.py:1466), so PR_PATH_TIMEOUT bounds only how long the job waits — it
-// never discards a path that has arrived. Testing the deadline first, and not
-// re-testing after the loop, threw away any path response that landed as the last
-// wait elapsed: on this fleet, shared-instance responses for 4-6 hop peers take
-// longer than the 10 s PR_PATH_TIMEOUT, so syncs read "No path to node" and then
-// succeeded on a manual retry.
+// never discards a path that has arrived. The deadline must not be tested first,
+// nor the post-loop re-test dropped: either would discard a path response that
+// lands as the last wait elapses.
 func (r *Router) requestMessagesPathJob() {
 	var from []byte
 	var identity *rns.Identity
@@ -6339,7 +6331,7 @@ func (r *Router) stopJobLoop() {
 
 // WaitForInboundDeliveries blocks until every delivery goroutine dispatched by
 // deliveryPacket has finished. It gives callers a deterministic drain point
-// for the asynchronous dispatch introduced to mirror Python
+// for the asynchronous dispatch that mirrors Python
 // LXMRouter.delivery_packet (LXMRouter.py:1949-1950, v1.1.0).
 func (r *Router) WaitForInboundDeliveries() {
 	r.inboundWG.Wait()
@@ -6415,7 +6407,7 @@ func (r *Router) CleanLinks() {
 		// Sweep orphaned accepted-offer link accounting: any entry whose link
 		// is no longer in activePropagationLinks is reaped so it stops counting
 		// against propagation_max_inbound_syncs. Mirrors Python's
-		// accepted_offer_links cleanup (LXMRouter.py:977-986, v1.1.0 d909619).
+		// accepted_offer_links cleanup (LXMRouter.py:977-986, v1.1.0).
 		activeIDs := func() map[string]bool {
 			r.mu.Lock()
 			defer r.mu.Unlock()
@@ -6621,10 +6613,8 @@ func (r *Router) SyncPeers() {
 
 	var selected *Peer
 	if len(peerPool) > 0 {
-		// Python uses random.randint; for parity, we mirror the choice
-		// deterministically by selecting the first entry, which is
-		// sufficient for the test suite. Real production deployments can
-		// use a random source if desired.
+		// Python uses random.randint; the port selects the first entry
+		// deterministically so peer selection is reproducible.
 		selected = peerPool[0]
 	}
 
@@ -6698,8 +6688,7 @@ func (r *Router) IngestLXMURIAllowDuplicate(uri string, allowDuplicate bool) (bo
 // delivery, duplicate, propagation storage, and discard, and — unlike the
 // shared propagation-message ingest path — actually delivers messages
 // addressed to a local delivery destination (mirroring Python's
-// lxmf_propagation local-delivery branch, which IngestLXMURI historically did
-// not perform).
+// lxmf_propagation local-delivery branch).
 func (r *Router) IngestLXMURIOutcome(uri string) (IngestOutcome, error) {
 	if r == nil {
 		return IngestOutcomeNone, errors.New("nil router")

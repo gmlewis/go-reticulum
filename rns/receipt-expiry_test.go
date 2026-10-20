@@ -20,15 +20,15 @@ import (
 // Python's Transport.jobs sweeps the outstanding-receipt list once per
 // receipts_check_interval (1.0 s) and calls PacketReceipt.check_timeout() on
 // every entry (RNS/Transport.py:569-587). check_timeout marks a receipt whose
-// `sent_at + timeout` has passed as FAILED and starts its timeout callback
+// `sent_at + timeout` has passed as FAILED and runs its timeout callback
 // (RNS/Packet.py:535-545).
 //
 // That callback is the only way a message handed to a link but never proven
 // leaves SENDING: lxmf.sendMessagePacketLocked wires it to reset the message to
 // OUTBOUND and to tear the link down (lxmf/router.go), and ProcessOutbound's
 // ACTIVE-link branch skips any message still in SENDING with "Waiting for
-// proof". With no sweep, a message whose proof never arrives stays SENDING for
-// ever: the client keeps using the dead link and never rebuilds it.
+// proof". Without the sweep such a message stays SENDING for ever, so the
+// client keeps using the dead link and never rebuilds it.
 //
 // The sweep hangs off the transport's own 1 s maintenance ticker, so this runs
 // on a synctest bubble's clock and advances virtual seconds rather than sleeping

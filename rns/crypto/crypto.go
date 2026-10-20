@@ -7,12 +7,12 @@
 // Network Stack.
 //
 // It includes:
-//   - Hashing: SHA-256 and SHA-512 for collision-resistant digests.
-//   - HMAC: Keyed-hash message authentication codes safeguarding payload authenticity.
-//   - HKDF: HMAC-based Key Derivation Function for secure key material expansion.
-//   - AES: Advanced Encryption Standard operating in CBC mode (128 and 256 bits) for symmetric data encapsulation.
-//   - Ed25519: High-performance digital signatures and deterministic verification.
-//   - X25519: Elliptic Curve Diffie-Hellman (ECDH) for peer-to-peer key exchange.
-//   - Tokens: A Fernet-like envelope format for securely orchestrating encrypted packet distribution.
-//   - PKCS7: Deterministic cryptographic data padding and unpadding conforming to standard block sizes.
+//   - Hashing: SHA-256 and SHA-512.
+//   - HMAC: keyed-hash message authentication codes over SHA-256.
+//   - HKDF: HMAC-based key derivation.
+//   - AES: CBC mode with 128- and 256-bit keys.
+//   - Ed25519: digital signatures and verification.
+//   - X25519: ECDH key agreement.
+//   - Tokens: a Fernet-like authenticated encryption envelope.
+//   - PKCS7: block padding and unpadding.
 package crypto

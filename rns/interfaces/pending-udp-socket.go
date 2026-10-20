@@ -15,14 +15,11 @@ import (
 // pending-listener.go): a test-support seam for handing a socket that is
 // already bound to the production bind site in UDPInterface.start.
 //
-// The rns/interfaces UDP tests reserve a pair of loopback ports for two
-// interfaces that forward to each other. Reserving a port by binding :0 and
-// closing the probe socket hands it straight back to the kernel's ephemeral
-// allocator, which under -race -count=5 hands the same just-released port to a
-// parallel instance's own reservation: both instances then bind it and the
-// second fails with "listen udp 127.0.0.1:<port>: bind: address already in use"
-// (TestUDPInterface). A socket that stays bound cannot be handed out again, so
-// the reserving test keeps the port until an interface adopts it.
+// A UDP test that reserves a pair of loopback ports by binding :0 and closing
+// the probe would hand each port straight back to the kernel's ephemeral
+// allocator, where a parallel test can receive it again and fail to bind it. A
+// socket that stays bound cannot be handed out twice, so the reserving test
+// keeps the port until an interface adopts it.
 //
 // A bind site consults PopPendingUDPSocket before net.ListenUDP and adopts the
 // held socket when one is registered for its port. The registry is only ever

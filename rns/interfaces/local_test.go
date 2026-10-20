@@ -345,13 +345,11 @@ func TestLocalClientSleepPauseAndKeepalive(t *testing.T) {
 	})
 }
 
-// TestLocalSpawnedClientTearsDownOnDisconnect is the regression test for the
-// CPU hot-loop: a spawned (server-accepted) local client that disconnects must
-// be torn down and forgotten by the server, never reconnected. Mirrors
-// LocalInterface.py:313-314 (spawned -> teardown(nowarning=True)) and 345-361
-// (remove from local_client_interfaces, parent.clients -= 1). The previous Go
-// code unconditionally ran reconnectLoop for spawned clients with a zero
-// backoff, busy-dialing 127.0.0.1:0 forever at ~100% CPU.
+// TestLocalSpawnedClientTearsDownOnDisconnect verifies that a spawned
+// (server-accepted) local client that disconnects is torn down and forgotten by
+// the server, never reconnected. Mirrors LocalInterface.py:313-314 (spawned ->
+// teardown(nowarning=True)) and 345-361 (remove from local_client_interfaces,
+// parent.clients -= 1).
 func TestLocalSpawnedClientTearsDownOnDisconnect(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("unix sockets not supported on windows")
@@ -404,8 +402,7 @@ func TestLocalSpawnedClientTearsDownOnDisconnect(t *testing.T) {
 	}
 
 	// The server must forget the spawned client (Python removes it from
-	// local_client_interfaces). The old buggy code left it registered forever
-	// while reconnectLoop busy-dialled, so this would time out and fail.
+	// local_client_interfaces).
 	deadline = time.Now().Add(2 * time.Second)
 	forgotten := false
 	for time.Now().Before(deadline) {
@@ -431,8 +428,7 @@ func TestLocalSpawnedClientTearsDownOnDisconnect(t *testing.T) {
 }
 
 // TestLocalClientReconnectWaitMatchesPython locks the initiator reconnect
-// backoff to Reticulum's RECONNECT_WAIT = 8 (LocalInterface.py:63). The Go port
-// previously used a 5s per-instance value.
+// backoff to Reticulum's RECONNECT_WAIT = 8 (LocalInterface.py:63).
 func TestLocalClientReconnectWaitMatchesPython(t *testing.T) {
 	if LocalClientReconnectWait != 8*time.Second {
 		t.Fatalf("LocalClientReconnectWait = %v, want 8s (LocalInterface.py:63 RECONNECT_WAIT)", LocalClientReconnectWait)
@@ -462,17 +458,13 @@ func wantPeerClosed(t *testing.T, ctx string, conn net.Conn) {
 	}
 }
 
-// TestLocalServerClosesConnectionAcceptedWhileDetaching is the regression test
-// for a shared instance that stops at the instant a client connects. Accept
-// returns the connection before handleConnection registers it, so a Detach
-// running in that window closed the listener and an already-empty spawned list
-// and left the accepted connection open and unowned. The peer's client
-// interface then kept running=1 with a read loop blocked on a socket whose
-// other end lives until process exit, so the client's shared-instance watcher
-// never saw it stop and never took over: TestAttachedClientTakesOverWhenShared
-// InstanceStops failed in CI with "got connected=true standalone=false" after
-// its 15s deadline. The interleaving is driven directly here so the check does
-// not depend on winning a race.
+// TestLocalServerClosesConnectionAcceptedWhileDetaching verifies that a
+// connection accepted in the window between Accept returning and
+// handleConnection registering it is closed when Detach runs concurrently.
+// Without that, the peer's client interface keeps running=1 with a read loop
+// blocked on a socket whose other end lives until process exit, so the client
+// never notices the shared instance stopped. The interleaving is driven
+// directly here so the check does not depend on winning a race.
 func TestLocalServerClosesConnectionAcceptedWhileDetaching(t *testing.T) {
 	handler := func(data []byte, iface Interface) {}
 	server := &LocalServerInterface{

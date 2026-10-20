@@ -161,8 +161,8 @@ func TestUnpackMessageFromBytesInboundState(t *testing.T) {
 	}
 }
 
-// TestUnpackMessageDoesNotMarkSourceOrDestinationUsed covers the 1.1.0 delta
-// (LXMessage.py 41b7573): unpack_from_bytes recalls the source and destination
+// TestUnpackMessageDoesNotMarkSourceOrDestinationUsed pins the _no_use recall
+// (LXMessage.py): unpack_from_bytes recalls the source and destination
 // identities with _no_use=True so merely unpacking an inbound message does not
 // bump either identity's last-used time (which drives known-destination
 // retention/cleanup). After unpack, the use-timestamps of the source and
@@ -740,10 +740,8 @@ func activateLink(t *testing.T, link *rns.Link) {
 // 671) always emits all five keys, and a message that never went through a
 // transport carries transport_encryption=None. Python's unpack_from_file
 // (LXMessage.py:825-841) assigns container values WITHOUT type checks, so the
-// decode succeeds; the former strict Go type check rejected the WHOLE
-// container there, and stored Python-written conversations fell back to
-// mtime-only metadata — rendering the no-source failed header in gonomadnet
-// (found by the differential explorer).
+// decode succeeds even when transport_encryption is nil; a strict Go type check
+// would reject the whole container and lose the message's metadata.
 func TestUnpackMessageFromFilePythonContainerNilEncryption(t *testing.T) {
 	t.Parallel()
 

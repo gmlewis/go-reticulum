@@ -18,10 +18,7 @@ import (
 )
 
 // The compass sentences the tests work from. Every checksum is the real XOR of
-// the sentence body, so a parser that skips validation cannot pass by
-// accident: the Phase 0.6 brief prints *2C and *24 for the first two, but those
-// are not the checksums of the sentences beside them, and a heading parser that
-// accepted them would accept a corrupted sentence too.
+// the sentence body, so a parser that skips validation cannot pass by accident.
 const (
 	hdgEastSentence = "$HCHDG,101.1,,,13.1,E*1B"
 	hdgWestSentence = "$HCHDG,101.1,,,13.1,W*09"
@@ -98,9 +95,8 @@ func TestCompassParsesHeadingSentences(t *testing.T) {
 			}
 		})
 	}
-	// The brief's example sentence turns 101.1 magnetic into 114.2 true with
-	// 13.1 degrees of east variation, which is the arithmetic the whole
-	// subsystem rests on.
+	// A sentence with 13.1 degrees of east variation turns 101.1 magnetic into
+	// 114.2 true, which is the arithmetic the whole subsystem rests on.
 	if got := 101.1 + 13.1; math.Abs(got-114.2) > 1e-9 {
 		t.Errorf("101.1 + 13.1 = %v, want 114.2", got)
 	}
@@ -184,7 +180,7 @@ func TestCompassAcceptsTheFullTurn(t *testing.T) {
 }
 
 // TestCompassCardinalSectors asserts the sixteen-point rose maps every angle to
-// the right sector, including the exact boundaries the brief pins.
+// the right sector, including its exact boundaries.
 func TestCompassCardinalSectors(t *testing.T) {
 	t.Parallel()
 
@@ -416,8 +412,8 @@ func TestCompassReaderPinnedDeclination(t *testing.T) {
 }
 
 // TestOpenCompassFollowsTheConfiguration asserts the initializer reads the two
-// Phase 0.6 keys: a device opens, a static heading is held, and neither means
-// no compass at all and no overhead.
+// compass keys: a device opens, a static heading is held, and neither means no
+// compass at all and no overhead.
 func TestOpenCompassFollowsTheConfiguration(t *testing.T) {
 	t.Parallel()
 

@@ -15,14 +15,11 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// TestSharedInstanceServingClientPingPong reproduces the live gorrcd failure
-// mode (2026-09-04 fleet): the hub process attaches to a co-located shared
-// instance (the deployment's gonomadnet owns the fleet TCPServerInterface),
-// registers its rrc.hub IN destination, and announces. Chat clients then dial
-// the hub's destination through the shared instance. The observed live
-// symptom was join/leave spam: the hub pinged each client exactly once and
-// never again, the PONGs never reached the attached hub, and every link
-// eventually died to a watchdog and re-joined.
+// TestSharedInstanceServingClientPingPong exercises the topology where a hub
+// process attaches to a co-located shared instance (the deployment's gonomadnet
+// owns the fleet TCPServerInterface), registers its rrc.hub IN destination, and
+// announces; chat clients then dial the hub's destination through the shared
+// instance.
 //
 // This test stands up the same topology — S the shared instance, C the
 // attached serving client (hub role), R the remote chat client — and asserts:
@@ -35,7 +32,7 @@ import (
 //     depends on to keep client links alive.
 //
 // Without a working attached-client announce/data path the link never forms
-// or the PONG never arrives, matching the live fleet behavior.
+// or the PONG never arrives, and every link dies to a watchdog and re-joins.
 func TestSharedInstanceServingClientPingPong(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
@@ -56,9 +53,8 @@ func TestSharedInstanceServingClientPingPong(t *testing.T) {
 	tsS.SetConnectedToSharedInstance(false)
 	tsC.SetConnectedToSharedInstance(true)
 	tsR.SetConnectedToSharedInstance(false)
-	// The production shared instance runs with enable_transport=Yes (the
-	// fleet's gonomadnet on raspberrypi), so S relays announces and packets
-	// between its clients and the network.
+	// The production shared instance runs with enable_transport=Yes, so S
+	// relays announces and packets between its clients and the network.
 	tsS.SetEnabled(true)
 
 	// Start each transport so the maintenance worker (the announce-table
@@ -155,7 +151,8 @@ func TestSharedInstanceServingClientPingPong(t *testing.T) {
 		t.Fatalf("destC.Announce: %v", err)
 	}
 
-	// DEBUG: watch the shared instance's path table for the hub destination.
+	// Watch the shared instance's path table for the hub destination and log
+	// each present/absent transition.
 	stopWatch := make(chan struct{})
 	go func() {
 		last := false

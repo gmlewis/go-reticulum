@@ -236,12 +236,10 @@ func (d *Destination) buildAnnouncePacket(appData []byte, pathResponse bool) (*P
 	// random_hash = truncated_hash(random_bytes)[:5] + timestamp(5 bytes big-endian)
 	// Mirrors Python Destination.announce (Destination.py:283):
 	//   random_hash = RNS.Identity.get_random_hash()[0:5]+int(time.time()).to_bytes(5, "big")
-	// The timestamp portion (bytes 5-9) is extracted by transport nodes as
-	// the announce_emitted timebase (Transport.timebase_from_random_blob,
-	// Transport.py:3272-3273). Without it, every announce has a random
-	// timebase, and the path-table replacement logic (announce_emitted >
-	// path_timebase) fails ~50% of the time, causing transport nodes to
-	// silently drop subsequent announces instead of rebroadcasting them.
+	// The timestamp portion (bytes 5-9) is the announce_emitted timebase
+	// transport nodes compare against the path timebase
+	// (Transport.timebase_from_random_blob, Transport.py:3272-3273), so it
+	// must carry the real send time.
 	randPart := make([]byte, TruncatedHashLength/8)
 	if _, err := crypto.RandomBytes(randPart); err != nil {
 		return nil, err

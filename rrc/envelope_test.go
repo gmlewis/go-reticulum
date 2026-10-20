@@ -328,7 +328,7 @@ func mustHex(t *testing.T, s string) []byte {
 	return b
 }
 
-// G15.6 The PING wire golden: a PING envelope carries the monotonic float
+// The PING wire golden: a PING envelope carries the monotonic float
 // body, in make_envelope's exact key order. Golden captured from Python
 // make_envelope(T_PING, ...) + rrcd.codec.encode.
 func TestGoldenPing(t *testing.T) {
@@ -342,7 +342,7 @@ func TestGoldenPing(t *testing.T) {
 	}
 }
 
-// G15.6 The PONG echo goldens: every body kind re-encodes verbatim —
+// The PONG echo goldens: every body kind re-encodes verbatim —
 // 8-byte bytes, the 0xfb float, the empty byte string (0x40), the empty
 // list (0x80) — while a None body omits K_BODY entirely (keys 0..4 only).
 func TestGoldenPongEcho(t *testing.T) {
@@ -391,7 +391,7 @@ func TestGoldenPongEcho(t *testing.T) {
 	}
 }
 
-// G15.6 The PARTED fanout goldens: the fanout copy carries the room, the
+// The PARTED fanout goldens: the fanout copy carries the room, the
 // one-element peer-hash list body, and the nick; the actor's own copy
 // carries the body but no nick. Goldens captured from Python
 // make_envelope(T_PARTED, ...) + rrcd.codec.encode.
@@ -414,7 +414,7 @@ func TestGoldenPartedFanout(t *testing.T) {
 	}
 }
 
-// G16.12 A K_V beyond the int64 range must not collapse to 0 in the
+// A K_V beyond the int64 range must not collapse to 0 in the
 // error text: Python embeds the raw big int, so a CBOR bignum version
 // fails with "unsupported version 18446744073709551616". Golden captured
 // from cbor2.dumps({0: 2**64, 1: 1, 2: b'\x00', 3: 0, 4: b'\x00'*32}).

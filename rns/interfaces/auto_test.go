@@ -237,16 +237,6 @@ func TestAutoInterfaceDataForwarding(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Errorf("inbound data not delivered to handler")
 	}
-
-	// 2. Test Outbound (Send)
-	// We need to mock ai.outboundConn to verify it writes
-	// Since we can't easily mock net.UDPConn, we can check that it doesn't panic
-	// and try to use a real loopback UDP if needed.
-	// For this unit test, we'll verify the peer.Send logic.
-
-	// AutoInterfacePeer.Send implementation uses ai.outboundConn
-	// If it's nil, it might panic or return error.
-	// Let's check auto.go:735
 }
 
 func TestAutoInterfacePeerDiscovery(t *testing.T) {
@@ -263,10 +253,10 @@ func TestAutoInterfacePeerDiscovery(t *testing.T) {
 	}
 	defer func() { _ = ai.Detach() }()
 
-	// Manually set final init done so it processes discovery packets
+	// Mark final initialization done.
 	ai.SetFinal(true)
 
-	// Simulate a discovery packet from a peer
+	// Simulate a discovery packet from a peer.
 	peerIP := "fe80::dead:beef"
 	// Verify addPeer logic directly
 	ai.addPeer(peerIP, "eth0")
@@ -290,24 +280,17 @@ func TestAutoInterfacePeerDiscovery(t *testing.T) {
 		t.Errorf("peer interface = %q, want eth0", state.interfaceName)
 	}
 
-	// Verify discoveryLoop logic by simulating receiving a packet
-	// We'll use a mocked UDP connection if we can, or just call discoveryLoop logic indirectly.
-	// discoveryLoop logic is:
-	// srcIP := src.IP.String()
-	// expected := sha256.Sum256(append(append([]byte{}, ai.groupID...), []byte(srcIP)...))
-	// if string(buf[:sha256.Size]) != string(expected[:]) { ... }
-
 	peerIP2 := "fe80::cafe:babe"
 	groupID := []byte("test-group")
 	token2 := sha256.Sum256(append(append([]byte{}, groupID...), []byte(peerIP2)...))
 
-	// Clear the channel
+	// Clear the channel.
 	select {
 	case <-onPeerCalled:
 	default:
 	}
 
-	// Test the core verification logic that would be inside discoveryLoop
+	// The discovery token is sha256(groupID || srcIP).
 	srcAddr := &net.UDPAddr{IP: net.ParseIP(peerIP2)}
 	srcIP := srcAddr.IP.String()
 	expected := sha256.Sum256(append(append([]byte{}, ai.groupID...), []byte(srcIP)...))
@@ -436,11 +419,11 @@ func TestAutoInterfaceTiming(t *testing.T) {
 		lastOutbound:  now,
 	}
 
-	// Start peerJobs in background
+	// Start peerJobs in background.
 	go ai.peerJobs()
 
-	// 1. Wait for reverse announce
-	// We can't easily capture the packet, but we can verify lastOutbound is updated
+	// 1. Wait for reverse announce. The packet is not captured; instead
+	// verify lastOutbound is updated.
 	time.Sleep(200 * time.Millisecond)
 	ai.mu.Lock()
 	state := ai.peers[peerIP]
@@ -469,7 +452,6 @@ func TestAutoInterfaceTiming(t *testing.T) {
 }
 
 func TestAutoInterfaceAnnounceFormat(t *testing.T) {
-	// Logic verified in A01 integration test.
 }
 
 func TestAutoInterfaceInterfaceSelection(t *testing.T) {
@@ -603,11 +585,7 @@ func sendToUDPConn(t *testing.T, conn *net.UDPConn, payload []byte) {
 }
 
 // The reader loops must run until Detach regardless of whether the running
-// flag happens to be set when they are spawned. start() historically spawned
-// them before storing running=1, so depending on scheduler timing they could
-// all self-destruct silently at birth, leaving adopted sockets open with
-// nobody reading them (observed live: AutoInterface Up with 0 bytes ever
-// transferred while peerJobs alone survived).
+// flag is set when they are spawned.
 
 func TestAutoInterfaceDiscoveryLoopProcessesPeerBeforeRunningSet(t *testing.T) {
 	t.Parallel()
@@ -619,8 +597,7 @@ func TestAutoInterfaceDiscoveryLoopProcessesPeerBeforeRunningSet(t *testing.T) {
 	}
 	defer func() { _ = ai.Detach() }()
 	ai.SetFinal(true)
-	// ai.running deliberately left 0: this is the exact hazard window of
-	// start(), between goroutine spawn and the running store.
+	// running is left 0 so the loop's lifetime does not depend on it.
 
 	conn := loopbackUDPConn(t)
 	go ai.discoveryLoop("lo0", conn)
@@ -653,9 +630,8 @@ func TestAutoInterfaceDataLoopDeliversInboundBeforeRunningSet(t *testing.T) {
 	conn := loopbackUDPConn(t)
 	go ai.dataLoop(conn)
 
-	// Give a birth-defective loop ample time to self-destruct while the
-	// lifecycle flags are still unset, then arm the gates that
-	// processIncoming requires and deliver for real.
+	// Give the loop time to exit if it depends on the lifecycle flags, then
+	// arm the gates that processIncoming requires and deliver for real.
 	time.Sleep(100 * time.Millisecond)
 	ai.running.Store(1)
 	atomic.StoreInt32(&ai.online, 1)
@@ -683,10 +659,8 @@ func TestAutoInterfaceDataLoopDeliversInboundBeforeRunningSet(t *testing.T) {
 	}
 }
 
-// A closed socket makes ReadFromUDP fail instantly and forever. With
-// panic_on_interface_error at its default (No) the old error path logged
-// nothing, slept nothing, and looped — pegging a core in total silence.
-// The loop must return instead.
+// A closed socket makes ReadFromUDP fail instantly and forever; the loop must
+// return instead of spinning.
 
 func TestAutoInterfaceDiscoveryLoopReturnsOnClosedSocket(t *testing.T) {
 	t.Parallel()
@@ -754,8 +728,7 @@ func TestAutoInterfaceAnnounceLoopSurvivesUnsetRunningAndStopsOnDetach(t *testin
 		ai.announceLoop("lo0")
 		close(returned)
 	}()
-	// The pre-fix entry condition exited instantly whenever running was
-	// still unset; the loop must stay alive here.
+	// The loop must stay alive while running is still unset.
 	select {
 	case <-returned:
 		t.Fatal("announceLoop exited immediately while running was unset")

@@ -145,8 +145,7 @@ datefmt = ""
 `
 
 // defaultRoomsTemplate is the first-run rooms.toml template. Every byte is
-// Python's (sha256 79ea3400117e265b0513c2fc0f86059cf20a8a6d207f8325e5eed2a6023b633b,
-// 1081 bytes) except the program's own name in the prose, which is this port's
+// Python's except the program's own name in the prose, which is this port's
 // gorrcd rather than rrcd.
 const defaultRoomsTemplate = `# gorrcd room registry (TOML)
 #

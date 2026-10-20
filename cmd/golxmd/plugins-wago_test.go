@@ -89,9 +89,8 @@ func TestFilterHostAcceptAndDrop(t *testing.T) {
 // TestFilterHostSpinTimeout loads the infinite-loop module and verifies that
 // the invocation deadline interrupts the native loop: the call returns
 // context.DeadlineExceeded and does not block. The 50ms budget leaves the
-// interrupt mechanism ample headroom; the generous wall-clock bound only
-// guards against a hung process, matching the engine's own cancellation
-// tests (about 20ms observed).
+// interrupt mechanism ample headroom; the generous one-second wall-clock bound
+// only guards against a hung process.
 func TestFilterHostSpinTimeout(t *testing.T) {
 	t.Parallel()
 

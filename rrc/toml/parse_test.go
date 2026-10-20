@@ -83,7 +83,7 @@ func TestParseSampleStructure(t *testing.T) {
 		_ = got
 		_ = ok
 	}
-	// The table-driven lookup above only guards presence; assert the
+	// The table-driven lookup above only guards presence. Assert the
 	// interesting values directly.
 	if v, ok := get(hub, "name"); !ok || v.Str != "rrc" || v.Kind != KindString {
 		t.Fatalf("name = %+v, %v", v, ok)

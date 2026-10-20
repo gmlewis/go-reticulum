@@ -19,12 +19,6 @@ import (
 // Multi-hop LXMF topology tests: a real message from a client behind a shared
 // instance to a peer beyond one or two relaying transports.
 //
-// This is the fleet's failing scenario made executable. When unicast died two
-// hops out, the client's Conversations pane showed "no path" for the
-// propagation node and every message fell back to the propagation node, while
-// announces — which never take the transport-insert branch — kept flowing. The
-// two-router pipe tests next door are one hop and never saw it.
-//
 //	client (attached to the shared instance)  --pipe-->  shared instance
 //	shared instance  --pipe-->  peer
 //

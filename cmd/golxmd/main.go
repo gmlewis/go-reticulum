@@ -190,9 +190,8 @@ func (r *runtimeT) run() {
 	c.identity = identity
 
 	if a.cmdOnInbound != "" {
-		// Note: Python's lxmd.py accepts the --on-inbound CLI arg but fails to
-		// actually apply it to the configuration (it's a Python bug). Go
-		// correctly applies it here.
+		// Python's lxmd.py accepts the --on-inbound CLI arg but never applies it
+		// to the configuration; Go applies it here.
 		c.ac.OnInbound = a.cmdOnInbound
 	}
 

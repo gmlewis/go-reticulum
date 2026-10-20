@@ -73,8 +73,8 @@ func (env *hubTestEnv) setDestination(t *testing.T) {
 	env.hub.setIdentityForTest(identity)
 }
 
-// G11.1 NewHubService wires the managers, forces the destination name,
-// and opens the shutdown channel.
+// TestNewHubService pins that NewHubService wires the managers, forces the
+// destination name, and opens the shutdown channel.
 func TestNewHubService(t *testing.T) {
 	t.Parallel()
 
@@ -102,8 +102,8 @@ func TestNewHubService(t *testing.T) {
 	}
 }
 
-// G11.3 AnnounceOnce sends the exact app_data CBOR bytes and counts the
-// announce; a missing destination skips the announce entirely.
+// TestAnnounceOnce pins that AnnounceOnce sends the exact app_data CBOR bytes
+// and counts the announce; a missing destination skips the announce entirely.
 func TestAnnounceOnce(t *testing.T) {
 	t.Parallel()
 
@@ -127,9 +127,9 @@ func TestAnnounceOnce(t *testing.T) {
 	}
 }
 
-// G11.3 AnnounceLoop sleeps first, announces each cycle, and exits when
-// the sleep reports the shutdown; a zero period idles on the 1-second
-// poll without announcing.
+// TestAnnounceLoop pins that the loop sleeps first, announces each cycle, and
+// exits when the sleep reports the shutdown; a zero period idles on the
+// 1-second poll without announcing.
 func TestAnnounceLoop(t *testing.T) {
 	t.Parallel()
 
@@ -182,9 +182,9 @@ func TestAnnounceLoop(t *testing.T) {
 	}
 }
 
-// G11.10 NormRoom mirrors _norm_room: Python's Unicode strip and lower,
-// the empty check, and the UTF-8 byte-length check (U+0130 lowercases to
-// "i" + U+0307 exactly like Python, three UTF-8 bytes).
+// TestNormRoom pins that NormRoom mirrors _norm_room: Python's Unicode strip
+// and lower, the empty check, and the UTF-8 byte-length check (U+0130
+// lowercases to "i" + U+0307 exactly like Python, three UTF-8 bytes).
 func TestNormRoom(t *testing.T) {
 	t.Parallel()
 
@@ -216,8 +216,8 @@ func TestNormRoom(t *testing.T) {
 	}
 }
 
-// G11.11 ResolveIdentityHash resolves an online match first and falls
-// back to parsing offline tokens.
+// TestResolveIdentityHash pins that resolution matches an online link first
+// and falls back to parsing offline tokens.
 func TestResolveIdentityHash(t *testing.T) {
 	t.Parallel()
 
@@ -240,8 +240,9 @@ func TestResolveIdentityHash(t *testing.T) {
 	}
 }
 
-// G11.5 OnPacket routes one packet and drains the outgoing queue with
-// per-item bytes_out counting and the post-send callbacks.
+// TestOnPacketDrain pins that OnPacket routes one packet and drains the
+// outgoing queue with per-item bytes_out counting and the post-send
+// callbacks.
 func TestOnPacketDrain(t *testing.T) {
 	t.Parallel()
 
@@ -259,8 +260,8 @@ func TestOnPacketDrain(t *testing.T) {
 	if len(env.sends) != 1 || !sameBytes(env.sends[0].payload, payload) {
 		t.Errorf("drain sends = %+v, want one payload", env.sends)
 	}
-	// bytes_out is double-counted for queued payloads (queue_payload
-	// counts once, the drain loop again) — the documented quirk.
+	// bytes_out is counted twice for queued payloads: queue_payload counts
+	// once and the drain loop again, matching Python.
 	if hub.StatsManager.Counter("bytes_out") != 2*len(payload) {
 		t.Errorf("bytes_out = %v, want %v (double-counted)",
 			hub.StatsManager.Counter("bytes_out"), 2*len(payload))
@@ -270,8 +271,8 @@ func TestOnPacketDrain(t *testing.T) {
 	}
 }
 
-// G11.6 PingLoop pings welcomed sessions, records the pending pong, and
-// tears down timed-out sessions.
+// TestPingLoop pins that the loop pings welcomed sessions, records the
+// pending pong, and tears down timed-out sessions.
 func TestPingLoop(t *testing.T) {
 	t.Parallel()
 
@@ -334,8 +335,9 @@ func TestPingLoop(t *testing.T) {
 	}
 }
 
-// G11.7 PruneLoop only deletes registry entries when at least one session
-// exists (the dummy-link guard) and prunes expired registered rooms.
+// TestPruneLoop pins that pruning only deletes registry entries when at
+// least one session exists (the dummy-link guard) and prunes expired
+// registered rooms.
 func TestPruneLoop(t *testing.T) {
 	t.Parallel()
 
@@ -405,8 +407,8 @@ func fmtPythonFloat(f float64) string {
 	return strconv.FormatFloat(f, 'g', -1, 64)
 }
 
-// G11.8 Stop clears the manager state, closes the shutdown channel, and
-// tears the links down.
+// TestStop pins that Stop clears the manager state, closes the shutdown
+// channel, and tears the links down.
 func TestStop(t *testing.T) {
 	t.Parallel()
 
@@ -446,9 +448,9 @@ func testSilentRNSLogger() *rns.Logger {
 	return logger
 }
 
-// G11.2 + G11.12 Start brings the stack up standalone with an isolated
-// RNS config dir and a generated identity, announces on start, and never
-// attaches to a shared instance.
+// TestHubServiceStartStandalone pins that Start brings the stack up
+// standalone with an isolated RNS config dir and a generated identity,
+// announces on start, and never attaches to a shared instance.
 func TestHubServiceStartStandalone(t *testing.T) {
 	t.Parallel()
 
@@ -499,7 +501,8 @@ func TestHubServiceStartStandalone(t *testing.T) {
 	}
 }
 
-// G11.2 Start requires an identity path and an existing identity file.
+// TestHubServiceStartIdentityErrors pins that Start requires an identity path
+// and an existing identity file.
 func TestHubServiceStartIdentityErrors(t *testing.T) {
 	t.Parallel()
 
@@ -545,7 +548,7 @@ func TestHubServiceStartIdentityErrors(t *testing.T) {
 	}
 }
 
-// G11.9 ReloadConfigAndRooms emits the exact failure notices for the
+// TestReloadConfigFailureNotices pins the exact failure notices for the
 // missing path, the parse error, and the identity-list parse error.
 func TestReloadConfigFailureNotices(t *testing.T) {
 	t.Parallel()
@@ -596,8 +599,9 @@ func TestReloadConfigFailureNotices(t *testing.T) {
 	}
 }
 
-// G11.9 ReloadConfigAndRooms applies a valid config swap, merges the
-// registry, and emits the success summary with counts and diffs.
+// TestReloadConfigSuccess pins that ReloadConfigAndRooms applies a valid
+// config swap, merges the registry, and emits the success summary with counts
+// and diffs.
 func TestReloadConfigSuccess(t *testing.T) {
 	t.Parallel()
 
@@ -650,10 +654,10 @@ func TestReloadConfigSuccess(t *testing.T) {
 	}
 }
 
-// G11.4 OnLink wires the packet/closed/remote-identified callbacks and
-// initializes the session and resource state; OnRemoteIdentified
-// disconnects banned peers with the `banned` ERROR and a teardown; OnClose
-// cleans up the session.
+// TestLinkCallbacks pins that OnLink wires the packet/closed/remote-identified
+// callbacks and initializes the session and resource state.
+// OnRemoteIdentified disconnects banned peers with the `banned` ERROR and a
+// teardown, and OnClose cleans up the session.
 func TestLinkCallbacks(t *testing.T) {
 	t.Parallel()
 
@@ -708,7 +712,7 @@ func mustTestIdentified(t *testing.T, peer []byte) *rns.Identity {
 	return ident
 }
 
-// startStandaloneHub is the G11.2 bring-up with a TOML-shaped config
+// startStandaloneHub is the standalone bring-up with a TOML-shaped config
 // already applied, for tests that exercise Start's config gates.
 func startStandaloneHub(t *testing.T, data map[string]any) *HubService {
 	t.Helper()
@@ -745,9 +749,9 @@ func startStandaloneHub(t *testing.T, data map[string]any) *HubService {
 	return hub
 }
 
-// G16.1 A TOML integer ping_interval_s must start the PING loop: Python's
-// truthy gate and float() accept the int, so the natural hand edit
-// `ping_interval_s = 30` pings while the old typed gate silently kept 0.0.
+// TestStartStartsPingLoopWithIntTOMLInterval pins that a TOML integer
+// ping_interval_s starts the PING loop: Python's truthy gate and float()
+// accept the int, so the natural hand edit `ping_interval_s = 30` pings.
 func TestStartStartsPingLoopWithIntTOMLInterval(t *testing.T) {
 	t.Parallel()
 
@@ -759,7 +763,8 @@ func TestStartStartsPingLoopWithIntTOMLInterval(t *testing.T) {
 	}
 }
 
-// G16.1 A TOML integer announce_period_s must start the announce loop.
+// TestStartStartsAnnounceLoopWithIntTOMLPeriod pins that a TOML integer
+// announce_period_s starts the announce loop.
 func TestStartStartsAnnounceLoopWithIntTOMLPeriod(t *testing.T) {
 	t.Parallel()
 
@@ -771,11 +776,11 @@ func TestStartStartsAnnounceLoopWithIntTOMLPeriod(t *testing.T) {
 	}
 }
 
-// G16.6 The default nowMono is a real monotonic reading the way Python's
-// time.monotonic() is: a small offset from the process start, never an
-// epoch value, never stepping backwards — a wall-clock step cannot
-// spuriously tear down healthy links, burst the rate bucket, or put epoch
-// floats in the wire PING bodies.
+// TestPingLoopMonotonicClock pins that the default nowMono is a real
+// monotonic reading the way Python's time.monotonic() is: a small offset from
+// the process start, never an epoch value, never stepping backwards — a
+// wall-clock step cannot spuriously tear down healthy links, burst the rate
+// bucket, or put epoch floats in the wire PING bodies.
 func TestPingLoopMonotonicClock(t *testing.T) {
 	t.Parallel()
 
@@ -836,10 +841,10 @@ func TestPingLoopMonotonicClock(t *testing.T) {
 	}
 }
 
-// G16.18 Send failures log in Python's two tiers: OSError-class failures
-// (the MTU and bookkeeping IOErrors plus real I/O errors) warn with the
-// err field, while other errors log at the debug tier without it —
-// filtered out at the default INFO level.
+// TestDrainOutgoingSendFailureLogging pins the two log tiers for send
+// failures: OSError-class failures (the MTU and bookkeeping IOErrors plus real
+// I/O errors) warn with the err field, while other errors log at the debug
+// tier without it — filtered out at the default INFO level.
 func TestDrainOutgoingSendFailureLogging(t *testing.T) {
 	// The logging state is process-global; this test runs serially.
 
@@ -894,7 +899,7 @@ func TestDrainOutgoingSendFailureLogging(t *testing.T) {
 	}
 }
 
-// G11.x SetCustomCommandHandler installs a handler for unknown slash
+// TestSetCustomCommandHandler pins the custom handler for unknown slash
 // commands on the hub's live CommandHandler: an unrecognized command is
 // forwarded with the original arguments and the hook's verdict decides the
 // dispatch result.

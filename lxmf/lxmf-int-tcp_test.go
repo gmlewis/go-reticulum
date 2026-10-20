@@ -19,9 +19,9 @@ import (
 )
 
 // setupTwoRouterTCPNetwork creates two LXMF Routers connected via a TCP
-// transport (server on B, client on A), mirroring the real-world gonomadnet
-// network path that B11 reported as broken. Returns both routers, both
-// delivery destinations, both transport systems, and a cleanup function.
+// transport (server on B, client on A), exercising the real gonomadnet
+// network path. Returns both routers, both delivery destinations, both
+// transport systems, and a cleanup function.
 func setupTwoRouterTCPNetwork(t *testing.T) (routerA, routerB *Router, destA, destB *rns.Destination, tsA, tsB *rns.TransportSystem, cleanup func()) {
 	t.Helper()
 
@@ -50,11 +50,9 @@ func setupTwoRouterTCPNetwork(t *testing.T) (routerA, routerB *Router, destA, de
 	// TCPServerInterface onConnect calls Transport.RegisterInterface for every
 	// spawned client, mirroring TCPInterface.py:648). That registered client is
 	// the interface that actually transmits: a listening server does not send
-	// (TCPInterface.py:647, process_outgoing is `pass`).
-	//
-	// Registering only the server leaves B with no way to send anything to A at
-	// all, and every announce B emits is dropped at the listener — which is how
-	// this fixture failed once the server's duplicate fan-out was removed.
+	// (TCPInterface.py:647, process_outgoing is `pass`). Registering only the
+	// server leaves B with no way to send anything to A at all, and every
+	// announce B emits is dropped at the listener.
 	serverB, err := interfaces.NewTCPServerInterface("server-b", "127.0.0.1", port, func(data []byte, iface interfaces.Interface) {
 		tsB.Inbound(data, iface)
 	}, func(iface interfaces.Interface) {
@@ -116,10 +114,9 @@ func setupTwoRouterTCPNetwork(t *testing.T) (routerA, routerB *Router, destA, de
 	return
 }
 
-// TestB11TCPDirectDelivery reproduces B11: two gonomadnet (Go) instances
-// connected via TCP transport must exchange a direct (link-based) LXMF
-// message end-to-end. Before the fix, the sender showed a sent status but
-// the message never arrived at the receiver.
+// TestB11TCPDirectDelivery pins that two gonomadnet (Go) instances connected
+// via TCP transport exchange a direct (link-based) LXMF message end-to-end:
+// the receiver's delivery callback fires with the sender's title and content.
 func TestB11TCPDirectDelivery(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 

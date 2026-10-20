@@ -122,9 +122,9 @@ func testReceiverResource(t *testing.T) *Resource {
 	if r == nil {
 		t.Fatal("Accept returned nil resource")
 	}
-	// Accept now launches the watchdog loop (mirroring Python). Stop it so
-	// this unit helper does not leave a background goroutine running on a
-	// bare link; watchdogJobID remains 1 (set by WatchdogJob).
+	// Accept launches the watchdog loop (mirroring Python). Stop it so this
+	// unit helper does not leave a background goroutine running on a bare
+	// link; watchdogJobID remains 1 (set by WatchdogJob).
 	r.stopWatchdog()
 	return r
 }

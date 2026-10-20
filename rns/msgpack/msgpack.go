@@ -560,12 +560,11 @@ func (e Ext) MarshalMsgpack() ([]byte, error) {
 }
 
 // collectionMapKey is the map key a decoded array stands in for. MessagePack
-// allows an array as a map key; Go does not allow an []any there, and storing
-// one panicked the runtime ("hash of unhashable type []interface {}") and took
-// the whole process down, which is how a single inbound packet could kill a
-// node. It holds the array's canonical msgpack encoding, so two equal arrays
-// compare equal as map keys — the stand-in for the tuple umsgpack converts a
-// list key to — and writing it back reproduces the array it was decoded from.
+// allows an array as a map key, but Go cannot store an []any in a map[any]any,
+// so an array key would panic the runtime. It holds the array's canonical
+// msgpack encoding, so equal arrays compare equal as map keys — the stand-in
+// for the tuple umsgpack converts a list key to — and writing it back
+// reproduces the array it was decoded from.
 type collectionMapKey string
 
 // MarshalMsgpack writes the array back exactly as it was decoded.
@@ -961,19 +960,16 @@ func strictMapKeyError(key any) error {
 // makeMapKeyHashable returns a map key Go can store, or an error when the key
 // has no hashable equivalent. MessagePack permits any value as a map key, but a
 // Go map needs a comparable one, and inserting an incomparable key panics the
-// runtime. That panic killed whatever decoded the packet: on glenn-kamrui the
-// propagation node died on it repeatedly ("hash of unhashable type
-// map[interface {}]interface {}", "[]interface {}", "msgpack.Ext"), each time
-// mid-transfer, which is why two clients using it could not exchange a message.
+// runtime.
 //
-// umsgpack, which Reticulum and LXMF use, never dies there: it converts a list
-// key to a tuple, hashes an extension value as its (type, data) pair, and raises
-// UnhashableKeyException for anything else, which its callers catch and drop the
-// packet with. This mirrors that: an array becomes a collectionMapKey and an
-// extension value an extMapKey — both re-encode to exactly the bytes they came
-// from, so a message carrying one survives being forwarded — and a map, which is
-// unhashable in Python too, is an error the callers already handle by dropping
-// the packet.
+// umsgpack, which Reticulum and LXMF use, converts a list key to a tuple,
+// hashes an extension value as its (type, data) pair, and raises
+// UnhashableKeyException for anything else, which its callers catch and drop
+// the packet with. This mirrors that: an array becomes a collectionMapKey and
+// an extension value an extMapKey — both re-encode to exactly the bytes they
+// came from, so a message carrying one survives being forwarded — and a map,
+// which is unhashable in Python too, is an error the callers already handle by
+// dropping the packet.
 func makeMapKeyHashable(key any) (any, error) {
 	switch k := key.(type) {
 	case []any:

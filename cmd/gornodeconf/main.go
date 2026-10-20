@@ -4,8 +4,8 @@
 // that can be found in the LICENSE file.
 
 // gornodeconf is a command-line utility for configuring and managing RNode
-// devices. This initial Go port focuses on the command-line surface and keeps
-// the serial-port contract compatible with the Python source of truth.
+// devices. Its serial-port contract is compatible with the Python rnodeconf
+// source of truth.
 package main
 
 import (
@@ -147,7 +147,7 @@ func (rt cliRuntime) run(args []string) error {
 	}
 
 	if opts.sign {
-		// Keep the legacy Python help text for parity, but execute the live
+		// Keep the Python help text for parity, but execute the live
 		// device-signing workflow after the provisioning and hash checks.
 		return rt.runDeviceSigning(os.Stdout, port)
 	}

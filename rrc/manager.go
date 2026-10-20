@@ -143,9 +143,8 @@ func (m *RRCManager) SetMaxAcceptedResourceBytes(bytes int) {
 // SetTransport stamps the RNS transport onto the manager and all existing
 // hubs so their connect workers can request paths, recall the hub identity,
 // and dial the hub link. The manager is created before initRNS completes, so
-// the transport arrives later via this setter. Without it every hub connect
-// failed with "no transport configured" — silently, because the failed status
-// only surfaced in the un-refreshed hub row.
+// the transport arrives later via this setter; a hub connect without it fails
+// with "no transport configured".
 func (m *RRCManager) SetTransport(ts rns.Transport) {
 	if m == nil {
 		return

@@ -39,18 +39,16 @@ func advertisedResource(t *testing.T, parts int) *Resource {
 	return r
 }
 
-// TestAdvertisementCarriesOneHashmapSegment pins the wire change that makes a
+// TestAdvertisementCarriesOneHashmapSegment pins the wire format that makes a
 // resource with more than HASHMAP_MAX_LEN parts transferable at all.
 //
 // Python's ResourceAdvertisement.pack defaults to segment 0
 // (Resource.py:1319-1324), so an advertisement never carries more than
 // HASHMAP_MAX_LEN map hashes however many parts the resource has; the receiver
 // asks for the remaining segments with a HASHMAP_IS_EXHAUSTED request and the
-// sender answers with RESOURCE_HMU (Resource.py:1030-1062). This port advertised
-// the whole map, which both diverged from the reference and produced an
-// advertisement too large for the link's MDU. The test also pins the segment
-// metadata the reference puts on the wire for a byte payload: N parts, L=1
-// segment, I=1, and O equal to the resource hash.
+// sender answers with RESOURCE_HMU (Resource.py:1030-1062). The test also pins
+// the segment metadata the wire format carries for a byte payload: N parts,
+// L=1 segment, I=1, and O equal to the resource hash.
 func TestAdvertisementCarriesOneHashmapSegment(t *testing.T) {
 	t.Parallel()
 

@@ -85,8 +85,7 @@ func TestApplyConfig(t *testing.T) {
 		if got.LogLevel != -1 {
 			t.Errorf("LogLevel: got %v, want -1", got.LogLevel)
 		}
-		// Python (lxmd.py ca02fa5) lowered the default inbound direct-delivery
-		// max accepted size from 1000 KB to 1 KB.
+		// SOT: lxmd.py (ca02fa5) defaults inbound direct delivery to 1 KB.
 		if got.DeliveryTransferMaxAcceptedSize != 1 {
 			t.Errorf("DeliveryTransferMaxAcceptedSize: got %v, want 1", got.DeliveryTransferMaxAcceptedSize)
 		}
@@ -231,7 +230,7 @@ func TestEnsureConfig(t *testing.T) {
 	if !strings.Contains(string(data), "[propagation]") {
 		t.Errorf("config file doesn't contain [propagation]")
 	}
-	// Python (lxmd.py ca02fa5) lowered the generated template default to 1 KB.
+	// SOT: lxmd.py (ca02fa5) generates a 1 KB default for this key.
 	if !strings.Contains(string(data), "delivery_transfer_max_accepted_size = 1\n") {
 		t.Errorf("config file doesn't contain delivery_transfer_max_accepted_size = 1")
 	}

@@ -48,7 +48,6 @@ func TestTransport(t *testing.T) {
 
 func TestHandleAnnounce(t *testing.T) {
 	t.Parallel()
-	// LogLevel = LogDebug
 	ts := NewTransportSystem(nil)
 	ts.SetEnabled(true)
 	id := mustTestNewIdentity(t, true)
@@ -103,12 +102,12 @@ func TestHandleAnnounce(t *testing.T) {
 	}
 }
 
-// TestHandleAnnounceGravityWeightedPathReplacement verifies the v1.4.1
-// gravity-weighted path replacement (RNS/Transport.py:1821-1845): when an
-// announce arrives with hops <= the existing path entry and the SAME emission
-// timebase, the path is replaced only if the receiving interface's gravity is
-// strictly higher than the current entry's. A same-timebase announce on an
-// equal-or-lower-gravity interface must NOT replace the path.
+// TestHandleAnnounceGravityWeightedPathReplacement verifies the gravity-weighted
+// path replacement (RNS/Transport.py:1821-1845): when an announce arrives with
+// hops <= the existing path entry and the SAME emission timebase, the path is
+// replaced only if the receiving interface's gravity is strictly higher than the
+// current entry's. A same-timebase announce on an equal-or-lower-gravity
+// interface must NOT replace the path.
 func TestHandleAnnounceGravityWeightedPathReplacement(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)
@@ -167,9 +166,8 @@ func TestHandleAnnounceGravityWeightedPathReplacement(t *testing.T) {
 // TestRequestPathAlwaysSendsAndTag verifies that RequestPath always transmits a
 // path request — Python's Transport.request_path has no min-interval dedup and
 // sends on every call (Transport.py:2771-2815) — and stamps a fresh random tag
-// on each request. A prior Go-only 20s dedup silently dropped legitimate retries
-// (for example after a held or dropped first response); it was removed for
-// Python parity, so a repeat request for the same destination transmits again.
+// on each request, so a legitimate retry after a held or dropped first response
+// is not silently dropped.
 func TestRequestPathAlwaysSendsAndTag(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)
@@ -680,12 +678,11 @@ func TestAnnounceRebroadcastProcessing(t *testing.T) {
 	if outbound.sendCount != 1 {
 		t.Fatalf("expected one rebroadcast on outbound interface, got %v", outbound.sendCount)
 	}
-	// Python (Transport.py:1199-1340) rebroadcasts on ALL interfaces
-	// including the source — the source-interface skip was a Go bug.
-	// The source is a capturingInterface with ModeFull (default), so the
-	// announce-cap rate limiter applies. With the corrected announceCapDefault
-	// (0.02) and a fast in-memory interface, the wait may be sub-nanosecond
-	// (truncated to 0), so the rebroadcast goes out immediately.
+	// Python (Transport.py:1199-1340) rebroadcasts on ALL interfaces,
+	// including the source. The source is a capturingInterface with ModeFull
+	// (default), so the announce-cap rate limiter applies. With
+	// announceCapDefault (0.02) and a fast in-memory interface, the wait may be
+	// sub-nanosecond (truncated to 0), so the rebroadcast goes out immediately.
 	if source.sendCount == 0 {
 		t.Fatalf("expected rebroadcast on source interface too (Python rebroadcasts on all interfaces), got 0")
 	}
@@ -705,14 +702,12 @@ func TestAnnounceRebroadcastProcessing(t *testing.T) {
 	}
 }
 
-// TestProcessAnnounceTableStalledPeerDoesNotBlock is the regression test for
-// the 0.8.0 unbrowsable-nodes bug: the outbound fan-out (processAnnounceTable,
-// forwardPathRequest, forwardPathResponseToRequesters) used to send to every
-// interface sequentially on the single maintenance goroutine, so one
-// half-open TCP peer whose conn.Write stalled wedged the whole transport —
-// link handshakes on every other interface timed out. The fan-out now
-// dispatches each send on its own goroutine, so a stalled peer blocks only
-// itself.
+// TestProcessAnnounceTableStalledPeerDoesNotBlock verifies that the outbound
+// fan-out (processAnnounceTable, forwardPathRequest,
+// forwardPathResponseToRequesters) dispatches each send on its own goroutine: a
+// half-open TCP peer whose conn.Write stalls blocks only itself, rather than
+// wedging the single maintenance goroutine and timing out link handshakes on
+// every other interface.
 func TestProcessAnnounceTableStalledPeerDoesNotBlock(t *testing.T) {
 	t.Parallel()
 	// The bubble virtualizes the stalled peer's 2s Send: blocking Send is
@@ -1490,7 +1485,7 @@ func TestPathTablePersistenceRoundTrip(t *testing.T) {
 	if loaded.Interface != nil {
 		t.Fatalf("expected interface unresolved until registration")
 	}
-	// The new Python-compatible layout persists the interface HASH (field [6]),
+	// The Python-compatible layout persists the interface HASH (field [6]),
 	// not the interface name, so the loaded entry carries IfaceHash and an
 	// empty InterfaceName until the live interface is reattached by hash.
 	wantIfaceHash := interfaceHash(iface)
@@ -1831,9 +1826,7 @@ func (c *capturingInterface) LastSent() []byte {
 // duration, simulating a half-open TCP peer whose conn.Write stalls until the
 // per-interface write deadline fires. It verifies the outbound fan-out is
 // concurrent: a stalled peer must block only its own goroutine, never the
-// maintenance loop or a readLoop that dispatched the send (the 0.8.0
-// regression where one stalled peer wedged link handshakes on every other
-// interface).
+// maintenance loop or a readLoop that dispatched the send.
 type blockingInterface struct {
 	capturingInterface
 	blockFor time.Duration
@@ -2435,13 +2428,12 @@ func TestClaimDownNotifyOncePerDown(t *testing.T) {
 	}
 }
 
-// TestDispatchForwardSendFloodKeepsPaths reproduces the Quortal flood: a
-// half-open interface whose Send fails on a burst of ~50 concurrent queued
-// sends (the drain after a write-deadline timeout). The burst must cost the
-// packets it could not carry and nothing else: the path stays, because Python's
-// Transport drops the packet and leaves path_table alone on a failed write, and
-// the down transition is reported exactly once so the flood cannot produce an
-// error-line burst.
+// TestDispatchForwardSendFloodKeepsPaths verifies that a half-open interface
+// whose Send fails on a burst of ~50 concurrent queued sends (the drain after a
+// write-deadline timeout) costs only the packets it could not carry: the path
+// stays, because Python's Transport drops the packet and leaves path_table
+// alone on a failed write, and the down transition is reported exactly once so
+// the flood cannot produce an error-line burst.
 func TestDispatchForwardSendFloodKeepsPaths(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)
@@ -2629,9 +2621,9 @@ func TestShouldHoldAnnounceGate(t *testing.T) {
 
 	// An announce for a destination THIS node originated a path request for
 	// (Python Transport.path_requests / Go pathRequests) bypasses the gate,
-	// matching Python Transport.py:1701-1706. Go previously bypassed only the
-	// relayed table (pendingPathRequests), so a path-response announce answering
-	// the node's own request could be held on an ingress-limiting interface.
+	// matching Python Transport.py:1701-1706. Bypassing only the relayed table
+	// (pendingPathRequests) would hold a path-response announce answering the
+	// node's own request on an ingress-limiting interface.
 	t.Run("originated path request bypasses gate", func(t *testing.T) {
 		t.Parallel()
 		ts, iface := mkTS(t)

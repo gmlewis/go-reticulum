@@ -19,11 +19,9 @@ import (
 //
 // Parity: Python removes dead interfaces from Transport.interfaces
 // (RNS/Interfaces/TCPInterface.py:453 calls Transport.remove_interface(self)
-// when the socket for a remote client was closed). The Go port kept every
-// spawned client alive forever, so after a fleet of clients reconnected on
-// fresh ports the hub fanned announces out to zombie sockets for hours,
-// logging "Could not transmit on Client …: interface … is not running" bursts
-// on every rebroadcast round and partially dropping fan-out to live peers.
+// when the socket for a remote client was closed). Without the same pruning,
+// the hub keeps fanning announces out to dead sockets on every rebroadcast
+// round, logging transmission failures and dropping fan-out to live peers.
 func TestTCPServerPrunesDeadSpawnedClient(t *testing.T) {
 	t.Parallel()
 	port := reserveTCPPort(t)

@@ -91,7 +91,7 @@ func (m *StreamDataMessage) Unpack(data []byte) error {
 	return nil
 }
 
-// ChannelReader provides an io.Reader implementation that safely consumes incoming binary stream data from a Reticulum Channel.
+// ChannelReader implements io.Reader over incoming binary stream data from a Reticulum Channel.
 type ChannelReader struct {
 	streamID  uint16
 	channel   *Channel
@@ -153,7 +153,7 @@ func (cr *ChannelReader) Read(p []byte) (n int, err error) {
 	return n, nil
 }
 
-// ChannelWriter provides an io.Writer implementation that chunks, optionally compresses, and securely transmits binary stream data over a Reticulum Channel.
+// ChannelWriter implements io.Writer, chunking and optionally compressing binary stream data over a Reticulum Channel.
 type ChannelWriter struct {
 	streamID          uint16
 	channel           *Channel
@@ -175,7 +175,7 @@ func NewChannelWriterWithOptions(streamID uint16, channel *Channel, opts Channel
 	}
 }
 
-// Write safely chunks and transmits the provided byte slice across the underlying channel, applying compression if enabled and beneficial.
+// Write chunks and transmits p across the underlying channel, applying compression if enabled and beneficial.
 func (cw *ChannelWriter) Write(p []byte) (n int, err error) {
 	cw.mu.Lock()
 	defer cw.mu.Unlock()
@@ -257,13 +257,13 @@ type BidirectionalBuffer struct {
 	*ChannelWriter
 }
 
-// Close cleanly shuts down both the reading and writing halves of the bidirectional buffer, releasing underlying resources.
+// Close shuts down both the reading and writing halves of the bidirectional buffer.
 func (bb *BidirectionalBuffer) Close() error {
 	bb.ChannelReader.channel.removeMessageHandlerByID(bb.handlerID)
 	return bb.ChannelWriter.Close()
 }
 
-// Buffer provides an organized namespace of factory functions for effortlessly creating reader, writer, and bidirectional stream abstractions over a Channel.
+// Buffer groups factory functions that create reader, writer, and bidirectional stream abstractions over a Channel.
 var Buffer = struct {
 	CreateReader              func(streamID uint16, channel *Channel) *ChannelReader
 	CreateWriter              func(streamID uint16, channel *Channel) *ChannelWriter

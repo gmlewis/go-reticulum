@@ -85,8 +85,8 @@ type RRCHub struct {
 	recvIDs      map[string]bool
 	recvIDsOrder []string
 	// fanoutGroups is the client-side collapse of rrcd 0.3.2's per-member
-	// message fanout — an intentional, user-ordered deviation from Python
-	// (TODO item 4), which renders every copy. rrcd fans each message out
+	// message fanout — an intentional deviation from Python, which renders
+	// every copy. rrcd fans each message out
 	// once per room member with a unique mid, a per-copy rewritten source
 	// hash and a registry-derived (often wrong or missing) nick, so fanout
 	// copies of one message share only kind, room, body and approximately the
@@ -196,10 +196,9 @@ type RRCHub struct {
 	// from the hub restarts the window, so a hub that talks to this client is
 	// alive by definition. A hub with nothing to say is not dead, though:
 	// rrcd ships its ping loop disabled (ping_interval_s = 0.0, "0 = disabled",
-	// ping_timeout_s = 0.0, "0 = no timeout" -- rrcd/config.py:35-36,
-	// EX1-RRCD.md:472-476) and documents the hub ping itself as "Optional
-	// hub-initiated PING" (README.md:117), so an idle room can legitimately
-	// hear nothing for minutes. Silence therefore only ARMS the watchdog: at
+	// ping_timeout_s = 0.0, "0 = no timeout" -- rrcd/config.py:35-36) and
+	// treats the hub ping as optional, so an idle room can legitimately hear
+	// nothing for minutes. Silence therefore only ARMS the watchdog: at
 	// the end of the window the client asks the hub to prove itself with an
 	// RRC PING, which rrcd answers with a PONG (rrcd/router.py:930-943), and it
 	// tears the link down only when that answer never comes. This is the case
@@ -526,14 +525,12 @@ const hubProbeGrace = 30 * time.Second
 // hubProbeAttempts is how many RRC PING probes the watchdog sends before it
 // declares the hub gone and tears the link down for reconnect.
 //
-// One unanswered probe is not proof the hub died: the 2026-09-13 glenn-kamrui
-// incident (RNS Community hub at rrc.hub.62b73cc9, see hubProbeGraceFor) was a
-// ~4 minute egress stall on the Beleth TCP interface during which the hub was
-// perfectly healthy. Tearing the link down on the first unanswered probe ended
-// that session permanently, because it is only recoverable when auto-reconnect
-// is on and the RRCHub default (Python RRC.py:238) is off. Python's client has
-// no hub watchdog at all and rides such an outage out on the RNS link layer's
-// stale window (2*clamp(rtt*(KEEPALIVE_MAX/KEEPALIVE_MAX_RTT), 5s, 360s), i.e.
+// One unanswered probe is not proof the hub died: a minutes-long egress stall
+// can leave the hub perfectly healthy while packets queue. A teardown on the
+// first unanswered probe is permanent unless auto-reconnect is on, and the
+// RRCHub default (Python RRC.py:238) is off. Python's client has no hub
+// watchdog at all and rides such an outage out on the RNS link layer's stale
+// window (2*clamp(rtt*(KEEPALIVE_MAX/KEEPALIVE_MAX_RTT), 5s, 360s), i.e.
 // minutes), so three escalating probes keep the Go client in the same class.
 const hubProbeAttempts = 3
 
@@ -621,7 +618,7 @@ func (h *RRCHub) hubLivenessLoop(stop <-chan struct{}, liveness time.Duration) {
 		}
 		// A full window of silence is not proof the hub is gone: rrcd ships
 		// its ping loop disabled (ping_interval_s = 0.0, "0 = disabled" --
-		// rrcd/config.py:35-36, EX1-RRCD.md:472-476), so an idle room hears
+		// rrcd/config.py:35-36), so an idle room hears
 		// nothing at all from a perfectly healthy hub. Ask the hub to prove
 		// itself with an RRC PING and let its PONG restart the window; only
 		// silence that survives every probe means the hub died or wedged.
@@ -809,13 +806,13 @@ func (h *RRCHub) armReconnectTimer(backoff time.Duration) {
 // failConnect records a connect failure and, when auto-reconnect is on, arms a
 // retry after the usual backoff.
 //
-// A failure before a link exists is the one failure nothing else recovers from:
+// A failure before a link exists is recovered by nothing else:
 // onClosedWithReason is the only other caller of scheduleReconnect and it only
-// runs for a link that was established, so without this a transient resolution
-// failure — a hub announce that had not arrived yet, an interface that was not
-// up yet — left the hub at FAILED for the rest of the process's life no matter
-// what AutoReconnect said. The bot's own supervisor waits for the hub to report
-// CONNECTED, so a wedged hub means a bot that never joins a room or greets.
+// runs for a link that was established. Without this retry a transient
+// resolution failure — a hub announce that has not arrived yet, an interface
+// that is not up yet — would leave the hub at FAILED for the life of the
+// process no matter what AutoReconnect says. A supervisor that waits for
+// CONNECTED would then never see the hub join a room or greet.
 //
 // The FAILED status and its diagnostic text are left in place while the retry
 // is armed: a caller that just asked to connect has to be able to see why it
@@ -1105,7 +1102,7 @@ func (h *RRCHub) sendHello(_ *rns.Link) {
 	}
 
 	// Python's _send_hello body values are TEXT strings (RRC.py:447-448);
-	// byte strings here made the hub silently drop the hello.
+	// a byte string makes the hub silently drop the hello.
 	//
 	// BHelloVer is "0.1" because that is what Python's nomadnet RRC client
 	// sends (RRC.py _send_hello): it is a wire identifier shared with the
@@ -1336,8 +1333,9 @@ func (h *RRCHub) RemoveRoom(room string) {
 //	self._delete_history(r)
 //	self.manager._notify_change(self)
 //
-// Without the history deletion and marker clearing, /clear looked empty until
-// the next restart reloaded the room log, and the unread badge survived.
+// The history deletion and marker clearing are both required: without them
+// /clear only looks empty until the next restart reloads the room log, and
+// the unread badge survives.
 func (h *RRCHub) ClearMessages(room string) {
 	room = strings.ToLower(room)
 	h.lock.Lock()
@@ -1414,16 +1412,15 @@ func (h *RRCHub) SetMOTD(text string) {
 // learning nicks by matching who-reply 12-hex prefixes against the known
 // member hashes (Python RRC.py:1085-1100's nick walk).
 //
-// The replacement (not Python's merge) is deliberate and user-ordered: with
-// rrcd's include_joined_member_list defaulting to OFF, JOINED/PARTED fanouts
-// carry no member data, so the /who reply is the ONLY authoritative member
-// source. Merging could never add members whose nick was known or remove
-// departed ones, which froze every client's member count at its own
-// join-time snapshot — the fleet's diverging "N users" counts (6/6/6/5/3/4
-// on ONE hub, 2026-09-03). Each entry resolves to a full-hash member key
-// when a known member carries that hash prefix (so conversations and the
-// self-arrow keep working); unknown nicked members enter under their reply
-// prefix so the COUNT is correct.
+// The replacement (not Python's merge) is deliberate: with rrcd's
+// include_joined_member_list defaulting to OFF, JOINED/PARTED fanouts carry no
+// member data, so the /who reply is the ONLY authoritative member source.
+// Merging could never add members whose nick was known or remove departed
+// ones, which pins every client's member count to its own join-time snapshot.
+// Each entry resolves to a full-hash member key when a known member carries
+// that hash prefix (so conversations and the self-arrow keep working);
+// unknown nicked members enter under their reply prefix so the COUNT is
+// correct.
 func (h *RRCHub) applyWhoReply(room string, entries []whoEntry) {
 	room = strings.ToLower(room)
 	// Our own name is local knowledge, and the reply carries the nick the hub
@@ -1476,11 +1473,11 @@ func (h *RRCHub) applyWhoReply(room string, entries []whoEntry) {
 const whoRefreshInterval = 60 * time.Second
 
 // scheduleWhoRefresh arms the periodic membership reconciliation after a
-// WELCOME. Python's auto_who fires /who only at self-join; nothing ever
-// re-synced membership afterwards, so a client missed the later join/part
-// fanouts (which carry no member data on this hub) and kept its stale count
-// forever. The reconciliation re-requests the member list for every joined
-// room so the Users count converges on the hub's live membership.
+// WELCOME. Python's auto_who fires /who only at self-join, so a client that
+// misses later join/part fanouts (which carry no member data on this hub)
+// keeps a stale count. The reconciliation re-requests the member list for
+// every joined room so the Users count converges on the hub's live
+// membership.
 func (h *RRCHub) scheduleWhoRefresh() {
 	h.lock.Lock()
 	if h.whoRefreshTimer != nil {
@@ -1994,10 +1991,8 @@ func (h *RRCHub) SendAction(room, text string) string {
 // SendMessage it does not normalize the room or record the message locally —
 // it is a thin send of the command text used for the silent /who and /list
 // requests. The sent message id AND body are remembered like SendMessage so
-// a hub that relays the command text back as a MSG (observed live: an
-// unregistered session's "/who general" came back as a chat message 550
-// times) is suppressed by the self-echo and fanout-collapse guards instead
-// of being recorded as chat.
+// a hub that relays the command text back as a MSG is suppressed by the
+// self-echo and fanout-collapse guards instead of being recorded as chat.
 func (h *RRCHub) SendCommand(text, room string) error {
 	_, err := h.sendCommand(text, room)
 	return err
@@ -2163,7 +2158,7 @@ func (h *RRCHub) GetEffectiveNick() string {
 //
 // The flag is what populates the hub's mention rooms (hub.go recordMessage), which
 // drives the "!" marker on the Channels hub list and the H_MENTION flag in stored
-// history. Nothing set it before, so a mention was never noticed at runtime.
+// history.
 //
 // The effective nick is the UNtruncated one, as in Python: get_effective_nick
 // returns the override or the manager's nickname, and the byte-limit truncation
@@ -2191,7 +2186,7 @@ func (h *RRCHub) isOwnSource(src []byte) bool {
 // effectiveNick returns the effective nick truncated to the hub's active
 // nick byte limit, so every outgoing envelope carries a nick the hub will
 // accept (real hubs silently drop envelopes whose nick exceeds the limit,
-// which registered over-long-named clients as bare hashes).
+// registering a client with an over-long nick as a bare hash).
 func (h *RRCHub) effectiveNick() string {
 	return truncateUTF8(h.GetEffectiveNick(), h.effectiveNickLimit())
 }
@@ -2229,8 +2224,8 @@ func truncateUTF8(s string, maxBytes int) string {
 //
 // The change also lands in the learned nick table for our own hash: the Users
 // pane renders each member through that table and the hub only learns our nick
-// from our next message, so without it a /nick change left the user's own row
-// showing the previous name until they spoke again.
+// from our next message, so without it a /nick change leaves the user's own
+// row showing the previous name until they speak again.
 func (h *RRCHub) SetNickOverride(nick string) {
 	// The manager's identity and nickname are read before h.lock, keeping the
 	// manager.lock → hub.lock order the rest of the client uses.
@@ -2433,10 +2428,9 @@ func (h *RRCHub) HandleData(data []byte) {
 		// mid, a per-copy rewritten source hash and a registry-derived nick,
 		// so neither mid- nor src-based dedupe can collapse the copies. The
 		// client-side fanout collapse keys on kind+room+body with a small
-		// timestamp window instead — an intentional, user-ordered deviation
-		// from Python, which renders every copy (TODO item 4). Server-side
-		// hubs skip it: their inbound copies are one per client and must all
-		// be recorded and re-broadcast.
+		// timestamp window instead — an intentional deviation from Python,
+		// which renders every copy. Server-side hubs skip it: their inbound
+		// copies are one per client and must all be recorded and re-broadcast.
 		msg := &RRCMessage{
 			Kind: "msg",
 			Room: roomStr,
@@ -2544,11 +2538,11 @@ func (h *RRCHub) HandleData(data []byte) {
 
 	case TypePing:
 		// Python T_PING branch (RRC.py:857-863): the PONG replies with the
-		// RESPONDER's own identity hash (the hub attributes the pong to the
-		// client — answering with the PING's source, the hub's identity,
-		// made every hub treat the client as dead, tear the link down, and
-		// spam every room member with re-join fanouts), echoes the body back
-		// UNCHANGED, omits the room field, and carries a FRESH message id.
+		// RESPONDER's own identity hash (answering with the PING's source,
+		// the hub's identity, makes hubs treat the client as dead, tear the
+		// link down, and spam every room member with re-join fanouts), echoes
+		// the body back UNCHANGED, omits the room field, and carries a FRESH
+		// message id.
 		var srcHash []byte
 		if h.Manager != nil {
 			srcHash = h.Manager.identityHash()
@@ -2597,9 +2591,9 @@ func (h *RRCHub) HandleData(data []byte) {
 		// advertised room set for the info panel. ONLY an AUTO-requested
 		// reply (the auto_list sweep, RRC.py:910-919) is consumed silently;
 		// a user-typed /list reply falls through and renders like any other
-		// notice (verified live against the Python SOT). rrcd fans the reply
-		// out once per member, but the notice fanout-collapse below keeps
-		// duplicate copies from flooding the window.
+		// notice. rrcd fans the reply out once per member, but the notice
+		// fanout-collapse below keeps duplicate copies from flooding the
+		// window.
 		if rooms := ParseRoomListNotice(textStr); rooms != nil {
 			h.SetAvailableRooms(rooms)
 			if h.consumeSilentListReply() {
@@ -2638,9 +2632,9 @@ func (h *RRCHub) HandleData(data []byte) {
 		}
 		// Fanout collapse for notices too: rrcd's per-member fanout applies
 		// to hub notices ("room test: unregistered…" arrives once per fanout
-		// copy per join, TODO item 5). A NOTICE this client sent itself comes
-		// back the same way, so the self-echo check runs first — otherwise a
-		// sender would render its own notice twice.
+		// copy per join). A NOTICE this client sent itself comes back the
+		// same way, so the self-echo check runs first — otherwise a sender
+		// would render its own notice twice.
 		if !h.isServerSide() && h.collapseSelfEcho("notice", roomStr, textStr, ts) {
 			return
 		}
@@ -2659,8 +2653,7 @@ func (h *RRCHub) HandleData(data []byte) {
 		// Python _record_notice (RRC.py:817-839, reached from the T_NOTICE
 		// branch at RRC.py:1138): a ROOMLESS notice is attributed to the
 		// manager's ACTIVE room and joins that room's buffer — rrcd's global
-		// "󰙎 Welcome to the RaspPi Local Hub!" MOTD notice renders in the
-		// open room on the Python SOT (2026-09-03 12:32 capture, mac row 24).
+		// MOTD greeting renders in the open room on the Python SOT.
 		h.recordNotice(msg)
 
 	case TypeResourceEnvelope:
@@ -3030,10 +3023,9 @@ func ParseRoomListNotice(text string) map[string]*string {
 
 // protocolControlNoticeRe matches rrcd's server-command acknowledgement
 // notices — the registration acks ("room <name>: registered; mode=+nrt;
-// topic=(none)" and its unregistration twin, observed in the 2026-09-03
-// captures) and the /mode and /topic acks of the same "room <name>: …" ack
-// family. They are protocol traffic, not conversation: consumed without
-// rendering.
+// topic=(none)" and its unregistration twin) and the /mode and /topic acks of
+// the same "room <name>: …" ack family. They are protocol traffic, not
+// conversation: consumed without rendering.
 var protocolControlNoticeRe = regexp.MustCompile(
 	`(?i)^room [^:]+: (unregistered|registered|mode |topic )`)
 
@@ -3046,9 +3038,9 @@ func isProtocolControlNotice(text string) bool {
 // handleError processes a T_ERROR envelope (Python T_ERROR branch,
 // RRC.py:1145-1170): the text is recorded as an error notice in the affected
 // room (or the active room when roomless, via recordNotice), a pending join
-// for that room is rolled back, and a refusal error fails the hub per doc
-// 4-RRC ("an ERROR that clearly indicates refusal … the client enters the
-// Disconnected state"). It is never treated as chat.
+// for that room is rolled back, and a refusal error fails the hub: "an ERROR
+// that clearly indicates refusal … the client enters the Disconnected state".
+// It is never treated as chat.
 func (h *RRCHub) handleError(roomStr, text string) {
 	h.lock.Lock()
 	rollback := h.pendingJoins[roomStr]
@@ -3076,8 +3068,8 @@ func (h *RRCHub) handleError(roomStr, text string) {
 }
 
 // refusalIndicators are the lowercased substrings that mark an ERROR message
-// as a hub refusal (doc 4-RRC: "an ERROR that clearly indicates refusal or
-// fatal failure" ends the session).
+// as a hub refusal, which ends the session: "an ERROR that clearly indicates
+// refusal or fatal failure".
 var refusalIndicators = []string{
 	"refus", "reject", "denied", "not allowed", "forbidden",
 	"unauthorized", "banned", "kicked", "rate limit", "too many",
@@ -3163,9 +3155,9 @@ func (h *RRCHub) handleJoin(src, nick, room []byte, _ any) {
 // the room's member identity hashes, the member set is hash-keyed, and the
 // client's own identity hash always joins the set. The advisory K_NICK is
 // learned only for a fanout about a single other joiner. Join/leave events
-// render like the Python capture: a self-join records "You joined #<room>"
-// (unless the join was silent) and a single other joiner records
-// "→ <nick> joined" with the 12-hex hash-prefix fallback for unknown nicks.
+// render like Python: a self-join records "You joined #<room>" (unless the
+// join was silent) and a single other joiner records "→ <nick> joined" with
+// the 12-hex hash-prefix fallback for unknown nicks.
 func (h *RRCHub) handleJoinedNotification(roomStr, nickStr string, body any) {
 	bodyHashes := bodyHashList(body)
 
@@ -3403,8 +3395,7 @@ func (h *RRCHub) recordMessage(msg *RRCMessage, local bool) {
 	h.lock.Lock()
 	// Python _record_message APPENDS to the room buffer (RRC.py:790
 	// buf.append(msg)) and trims the overflow from the FRONT, so the buffer
-	// stays oldest→newest (TODO item 1: the Go port used to prepend, which
-	// rendered the newest message at the top).
+	// stays oldest→newest.
 	cap := h.perRoomCap()
 	buf := h.Messages[room]
 	if cap > 0 && len(buf) >= cap {
@@ -3536,9 +3527,8 @@ func bodyText(body any) (string, bool) {
 }
 
 // fanoutWindowMs is the collapse window for rrcd fanout copies, which arrive
-// within well under a second of each other (the rrcd Forwarded log shows a
-// full six-member room fanout spanning less than 0.5s). Copies of the same
-// body outside the window are distinct messages.
+// within well under a second of each other. Copies of the same body outside
+// the window are distinct messages.
 const fanoutWindowMs = 3000
 
 // selfEchoWindowMs is how long after a local send the hub's fanout echoes of
@@ -3609,8 +3599,7 @@ func (h *RRCHub) collapseFanout(kind, room, body string, ts int64, nick string, 
 			// rewritten source hashes mean later copies can carry the
 			// sender's registry nick even when the first-arrived copy's was
 			// empty — backfill the kept copy so it renders ONCE, WITH the
-			// sender's nick (the A2 capture symptom: the kept copy rendered
-			// the bare <hash>).
+			// sender's nick.
 			if nick != "" && g.msg != nil && g.msg.Nick == "" {
 				g.msg.Nick = nick
 				backfill = g.msg
@@ -3754,11 +3743,10 @@ func (h *RRCHub) cleanHistory() {
 //
 // Roomless notices are the hub's greeting MOTD (rrcd sends them with no room
 // right after the WELCOME). Python attributes them to the manager's ACTIVE
-// room; on a fresh boot no room is active, so the greeting landed in NO
-// buffer and each fleet node's MOTD visibility depended on which room was
-// active at arrival (2026-09-03 captures). When no room is active the
-// greeting is now recorded into EVERY joined room's buffer — pinned, and
-// without unread flags, so it is visible in whichever room the user opens.
+// room; on a fresh boot no room is active, so the greeting would land in no
+// buffer. When no room is active the greeting is instead recorded into EVERY
+// joined room's buffer — pinned, and without unread flags, so it is visible in
+// whichever room the user opens.
 func (h *RRCHub) recordNotice(msg *RRCMessage) {
 	// Roomless notices ARE the hub's greeting: pin them against the
 	// ephemeral purge regardless of which room they land in.
@@ -3936,9 +3924,9 @@ func (h *RRCHub) loadHistory() {
 			// Collapse duplicates with the same fanout rule the live path
 			// uses (same kind+room+body within fanoutWindowMs): rrcd's
 			// fanout copies share the sender's envelope timestamp, so the
-			// per-member copies written by older builds collapse here, and a
-			// join-time history replay of an already-loaded message does not
-			// duplicate it (rrcd preserves the original ts on replay copies).
+			// per-member copies collapse here, and a join-time history replay
+			// of an already-loaded message does not duplicate it (rrcd
+			// preserves the original ts on replay copies).
 			// History entries carry no message id, so the key is the tuple.
 			if h.collapseFanout(m.Kind, room, m.Text, m.Ts, m.Nick, m) {
 				continue
@@ -3956,8 +3944,9 @@ func (h *RRCHub) loadHistory() {
 			// The filter drops ephemeral hub chatter. Conversation recorded
 			// in the room buffer — a private (K_DST) notice, or a notice
 			// attributed to a peer by nick, such as a bot's reply — is kept:
-			// dropping it erased every bot and private reply from the room
-			// view on the next boot while the user's own commands survived.
+			// dropping it would erase every bot and private reply from the
+			// room view on the next boot while the user's own commands
+			// survive.
 			if filter && m.IsEphemeralNotice() {
 				continue
 			}

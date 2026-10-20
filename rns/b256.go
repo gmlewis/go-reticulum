@@ -12,8 +12,7 @@ import (
 // b256Alphabet is the 256-rune base-256 alphabet used by RNS.b256rep.
 // Each byte value 0x00..0xFF maps to exactly one rune in this string,
 // matching Python RNS.b256 verbatim. Byte 0x17 is 'x' (not 'w'); the
-// Latin range intentionally skips 'w'. The escapes below were generated
-// programmatically from RNS.b256 and are authoritative.
+// Latin range intentionally skips 'w'.
 const b256Alphabet = "abcdefghijklmnopqrstuvxyzæø01234ABCDEFGHIJKLMNOPQRSTUWXYZÆØ56789αβγδεζηθικλμνξπρστφχψωΓΔΘΛΞΠΣΦΨΩБДЖЗИЛПЦЧШЩЪЫЭЮЯбджзилпцчшщъыэюяԱԲԳԴԵԶԷԸԹԺԻԽԾԿՀՁՂՃՄՅՆՇՈՉՊՋՎՐՑՒՔՖᚠᚢᚦᚱᚹᚺᚾᛈᛇᛉᛊᛏᛒᛖᛗᛟｲｳｵｶｷｹｻｼｽｾﾀﾁﾃﾄﾅﾇﾈﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾗﾘﾙﾚﾜ\U00010450\U00010451\U00010452\U00010454\U00010455\U00010457\U00010459\U00010473\U00010476\U00010478\U00010479\U0001047A\U0001047B\U0001047D\U0001047E\U0001047F᱑᱕᱘᱙ᱚᱝᱟᱣᱦᱨᱬᱭᱰᱳᱶᱷ\U00010333\U00010338\U0001033E\U00010400\U00010401\U00010402\U00010406\U00010407\U00010408\U00010409\U0001040A\U0001040B\U0001040C\U0001040D\U0001040E\U0001040F"
 
 // b256DecodeMap maps each rune of b256Alphabet to its byte value. It is

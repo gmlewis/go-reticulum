@@ -59,10 +59,9 @@ const DefaultLogFormat = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 // The names this hub's own components log under, which the log format renders
 // as %(name)s on every line they write.
 //
-// Python's original names them "rrcd.hub" and "rrcd.router", and the hub's own
-// messages would read as that program's if a Go hub copied them: a log line
-// says which program is speaking, and the Go hub's version string is not a
-// version Python's rrcd ever had.
+// Python names its loggers "rrcd.hub" and "rrcd.router". This hub uses its
+// own names because a log line says which program is speaking, and this is a
+// distinct implementation.
 const (
 	loggerHubName    = "gorrcd.hub"
 	loggerRouterName = "gorrcd.router"
@@ -417,9 +416,9 @@ func parentDir(p string) string {
 // the file reaches maxBytes, matching the RNS log rotation convention
 // (RNS/__init__.py LOG_MAXSIZE and the rns.Logger writeSink rotation; the
 // rotated artifact is the same <file>.1 RNS leaves behind). Python rrcd's
-// logging.FileHandler never rotates, so an rrcd with [log] file configured
-// grew without bound; this keeps the optional gorrcd log file bounded while
-// staying layout-compatible with the Python install.
+// logging.FileHandler never rotates, so a Python rrcd with [log] file
+// configured grows without bound; this keeps the optional gorrcd log file
+// bounded while staying layout-compatible with the Python install.
 type rotatingFileWriter struct {
 	mu       sync.Mutex
 	path     string

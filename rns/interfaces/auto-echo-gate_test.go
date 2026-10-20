@@ -18,12 +18,7 @@ import (
 // Parity: Python AutoInterface never couples inbound data processing to echo
 // freshness — self.online is set once in final_init (AutoInterface.py:350) and
 // cleared only on detach (:607); a missed echo merely logs and marks the
-// interface timed out (:463-467), which nothing else consumes. The Go port's
-// processIncoming used to drop EVERY datagram while online==0, silently
-// blacking out the whole LAN plane for the duration of an echo gap (Wi-Fi
-// power-save, AP multicast rate-limiting, interface roam) while sockets stayed
-// open and TCP planes kept flowing — the observed "node deaf to fleet,
-// relays fine" window on Jetson/Pi-class hosts.
+// interface timed out (:463-467), which nothing else consumes.
 func TestAutoProcessIncomingDeliversWhileEchoStalled(t *testing.T) {
 	t.Parallel()
 	got := make(chan string, 4)

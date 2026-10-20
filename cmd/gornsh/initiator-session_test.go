@@ -753,8 +753,7 @@ func TestRunInitiatorProtocolFlowWaitsForLateStreamAfterExitWithinGrace(t *testi
 			go func() {
 				fake.emit(&commandExitedMessage{ReturnCode: 0})
 				// Keep the delay well under the drain grace so parallel-suite
-				// load cannot push the late stream past the window under
-				// test (the point is "after exit, before grace expiry").
+				// load cannot push the late stream past the window under test.
 				time.Sleep(5 * time.Millisecond)
 				fake.emit(&streamDataMessage{StreamID: streamIDStdout, Data: []byte("late"), EOF: true})
 			}()

@@ -24,9 +24,8 @@ type RRCMessage struct {
 	Mention bool   // true if message mentions the local user
 	// Pinned marks the hub's greeting MOTD notice: exempt from the
 	// ephemeral-notice purge. The greeting is standing hub info that rrcd
-	// re-sends on every WELCOME; the purge previously erased it minutes
-	// after a connect, which made some fleet nodes appear MOTD-less
-	// (2026-09-03 captures).
+	// re-sends on every WELCOME, so the purge must not erase it minutes after
+	// a connect.
 	Pinned bool
 	// Direct marks a NOTICE the hub forwarded privately to this client using
 	// the K_DST extension rather than broadcasting it to a room. The hub sets
@@ -55,9 +54,7 @@ type RRCMessage struct {
 // it is a notice ATTRIBUTED to a peer by nick. Hub chatter (the greeting MOTD,
 // "Direct NOTICE sent to ..." acks, /who and /list replies, join/part rows) is
 // emitted by the hub itself and carries no nick, so a nick-bearing notice is a
-// bot's or peer's answer and dropping it erased every @bot reply from a room's
-// history on the next boot (observed live: @gorrcbot's replies to a user's
-// commands vanished while the commands themselves survived).
+// bot's or peer's answer that must survive the next boot.
 func (m *RRCMessage) IsConversation() bool {
 	if m == nil {
 		return false
@@ -97,9 +94,6 @@ func (m *RRCMessage) HistoryEntry() map[string]any {
 	if m.Nick != "" {
 		entry[HNick] = m.Nick
 	}
-	// if m.Room != "" {
-	//   Room is stored implicitly in the file path, but included for clarity
-	// }
 	if m.Mention {
 		entry[HMention] = true
 	}
@@ -180,10 +174,9 @@ func isNil(v any) bool {
 // TEXT fields (room, nick) are converted to Go strings so cbor encodes them
 // as CBOR TEXT strings — Python's RRC client and hubs send room names, nicks,
 // and hello body fields as text, and a byte-string encoding makes the hub
-// silently drop the message (the differential explorer's Channels finding:
-// the link connected but the hub never responded). Binary fields (source hash,
-// message ID) stay []byte (CBOR byte strings), matching Python's bytes source
-// hash and os.urandom message id.
+// silently drop the message. Binary fields (source hash, message ID) stay
+// []byte (CBOR byte strings), matching Python's bytes source hash and
+// os.urandom message id.
 func MakeClientEnvelope(msgType int, src, room, nick []byte, body any, mid []byte, ts int64) map[any]any {
 	env := map[any]any{
 		KeyVersion:   RRCVersion,

@@ -508,9 +508,8 @@ func TestHDLCVectorsAgainstPython(t *testing.T) {
 	}
 }
 
-// There is no accepted-divergence ledger for HDLC: the port decodes exactly the
-// two sequences Python decodes, so every row of the table, malformed input
-// included, is compared byte for byte.
+// Every row of the table, malformed input included, is compared byte for byte:
+// the port decodes exactly the two sequences Python decodes.
 
 // pythonHDLCVectorScript applies Python's own HDLC escape and unescape.
 const pythonHDLCVectorScript = `

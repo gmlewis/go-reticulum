@@ -17,10 +17,8 @@ import (
 )
 
 // runPythonRNS15 runs script with an interpreter whose RNS is 1.5.0, the
-// release that introduced Transport.medium_path_timeout. The repo-standard
-// python3 on a developer machine is RNS 1.4.2 (Transport.medium_path_timeout
-// does not exist there), while CI installs 1.5.0; the test skips only when no
-// 1.5.0 interpreter is present so the parity check still runs everywhere the
+// release that introduced Transport.medium_path_timeout. The test skips only
+// when no 1.5.0 interpreter is present, so the parity check runs everywhere the
 // symbol exists.
 func runPythonRNS15(t *testing.T, script, arg string) string {
 	t.Helper()

@@ -143,7 +143,7 @@ func TestRouterExtractCaps(t *testing.T) {
 	}
 }
 
-// G16.7 Room and target normalization must use Python's str.lower()
+// Room and target normalization must use Python's str.lower()
 // semantics: İ (U+0130) becomes "i" plus a combining dot above and a
 // word-final capital sigma becomes ς, so the hub echoes room strings the
 // client can match. Golden: python3 -c

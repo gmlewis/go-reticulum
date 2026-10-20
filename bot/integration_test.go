@@ -558,7 +558,7 @@ func TestIntegrationBotAnswersAnAddressedCommand(t *testing.T) {
 
 	// 4. The listing names every category. Grouping keeps the whole answer
 	// inside one envelope, so it arrives as a single notice with no continuation
-	// marker — the mid-word split the flat listing suffered cannot occur.
+	// marker.
 	listing := ""
 	for _, notice := range rig.notices(t, 0) {
 		if strings.HasPrefix(notice, "Categories: ") {
@@ -697,11 +697,10 @@ func TestIntegrationBotAnswersARoomRequestInTheRoom(t *testing.T) {
 	}
 }
 
-// TestIntegrationBotStillSendsAPrivateNoticeOnRequest asserts the K_DST path
-// still works end to end after the routing change: a requester that explicitly
-// asks for a private notice gets one, and only that requester gets it. The
-// requester is known here because it joined after the bot, so the bot holds its
-// full identity hash from the join fanout.
+// TestIntegrationBotStillSendsAPrivateNoticeOnRequest asserts the K_DST path end
+// to end: a requester that explicitly asks for a private notice gets one, and
+// only that requester gets it. The requester is known here because it joined
+// after the bot, so the bot holds its full identity hash from the join fanout.
 func TestIntegrationBotStillSendsAPrivateNoticeOnRequest(t *testing.T) {
 	rig := newIntegrationRig(t, 1, ReplyAuto)
 	asker := rig.hubs[0].asker
@@ -796,11 +795,11 @@ func identityFromID(t *testing.T, notices []string) string {
 	return ""
 }
 
-// TestIntegrationCooldownAnswersDistinctQuestions reproduces the operator's
-// reported transcript over the real wire: one client asking several *different*
-// questions inside a single cooldown window. The cooldown suppresses a repeated
-// request; a person's next question is a new question and must be answered, or
-// the bot reads as one that ignores most of what it is asked.
+// TestIntegrationCooldownAnswersDistinctQuestions asserts over the real wire
+// that one client asking several different questions inside a single cooldown
+// window is answered every time. The cooldown suppresses a repeated request; a
+// person's next question is a new question and must be answered, or the bot
+// reads as one that ignores most of what it is asked.
 func TestIntegrationCooldownAnswersDistinctQuestions(t *testing.T) {
 	rig := newIntegrationRigWith(t, 1, ReplyRoom, func(cfg *BotConfig) {
 		cfg.CooldownSecs = 30
@@ -1075,8 +1074,7 @@ func newLiveAsker(t *testing.T, root, hubHex, room string,
 }
 
 // TestIntegrationClientStorageIsADirectory asserts the one path the bot hands
-// the RRC client is created as a DIRECTORY. It used to be called state.toml, so
-// the client made a directory wearing a file's name.
+// the RRC client is created as a DIRECTORY, not a file.
 func TestIntegrationClientStorageIsADirectory(t *testing.T) {
 	rig := newIntegrationRig(t, 1, ReplyRoom)
 

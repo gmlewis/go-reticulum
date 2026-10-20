@@ -24,7 +24,7 @@ import (
 const (
 	// signalUsage is the usage line for the command.
 	signalUsage = "signal [air|sound|light]"
-	// signalUnknownLine is the answer to an unrecognised section.
+	// signalUnknownLine is the answer to an unrecognized section.
 	signalUnknownLine = "no distress signal section %q — try: air, sound, or light"
 )
 

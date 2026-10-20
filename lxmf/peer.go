@@ -114,7 +114,7 @@ type Peer struct {
 	// pendingOfferIDs holds the transient IDs that survive the
 	// transfer/sync size-limit filtering of pendingOfferEntries (Python's
 	// unhandled_ids, LXMPeer.py:367-381). It is the candidate offer list
-	// before the empty-check (24.B.4) and offer send (24.B.5).
+	// before the empty-check and offer send.
 	pendingOfferIDs [][]byte
 
 	// syncHook is an optional test hook that fires when sync() would have
@@ -855,10 +855,9 @@ func (p *Peer) RequestFailed(_ *rns.RequestReceipt) {
 // LINK_READY branch (LXMPeer.py:344-366): for each unhandled transient ID, if
 // it still exists in the propagation store it is collected as a
 // [transient_id, weight, size] entry unless its stamp value is below the peer's
-// minimum accepted cost (the 1.1.0 low-stamp-value drop, LXMPeer.py:347-348,
-// 4a93697), in which case it is reported as low-value; IDs absent from the
-// store are reported as purged. The caller drops purged and low-value IDs via
-// removeUnhandledMessage. Weight and size come from the router's
+// minimum accepted cost, in which case it is reported as low-value; IDs absent
+// from the store are reported as purged (LXMPeer.py:347-348). The caller drops
+// purged and low-value IDs via removeUnhandledMessage. Weight and size come from
 // get_weight/get_size equivalents (LXMRouter.py:1052-1067); the stamp-value
 // floor is MinAcceptedStampCost (max(0, cost - flexibility)).
 func (p *Peer) collectPendingOfferEntries(unhandledMessages [][]byte) (entries []pendingOfferEntry, purgedIDs [][]byte, lowValueIDs [][]byte) {
@@ -894,7 +893,8 @@ func (p *Peer) collectPendingOfferEntries(unhandledMessages [][]byte) (entries [
 // the LINK_READY branch begins offer preparation (collecting unhandled
 // entries and dropping purged ones so far). The remaining offer-preparation
 // steps (low-stamp-value drop, size limits, offer send) and the offer-
-// response / resource-transfer callbacks are implemented in later tasks.
+// response / resource-transfer callbacks are handled by OfferResponse and
+// startSyncTransfer.
 func (p *Peer) Sync() {
 	if p == nil {
 		return
@@ -1057,7 +1057,7 @@ func (p *Peer) Sync() {
 		}
 		p.pendingOfferIDs = unhandledIDs
 
-		// Post-filter early return (1.1.0 delta, 982c9fc, LXMPeer.py:383-385):
+		// Post-filter early return (LXMPeer.py:383-385):
 		// if every unhandled message was filtered out, sync is complete for
 		// now — no offer is sent, lastOffer stays unset, and the state
 		// remains PeerStateLinkReady.
@@ -1093,12 +1093,9 @@ func (p *Peer) Sync() {
 // processes a peer's response to a propagation-node offer and updates
 // the peer's message queues and state machine accordingly.
 //
-// The full implementation supports: ERROR_NO_IDENTITY, ERROR_NO_ACCESS,
+// The implementation supports: ERROR_NO_IDENTITY, ERROR_NO_ACCESS,
 // ERROR_THROTTLED, a `true`/`false` "wants everything/nothing"
-// response, and a list of wanted transient IDs. For now, this method
-// focuses on the "wants nothing" path that is sufficient for
-// offer-response tests; the full resource-transfer path is implemented
-// in a later task.
+// response, and a list of wanted transient IDs.
 func (p *Peer) OfferResponse(receipt *rns.RequestReceipt) {
 	if p == nil {
 		return
@@ -1124,7 +1121,7 @@ func (p *Peer) OfferResponse(receipt *rns.RequestReceipt) {
 		case peerErrorNoIdentity:
 			// The remote peer did not receive our identification: re-identify
 			// the link, drop back to LINK_READY, and re-enter Sync to rebuild
-			// and resend the offer (1.1.0 delta, 548be10).
+			// and resend the offer.
 			if link != nil {
 				if logger := p.peerLogger(); logger != nil {
 					logger.Verbose("Remote peer indicated that no identification was received, retrying...")

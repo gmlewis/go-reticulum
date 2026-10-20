@@ -68,8 +68,8 @@ func (c *deadlineBlockingConn) Write(p []byte) (int, error) {
 // half-open peer (one whose Write blocks) returns within the write deadline
 // instead of blocking for the OS retransmit timeout, that the interface
 // transitions down, and that the onDown hook fires once on that transition.
-// This is the regression test for the transport wedge where a single stalled
-// TCP interface blocked the maintenance loop and every readLoop indefinitely.
+// Without the deadline a single stalled TCP interface blocks the maintenance
+// loop and every readLoop indefinitely.
 func TestTCPClientInterface_SendWriteDeadlineUnblocks(t *testing.T) {
 	t.Parallel()
 

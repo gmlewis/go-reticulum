@@ -15,14 +15,11 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// TestSharedInstanceBothClientsLinkSurvival reproduces the 2026-09-04
-// raspberrypi redeploy topology exactly: gorrcd (the hub) AND gonomadnet
-// (the chat client) BOTH attach to the SAME shared instance (gornsd -s).
-// The client dials the hub's destination through the shared instance; the
-// link must establish, carry data both ways, and SURVIVE past the link
-// keepalive interval. The live symptom was links cycling every ~20 seconds
-// (each cycle re-delivering the hub WELCOME, hence "multiple welcome
-// messages"), with the hub logging receipt-style retransmissions.
+// TestSharedInstanceBothClientsLinkSurvival exercises the deployment topology
+// where a hub (gorrcd) AND a chat client (gonomadnet) BOTH attach to the SAME
+// shared instance (gornsd -s). The client dials the hub's destination through
+// the shared instance; the link must establish, carry data both ways, and
+// SURVIVE past the link keepalive interval.
 func TestSharedInstanceBothClientsLinkSurvival(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
@@ -205,9 +202,8 @@ func TestSharedInstanceBothClientsLinkSurvival(t *testing.T) {
 	}
 
 	// --- The link must SURVIVE the keepalive interval: no timeout teardown ---
-	// The live failure was links tearing down ~20s after establishment with
-	// reason=timeout, cycling WELCOME after WELCOME. Let the watchdog run
-	// through several keepalive intervals.
+	// Let the watchdog run through several keepalive intervals; a teardown with
+	// reason=timeout shows up as a link-closed callback.
 	dead := make(chan struct{}, 1)
 	initiatorLink.SetLinkClosedCallback(func(_ *Link) {
 		select {

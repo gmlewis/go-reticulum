@@ -269,7 +269,7 @@ func TestDecodeDeepNestingErrors(t *testing.T) {
 	// 200 nested arrays exceed the decoder depth limit.
 	data := make([]byte, 0, 200)
 	for range 200 {
-		data = append(data, 0x80|1) // array head with 1 element... placeholder
+		data = append(data, 0x80|1) // array head with one element
 	}
 	_ = data
 	// Build: open brackets via indefinite arrays are simplest.
@@ -283,7 +283,7 @@ func TestDecodeDeepNestingErrors(t *testing.T) {
 	}
 }
 
-// G16.13 Text strings must be valid UTF-8 the way cbor2 requires:
+// Text strings must be valid UTF-8 the way cbor2 requires:
 // invalid text is a decode error, so a hostile envelope answers "bad
 // message" instead of re-broadcasting text the client decoders drop.
 func TestDecodeStrictUTF8Text(t *testing.T) {
@@ -304,7 +304,7 @@ func TestDecodeStrictUTF8Text(t *testing.T) {
 	}
 }
 
-// G16.13 Documented divergence: cbor2 yields its `undefined` sentinel
+// Documented divergence: cbor2 yields its `undefined` sentinel
 // for 0xf7 and CBORSimpleValue for assigned simple values, while this
 // decoder rejects them — RRC bodies are never simple values.
 func TestDecodeSimpleValueDivergence(t *testing.T) {

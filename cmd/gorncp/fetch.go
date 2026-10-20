@@ -33,9 +33,8 @@ func fetchResponseCode(response any) (int, bool) {
 	}
 }
 
-// waitForDownloadCompletion waits for the transfer callback or a bounded timeout.
-// The timeout is a deliberate safety guard in the Go port to avoid hanging
-// indefinitely when a transfer stalls.
+// waitForDownloadCompletion waits for the transfer callback or a bounded
+// timeout, so a stalled transfer cannot hang the command indefinitely.
 func waitForDownloadCompletion(done <-chan struct{}, timeout time.Duration, onTick func()) error {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
@@ -246,7 +245,6 @@ requested:
 			}
 		})
 		res.SetProgressCallback(func(r *rns.Resource) {
-			// Progress callback for tracking transfer progress
 		})
 
 		if !silent {

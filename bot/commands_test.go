@@ -1025,7 +1025,7 @@ func TestRegistryExposesSummariesAndUsage(t *testing.T) {
 // shape of the hub's own /who reply (rrc/commands.go, handleWho), and a client
 // treats a NOTICE of that shape as a member-set update: it parses it
 // (rrc.ParseWhoNotice), overwrites the room's member list, and silently consumes
-// it whenever its periodic auto-/who is outstanding — so the reply reached
+// it whenever its periodic auto-/who is outstanding, so the reply would reach
 // nobody's screen while clobbering what every client believed about the room.
 func TestMembersReplyIsNotProtocolTraffic(t *testing.T) {
 	t.Parallel()
@@ -1109,9 +1109,9 @@ func TestRoomsWorksOnTheDirectRoute(t *testing.T) {
 
 // TestUnknownCommandNamesTheConfiguredNick asserts the line that tells an asker
 // how to address the bot names a nick the bot actually answers to. A direct NOTICE
-// carries no addressed nick, so the fallback used to be the built-in default:
-// live, "/msg gobot nosuchcommand" answered "try @gorrcbot help" under a bot whose
-// nick is gobot, sending the asker to a name nobody owns.
+// carries no addressed nick, so the fallback must be the configured nick rather
+// than the built-in default: naming the default would send the asker to a name
+// nobody owns.
 func TestUnknownCommandNamesTheConfiguredNick(t *testing.T) {
 	t.Parallel()
 

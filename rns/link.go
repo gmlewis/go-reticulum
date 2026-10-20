@@ -139,7 +139,7 @@ type Link struct {
 	mdu int
 
 	// expectedHops is the hop count the link expects its peer's link-proof
-	// (LRPROOF) and RTT packets to carry. It is the Go port of Python
+	// (LRPROOF) and RTT packets to carry. Mirrors Python
 	// Link.expected_hops: set to Transport.hops_to(destination) at link
 	// request time on the initiator side (Link.py:281) and to packet.hops
 	// on the destination side at activation (Link.py:525, rtt_packet). A
@@ -151,7 +151,7 @@ type Link struct {
 	expectedHops int
 
 	// rebalancedAt records the wall-clock time of the first successful path
-	// re-balance at the link terminus. It is the Go port of Python
+	// re-balance at the link terminus. Mirrors Python
 	// Link.rebalanced (Link.py:268 `self.rebalanced = None`), set under the
 	// `if not link.rebalanced:` guard in Transport's LRPROOF handler
 	// (Transport.py:2298-2300) so only the earliest re-balance is timestamped.
@@ -160,12 +160,12 @@ type Link struct {
 
 	// establishmentCost accumulates the on-wire byte cost of the link
 	// establishment handshake (link request + proof packets, both
-	// directions). It is the Go port of Python Link.establishment_cost,
-	// used to derive establishmentRate = establishmentCost/rtt.
+	// directions). Mirrors Python Link.establishment_cost, used to derive
+	// establishmentRate = establishmentCost/rtt.
 	establishmentCost float64
 	// establishmentRate is establishmentCost/rtt once the link is active,
-	// or zero (meaning "unset") while the link is still establishing. It
-	// is the Go port of Python Link.establishment_rate.
+	// or zero (meaning "unset") while the link is still establishing. Mirrors
+	// Python Link.establishment_rate.
 	establishmentRate float64
 	// expectedRate is the most recently measured in-flight data rate of
 	// a completed resource transfer, in bytes/second (Python stores
@@ -523,11 +523,8 @@ func (l *Link) Establish() error {
 	//   establishment_timeout = first_hop_timeout + PER_HOP * max(1, hops)
 	// where first_hop_timeout = DEFAULT_PER_HOP_TIMEOUT + MTU/bitrate when the
 	// next-hop interface bitrate is known (Transport.first_hop_timeout,
-	// Transport.py:2787-2791). Using the bare establishmentTimeoutPerHop
-	// constant here (as the Go port previously did) omits the bitrate-latency
-	// term, making the establishment timeout shorter than Python's on slow
-	// radio links — the root cause of "Link establishment timed out" on
-	// remote nodes where Python succeeds.
+	// Transport.py:2787-2791). The per-hop term must include the bitrate-latency
+	// component, or slow radio links time out where Python succeeds.
 	hops := 1
 	firstHop := establishmentTimeoutPerHop
 	if l.transport != nil {
@@ -557,7 +554,8 @@ func LinkIDFromLR(packet *Packet) []byte {
 	return TruncatedHash(hashablePart)
 }
 
-// ValidateRequest intercepts an inbound link request, validates its structure, and conditionally spawns a responding link instance.
+// ValidateRequest intercepts an inbound link request, validates its structure,
+// and conditionally spawns a responding link instance.
 func ValidateRequest(logger *Logger, destination *Destination, data []byte, packet *Packet) (*Link, error) {
 	if len(data) < LinkECPubSize {
 		return nil, fmt.Errorf("invalid link request payload size: %v", len(data))
@@ -653,7 +651,8 @@ func (l *Link) Prove() error {
 	return l.send(p)
 }
 
-// receive processes incoming packets targeting this link, handling decryption and delegating to context-specific routines.
+// receive processes incoming packets targeting this link, handling decryption
+// and delegating to context-specific routines.
 func (l *Link) receive(packet *Packet) {
 	l.mu.Lock()
 	// Python Link.py:930-939: the clock/rx update block is guarded by
@@ -955,11 +954,11 @@ func (l *Link) receive(packet *Packet) {
 				if err == nil {
 					if err := id.LoadPublicKey(publicKey); err == nil {
 						if id.Verify(signature, signedData) {
-							// Blackholed-identity guard (RNS/Link.py:974-976,
-							// v1.3.2): if the verified identity is on the local
-							// blackhole list, terminate the incoming link and
-							// skip the remote-identified callback rather than
-							// accepting the identity.
+							// Blackholed-identity guard (RNS/Link.py:974-976):
+							// if the verified identity is on the local blackhole
+							// list, terminate the incoming link and skip the
+							// remote-identified callback rather than accepting
+							// the identity.
 							if l.transport != nil && l.transport.IsBlackholed(id.Hash) {
 								l.logger.Debug("Terminating incoming link from blackholed identity %x", id.Hash)
 								l.Teardown()
@@ -979,8 +978,8 @@ func (l *Link) receive(packet *Packet) {
 
 	case ContextKeepalive:
 		if !l.initiator && len(packet.Data) > 0 && packet.Data[0] == 0xFF {
-			// v1.4.0: only echo a 0xFE keepalive when nothing has been sent
-			// for a full keepalive interval (RNS/Link.py:1124-1127:
+			// Only echo a 0xFE keepalive when nothing has been sent for a full
+			// keepalive interval (RNS/Link.py:1124-1127:
 			// `if time.time() >= self.last_outbound + self.keepalive`).
 			// Recent outbound traffic already serves as the keepalive echo,
 			// so a redundant 0xFE would just waste bandwidth.
@@ -1029,12 +1028,9 @@ func (l *Link) receive(packet *Packet) {
 			return
 		}
 		if packet.PacketType != PacketProof {
-			// Mirror Python Link.py:953-960: link data is proven only when
-			// the link's destination demands it (PROVE_ALL, or PROVE_APP with
-			// the proof-request callback accepting the packet). Proving
-			// unconditionally here generated a proof for every message on
-			// every link, and proofs routed through a shared instance are
-			// frequently undeliverable, starving senders' receipts.
+			// Mirror Python Link.py:953-960: link data is proven only when the
+			// link's destination demands it (PROVE_ALL, or PROVE_APP with the
+			// proof-request callback accepting the packet).
 			prove := false
 			if dest := l.destination; dest != nil {
 				switch dest.proofStrategy {
@@ -1161,7 +1157,8 @@ func (l *Link) verifyProofSignature(packet *Packet) bool {
 	return l.verifyProofSignatureLocked(packet)
 }
 
-// ValidateProof evaluates an incoming link proof packet and formally transitions the link into an active state upon success.
+// ValidateProof evaluates an incoming link proof packet and formally transitions
+// the link into an active state upon success.
 func (l *Link) ValidateProof(packet *Packet) error {
 	l.logger.Info("ValidateProof: link %x, status=%v", l.linkID, l.status.Load())
 	l.mu.Lock()
@@ -1402,7 +1399,7 @@ func (l *Link) watchdogStep(now time.Time) time.Duration {
 	case LinkActive:
 		lastInbound := l.effectiveLastInbound()
 
-		// v1.4.0: the keepalive/stale check also fires on outbound inactivity
+		// The keepalive/stale check also fires on outbound inactivity
 		// (RNS/Link.py:749: `now >= last_inbound + keepalive or now >=
 		// last_outbound + keepalive`). This makes a silent initiator that is
 		// still receiving destination traffic send keepalives so the remote
@@ -1541,7 +1538,8 @@ func (l *Link) Sign(data []byte) ([]byte, error) {
 	return l.sigPrv.Sign(data), nil
 }
 
-// Verify guarantees data authenticity by comparing a signature against the remote peer's established public signing key.
+// Verify reports whether signature is valid for data under the remote peer's
+// established public signing key.
 func (l *Link) Verify(signature, data []byte) bool {
 	if l.peerSigPub == nil {
 		return false
@@ -1549,7 +1547,8 @@ func (l *Link) Verify(signature, data []byte) bool {
 	return l.peerSigPub.Verify(signature, data)
 }
 
-// Encrypt obscures arbitrary plaintext data securely using the derived symmetric session token established during handshake.
+// Encrypt encrypts plaintext with the symmetric session token derived during
+// the handshake.
 func (l *Link) Encrypt(plaintext []byte) ([]byte, error) {
 	if l.token == nil {
 		return nil, errors.New("link session keys not initialized")
@@ -1565,7 +1564,8 @@ func (l *Link) Decrypt(ciphertext []byte) ([]byte, error) {
 	return l.token.Decrypt(ciphertext)
 }
 
-// Identify explicitly reveals and cryptographically proves the initiator's long-term identity to the remote peer over this active link.
+// Identify reveals and cryptographically proves the initiator's long-term
+// identity to the remote peer over this active link.
 func (l *Link) Identify(identity *Identity) error {
 	if !l.initiator || l.status.Load() != LinkActive {
 		return errors.New("invalid state for identification")
@@ -1596,7 +1596,8 @@ func (l *Link) Identify(identity *Identity) error {
 	return l.send(p)
 }
 
-// LoadPeer parses and permanently associates the remote peer's ephemeral public encryption and signature keys into link state.
+// LoadPeer parses and permanently associates the remote peer's ephemeral public
+// encryption and signature keys with the link state.
 func (l *Link) LoadPeer(pubBytes, sigPubBytes []byte) error {
 	var err error
 	l.peerPubBytes = pubBytes
@@ -1614,7 +1615,8 @@ func (l *Link) LoadPeer(pubBytes, sigPubBytes []byte) error {
 	return nil
 }
 
-// SetPacketCallback registers a handler function that executes precisely when standard decrypted data packets traverse the link.
+// SetPacketCallback registers a handler invoked for every standard decrypted
+// data packet that traverses the link.
 func (l *Link) SetPacketCallback(callback func([]byte, *Packet)) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -1627,14 +1629,16 @@ func (l *Link) SetPacketCallback(callback func([]byte, *Packet)) {
 	}
 }
 
-// SetResourceCallback defines a handler function consulted whenever a remote peer advertises a potential resource transfer over the link.
+// SetResourceCallback defines a handler consulted whenever a remote peer
+// advertises a potential resource transfer over the link.
 func (l *Link) SetResourceCallback(callback func(*ResourceAdvertisement) bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.callbacks.Resource = callback
 }
 
-// SetResourceStrategy explicitly overrides the default behavior dictating whether new incoming resource advertisements should be accepted.
+// SetResourceStrategy overrides the default policy for accepting new incoming
+// resource advertisements.
 func (l *Link) SetResourceStrategy(strategy int) error {
 	if strategy != AcceptNone && strategy != AcceptApp && strategy != AcceptAll {
 		return fmt.Errorf("invalid resource strategy %v", strategy)
@@ -1645,49 +1649,56 @@ func (l *Link) SetResourceStrategy(strategy int) error {
 	return nil
 }
 
-// SetResourceStartedCallback assigns a notification function to fire synchronously when an incoming resource transfer physically begins.
+// SetResourceStartedCallback assigns a notification function that fires
+// synchronously when an incoming resource transfer begins.
 func (l *Link) SetResourceStartedCallback(callback func(*Resource)) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.callbacks.ResourceStarted = callback
 }
 
-// SetResourceConcludedCallback defines a notification handler to fire precisely when an inbound resource transfer reaches completion.
+// SetResourceConcludedCallback defines a notification handler that fires when an
+// inbound resource transfer concludes.
 func (l *Link) SetResourceConcludedCallback(callback func(*Resource)) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.callbacks.ResourceConcluded = callback
 }
 
-// SetLinkEstablishedCallback maps a custom application routine to trigger immediately upon the successful activation of this link.
+// SetLinkEstablishedCallback maps an application routine to run when this link
+// becomes active.
 func (l *Link) SetLinkEstablishedCallback(callback func(*Link)) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.callbacks.LinkEstablished = callback
 }
 
-// SetRemoteIdentifiedCallback maps an application hook firing when a remote peer safely proves its long-term identity via an in-band packet.
+// SetRemoteIdentifiedCallback maps an application hook that fires when a remote
+// peer proves its long-term identity with an in-band packet.
 func (l *Link) SetRemoteIdentifiedCallback(callback func(*Link, *Identity)) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.callbacks.RemoteIdentified = callback
 }
 
-// SetLinkClosedCallback defines a mandatory notification hook designed to safely clean up logic when the link connection terminates.
+// SetLinkClosedCallback defines a notification hook that runs when the link
+// terminates.
 func (l *Link) SetLinkClosedCallback(callback func(*Link)) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.callbacks.LinkClosed = callback
 }
 
-// GetRemoteIdentity securely retrieves the underlying structural Identity, if the peer has opted to reveal and prove it.
+// GetRemoteIdentity returns the peer's Identity if it has revealed and proved it,
+// or nil otherwise.
 func (l *Link) GetRemoteIdentity() *Identity {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.remoteIdentity
 }
 
-// GetChannel allocates and automatically starts a high-level stream-oriented Channel built seamlessly over this discrete link.
+// GetChannel returns the link's Channel, allocating and starting it on first
+// use.
 func (l *Link) GetChannel() *Channel {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -1713,7 +1724,8 @@ type LinkChannelOutlet struct {
 	link *Link
 }
 
-// Send dynamically wraps raw channel data into a formatted packet and delegates physical transmission to the link transport.
+// Send wraps raw channel data in a CHANNEL-context packet and transmits it over
+// the link.
 func (o *LinkChannelOutlet) Send(raw []byte) (*Packet, error) {
 	o.link.logger.Extreme("LinkChannelOutlet.Send rawLen=%v\n", len(raw))
 	p := NewPacketWithTransport(o.link.transport, o.link, raw)
@@ -1759,7 +1771,8 @@ func (o *LinkChannelOutlet) GetPacketID(p *Packet) []byte {
 	return p.PacketHash
 }
 
-// RTT exposes the current measured Round Trip Time from the underlying link strictly to aid the channel's retry metrics.
+// RTT returns the link's measured round trip time, which the channel uses for
+// its retry metrics.
 func (o *LinkChannelOutlet) RTT() float64 {
 	return o.link.rtt
 }
@@ -1774,7 +1787,8 @@ func (o *LinkChannelOutlet) TimedOut() {
 	o.link.Teardown()
 }
 
-// Teardown actively closes the link, destroying related channels, and notifying any observers that data transmission has halted.
+// Teardown closes the link, shuts down its channel, and notifies observers that
+// transmission has halted.
 func (l *Link) Teardown() {
 	status := l.status.Load()
 	if status != LinkPending && status != LinkClosed {
@@ -1838,7 +1852,8 @@ func (l *Link) sendTeardownPacket() {
 	}
 }
 
-// Request fires a generalized structured request packet asynchronously, expecting a correlated logical response from the remote peer.
+// Request sends a structured request packet asynchronously and expects a
+// correlated logical response from the remote peer.
 func (l *Link) Request(path string, data any, responseCallback, failedCallback, progressCallback func(*RequestReceipt), timeout time.Duration, maxResponseSize int64) (*RequestReceipt, error) {
 	requestPathHash := TruncatedHash([]byte(path))
 	// unpacked_request  = [time.time(), request_path_hash, data]
@@ -1884,12 +1899,12 @@ func (l *Link) Request(path string, data any, responseCallback, failedCallback, 
 			return nil, err
 		}
 
-		// An inline request has been dispatched over the link; mark it
-		// delivered and arm the response timeout so a missing response fires
-		// failedCallback at `timeout` — mirroring the resource-request path
-		// (requestResourceConcluded) and Python Link.request. Without this the
-		// inline receipt never times out: failedCallback is never invoked and
-		// the receipt leaks into pendingRequests until the link is torn down.
+		// An inline request has been dispatched over the link; mark it delivered
+		// and arm the response timeout so a missing response fires failedCallback
+		// at `timeout` — mirroring the resource-request path
+		// (requestResourceConcluded) and Python Link.request. Otherwise the
+		// inline receipt never times out and leaks into pendingRequests until
+		// the link is torn down.
 		rr.mu.Lock()
 		if rr.Status == RequestSent {
 			rr.Status = RequestDelivered
@@ -2053,8 +2068,8 @@ func (l *Link) handleRequest(requestID []byte, unpackedRequest []any) {
 	}
 }
 
-// handleResponse is the Go port of Python Link.handle_response
-// (Link.py:857-883). It locates the pending request matching requestID,
+// handleResponse mirrors Python Link.handle_response (Link.py:857-883). It
+// locates the pending request matching requestID,
 // optionally records the response/transfer sizes, optionally enforces the
 // per-receipt max response size, then either completes the receipt
 // (responseReceived) or rejects it (ResponseRejected). The receipt is always
@@ -2099,8 +2114,8 @@ func (l *Link) handleResponse(requestID []byte, responseData any, metadata any, 
 		return
 	}
 	// Remove the receipt from the pending list now, under the lock. Python
-	// removes `remove` after the callback; we remove first so the success/
-	// failure callbacks never observe a stale pending entry, and so
+	// removes it after the callback; removing it first means the success and
+	// failure callbacks never observe a stale pending entry, and
 	// ResponseRejected's removePendingRequest is a no-op (avoiding a
 	// double-remove and, critically, a self-deadlock on l.mu).
 	l.pendingRequests = append(l.pendingRequests[:idx], l.pendingRequests[idx+1:]...)
@@ -2181,18 +2196,15 @@ func (l *Link) responseResourceConcluded(resource *Resource) {
 		return
 	}
 
-	// The response resource failed (watchdog part-timeout, exhausted
-	// retries, or a bad completion proof) — the reply will never arrive via
-	// this resource. Fail the matching pending receipt so the caller's
-	// failedCallback fires and the receipt is dropped from pendingRequests.
-	// Without this branch a failed response resource is silently ignored:
-	// responseTimeoutJob disarmed itself when the first part arrived (status
-	// flipped to RequestReceiving), so nothing fires failedCallback and the
-	// receipt leaks until the caller's own backstop. This mirrors
+	// The response resource failed (watchdog part-timeout, exhausted retries,
+	// or a bad completion proof) — the reply will never arrive via this
+	// resource. Fail the matching pending receipt so the caller's failedCallback
+	// fires and the receipt is dropped from pendingRequests. Nothing else would
+	// do it: responseTimeoutJob disarmed when the first part arrived (status
+	// flipped to RequestReceiving). This mirrors
 	// RequestReceipt.requestResourceConcluded's failure branch (the
-	// outgoing-request-as-resource path). requestTimedOut is
-	// terminal-guarded, so a race with the deadline still resolves to one
-	// callback.
+	// outgoing-request-as-resource path). requestTimedOut is terminal-guarded,
+	// so a race with the deadline still resolves to one callback.
 	l.failPendingResponseRequest(resource.requestID)
 }
 
@@ -2258,9 +2270,8 @@ func packedResponseSize(responseData any) int64 {
 	return int64(len(packed) - 2)
 }
 
-// NoInboundFor returns how long it has been since the link last
-// received a packet from the remote peer. It is the Go port of
-// Python's Link.no_inbound_for().
+// NoInboundFor returns how long it has been since the link last received a
+// packet from the remote peer. Mirrors Python's Link.no_inbound_for().
 func (l *Link) NoInboundFor() time.Duration {
 	if l == nil {
 		return 0
@@ -2271,9 +2282,8 @@ func (l *Link) NoInboundFor() time.Duration {
 	return l.nowTime().Sub(last)
 }
 
-// NoOutboundFor returns how long it has been since the link last
-// sent a packet to the remote peer. It is the Go port of Python's
-// Link.no_outbound_for().
+// NoOutboundFor returns how long it has been since the link last sent a packet
+// to the remote peer. Mirrors Python's Link.no_outbound_for().
 func (l *Link) NoOutboundFor() time.Duration {
 	if l == nil {
 		return 0
@@ -2284,10 +2294,10 @@ func (l *Link) NoOutboundFor() time.Duration {
 	return l.nowTime().Sub(last)
 }
 
-// NoDataFor returns the time in seconds since payload data (excluding
-// keepalive packets) traversed the link. It is the Go port of Python's
-// Link.no_data_for(), which is `time.time() - self.last_data`. last_data
-// is advanced only by non-keepalive inbound and outbound packets.
+// NoDataFor returns the time in seconds since payload data (excluding keepalive
+// packets) traversed the link. Mirrors Python's Link.no_data_for(), which is
+// `time.time() - self.last_data`. last_data is advanced only by non-keepalive
+// inbound and outbound packets.
 func (l *Link) NoDataFor() time.Duration {
 	if l == nil {
 		return 0
@@ -2299,8 +2309,8 @@ func (l *Link) NoDataFor() time.Duration {
 }
 
 // InactiveFor returns the time in seconds since any activity (including
-// keepalive packets) on the link. It is the Go port of Python's
-// Link.inactive_for(), which is min(no_inbound_for, no_outbound_for).
+// keepalive packets) on the link. Mirrors Python's Link.inactive_for(), which
+// is min(no_inbound_for, no_outbound_for).
 func (l *Link) InactiveFor() time.Duration {
 	in := l.NoInboundFor()
 	out := l.NoOutboundFor()
@@ -2319,9 +2329,8 @@ func (l *Link) nowTime() time.Time {
 	return time.Now()
 }
 
-// TrackPHYStats enables or disables the link-level physical-layer
-// statistics (RSSI, SNR, link quality). It is the Go port of
-// Python's Link.track_phy_stats().
+// TrackPHYStats enables or disables the link-level physical-layer statistics
+// (RSSI, SNR, link quality). Mirrors Python's Link.track_phy_stats().
 func (l *Link) TrackPHYStats(track bool) {
 	if l == nil {
 		return
@@ -2331,9 +2340,8 @@ func (l *Link) TrackPHYStats(track bool) {
 	l.trackPHYStats = track
 }
 
-// GetRSSI returns the link's last-recorded RSSI in dBm, or nil if
-// PHY stats tracking is disabled. It is the Go port of Python's
-// Link.get_rssi().
+// GetRSSI returns the link's last-recorded RSSI in dBm, or nil if PHY stats
+// tracking is disabled. Mirrors Python's Link.get_rssi().
 func (l *Link) GetRSSI() *float64 {
 	if l == nil {
 		return nil
@@ -2347,9 +2355,8 @@ func (l *Link) GetRSSI() *float64 {
 	return &v
 }
 
-// GetSNR returns the link's last-recorded SNR in dB, or nil if
-// PHY stats tracking is disabled. It is the Go port of Python's
-// Link.get_snr().
+// GetSNR returns the link's last-recorded SNR in dB, or nil if PHY stats
+// tracking is disabled. Mirrors Python's Link.get_snr().
 func (l *Link) GetSNR() *float64 {
 	if l == nil {
 		return nil
@@ -2363,9 +2370,8 @@ func (l *Link) GetSNR() *float64 {
 	return &v
 }
 
-// GetQ returns the link's last-recorded link quality, or nil if
-// PHY stats tracking is disabled. It is the Go port of Python's
-// Link.get_q().
+// GetQ returns the link's last-recorded link quality, or nil if PHY stats
+// tracking is disabled. Mirrors Python's Link.get_q().
 func (l *Link) GetQ() *float64 {
 	if l == nil {
 		return nil
@@ -2379,9 +2385,8 @@ func (l *Link) GetQ() *float64 {
 	return &v
 }
 
-// RegisterOutgoingResource adds the resource to the link's outgoing
-// resources list. It is the Go port of Python's
-// Link.register_outgoing_resource().
+// RegisterOutgoingResource adds the resource to the link's outgoing resources
+// list. Mirrors Python's Link.register_outgoing_resource().
 func (l *Link) RegisterOutgoingResource(r *Resource) {
 	if l == nil || r == nil {
 		return
@@ -2391,9 +2396,8 @@ func (l *Link) RegisterOutgoingResource(r *Resource) {
 	l.outgoingResources = append(l.outgoingResources, r)
 }
 
-// RegisterIncomingResource adds the resource to the link's incoming
-// resources list. It is the Go port of Python's
-// Link.register_incoming_resource().
+// RegisterIncomingResource adds the resource to the link's incoming resources
+// list. Mirrors Python's Link.register_incoming_resource().
 func (l *Link) RegisterIncomingResource(r *Resource) {
 	if l == nil || r == nil {
 		return
@@ -2403,9 +2407,8 @@ func (l *Link) RegisterIncomingResource(r *Resource) {
 	l.incomingResources = append(l.incomingResources, r)
 }
 
-// HasIncomingResource reports whether the link currently has the
-// given resource registered as incoming. It is the Go port of
-// Python's Link.has_incoming_resource().
+// HasIncomingResource reports whether the link currently has the given resource
+// registered as incoming. Mirrors Python's Link.has_incoming_resource().
 func (l *Link) HasIncomingResource(r *Resource) bool {
 	if l == nil || r == nil {
 		return false
@@ -2415,9 +2418,8 @@ func (l *Link) HasIncomingResource(r *Resource) bool {
 	return slices.Contains(l.incomingResources, r)
 }
 
-// CancelOutgoingResource removes the resource from the link's
-// outgoing resources list. It is the Go port of Python's
-// Link.cancel_outgoing_resource().
+// CancelOutgoingResource removes the resource from the link's outgoing
+// resources list. Mirrors Python's Link.cancel_outgoing_resource().
 func (l *Link) CancelOutgoingResource(r *Resource) {
 	if l == nil || r == nil {
 		return
@@ -2432,9 +2434,8 @@ func (l *Link) CancelOutgoingResource(r *Resource) {
 	}
 }
 
-// CancelIncomingResource removes the resource from the link's
-// incoming resources list. It is the Go port of Python's
-// Link.cancel_incoming_resource().
+// CancelIncomingResource removes the resource from the link's incoming
+// resources list. Mirrors Python's Link.cancel_incoming_resource().
 func (l *Link) CancelIncomingResource(r *Resource) {
 	if l == nil || r == nil {
 		return
@@ -2449,9 +2450,8 @@ func (l *Link) CancelIncomingResource(r *Resource) {
 	}
 }
 
-// ReadyForNewResource reports whether the link is ready to accept
-// new incoming resources. It is the Go port of Python's
-// Link.ready_for_new_resource().
+// ReadyForNewResource reports whether the link is ready to accept new incoming
+// resources. Mirrors Python's Link.ready_for_new_resource().
 func (l *Link) ReadyForNewResource() bool {
 	if l == nil {
 		return false

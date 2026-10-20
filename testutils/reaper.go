@@ -10,8 +10,8 @@ import (
 // StartWithReaper starts cmd and arms a detached watchdog that SIGKILLs the
 // child if this test binary dies while the child is still running. A go test
 // timeout (panic + os.Exit), Ctrl-C, or a crash skips every t.Cleanup and
-// defer, which previously orphaned long-running test children (the rrc
-// mini-hub's Python processes, reparented to init and running forever).
+// defer, which would otherwise orphan long-running test children such as the
+// rrc mini-hub's processes.
 //
 // macOS has no Pdeathsig, so the watchdog is a detached /bin/sh process that
 // polls this process's PID once a second. It exits on its own once either

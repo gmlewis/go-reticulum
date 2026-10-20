@@ -39,7 +39,7 @@ import (
 // HubDestName is the destination name every RRC hub answers on.
 const HubDestName = rrc.HubDestName
 
-// Reply limits and wordings that come from the captured oracle transcript.
+// Reply limits and command wordings.
 const (
 	// weatherFailedLine is the official bot's weather failure wording; the
 	// requester's nick is substituted in.
@@ -123,7 +123,7 @@ var commandCategories = []commandCategory{
 // The whole tree lives in this one table, rather than in a field on each of the
 // dozens of command entries, so it is possible to see at a glance that every
 // behavior has exactly one listed name, every name has a home, and no alias is
-// silently forgotten — a hand-maintained alias map once left "med" out.
+// silently forgotten.
 type commandTaxonomy struct {
 	category string
 	aliases  []string
@@ -411,8 +411,6 @@ func (r *registry) lineBudget(name string) int {
 	return cmd.replyBudget
 }
 
-// Run executes one addressed command line. It is the commandRunner the reply
-// policy calls, so its result is exactly the reply lines.
 // config returns the operator's configuration, or nil when the registry was
 // built without a bot (unit tests), in which case help prints no configuration
 // guidance.
@@ -483,6 +481,8 @@ func (r *registry) RunLocal(line string) []string {
 	return cmd.run(&commandContext{reg: r, req: &commandRequest{Command: line, Now: time.Now()}, Args: args})
 }
 
+// Run executes one addressed command line. It is the commandRunner the reply
+// policy calls, so its result is exactly the reply lines.
 func (r *registry) Run(req *commandRequest) []string {
 	name, args := splitCommandLine(req.Command)
 	if name == "" {
@@ -1623,10 +1623,9 @@ func (c *commandContext) runRooms() []string {
 // NOTICE of that shape as protocol traffic rather than conversation: it replaces
 // the client's member set for the room (rrc/hub.go, ParseWhoNotice and
 // applyWhoReply) and, whenever the client has its periodic auto-/who outstanding,
-// consumeWhoReply swallows it whole — so the answer was both invisible and able
-// to corrupt the member list of every client in the room. Observed live: the bot
-// logged "replied ... with 1 notice(s)" while neither of two clients displayed
-// anything. TestMembersReplyIsNotProtocolTraffic guards the shape.
+// consumeWhoReply swallows it whole, so the answer would be both invisible and
+// able to corrupt the member list of every client in the room.
+// TestMembersReplyIsNotProtocolTraffic guards the shape.
 func (c *commandContext) roomMemberLines(room string) []string {
 	room = normalizeRoom(room)
 	if room == "" {
@@ -1793,7 +1792,7 @@ func (r *registry) historyStore(s *hubSession) *historyStore {
 }
 
 // pyBool renders a boolean the way the official bot's Python does, because the
-// captured oracle wording is "True" and "False".
+// reply wording is "True" and "False".
 func pyBool(v bool) string {
 	if v {
 		return "True"

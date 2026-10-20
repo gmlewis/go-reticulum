@@ -13,11 +13,10 @@ import (
 	"runtime"
 )
 
-// The live RNode EEPROM/firmware/signing workflows require a working serial
-// termios layer. On platforms without one (everything other than linux,
-// darwin, and freebsd) they return a clear "not supported" error instead of
-// failing to link. These stubs complete the "other" bucket so the binary
-// builds on every GOOS.
+// The live RNode EEPROM, firmware and signing workflows require a working
+// serial termios layer. On platforms without one (everything other than
+// Linux, Darwin and FreeBSD) these stubs return a "not supported" error so
+// the binary still builds on every GOOS.
 
 func (rt cliRuntime) runEEPROMBootstrap(out io.Writer, port string, opts options) error {
 	return fmt.Errorf("EEPROM bootstrap not supported on platform %v", runtime.GOOS)

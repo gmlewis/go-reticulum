@@ -172,10 +172,10 @@ func TestForwardPathRequestToLocalClientsFullMode(t *testing.T) {
 	}
 }
 
-// TestForwardPathRequestRecursivePrsFullModeSource covers the "regardless of
-// mode" wording directly: a Full-mode attached interface (Full is
-// not in DISCOVER_PATHS_FOR and not boundary) with recursive_prs=true still
-// emits recursive path requests on all online interfaces.
+// TestForwardPathRequestRecursivePrsFullModeSource verifies that a Full-mode
+// attached interface (Full is not in DISCOVER_PATHS_FOR and not boundary) with
+// recursive_prs=true still emits recursive path requests on all online
+// interfaces.
 func TestForwardPathRequestRecursivePrsFullModeSource(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)

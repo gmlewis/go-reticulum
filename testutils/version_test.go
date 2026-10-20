@@ -20,10 +20,10 @@ func TestRNSVersionFromSourceReadsTheVersionFile(t *testing.T) {
 	}
 }
 
-// TestVersionFlagRetriesWhenTheArtifactIsNewerThanTheSource covers the version
-// bump this helper exists for: the first probe sees an artifact whose reported
-// version no longer matches the source, and the retry succeeds once the probe
-// rebuilds from the bumped source.
+// TestVersionFlagRetriesWhenTheArtifactIsNewerThanTheSource pins the stale
+// artifact retry: the first probe sees an artifact whose reported version no
+// longer matches the source, and the retry succeeds once the probe rebuilds
+// from the bumped source.
 func TestVersionFlagRetriesWhenTheArtifactIsNewerThanTheSource(t *testing.T) {
 	t.Parallel()
 

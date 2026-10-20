@@ -65,9 +65,8 @@ func (f *flakyInterface) attemptCount() int {
 // flapping uplink — a TCP peer whose connection is replaced under the write —
 // that one send can fail and the request, the response or the announce it
 // carried is gone for good, with nothing but a log line. Python has the same
-// fire-and-forget shape, so this is where the port can be better than the
-// original rather than merely equal to it: the frame is cheap to re-send, and
-// the interface's own up/down transition (not a retry count) is what stops the
+// fire-and-forget shape, but the frame is cheap to re-send, and the
+// interface's own up/down transition (not a retry count) is what stops the
 // attempts on a peer that is genuinely down.
 func TestDispatchForwardSendRetriesTransientFailure(t *testing.T) {
 	t.Parallel()
@@ -145,9 +144,9 @@ func TestDispatchForwardSendGivesUpOnADownInterface(t *testing.T) {
 }
 
 // TestHandlePathRequestRetriesFailedSend pins the same retry on the path
-// response that answers a request for a LOCAL destination. This response used
-// to be sent once, inline, on the receiving interface; a single failed write
-// consumed the request and the requestor never learned the path.
+// response that answers a request for a LOCAL destination. Sending it once,
+// inline, on the receiving interface would let a single failed write consume
+// the request, leaving the requestor without a path.
 func TestHandlePathRequestRetriesFailedSend(t *testing.T) {
 	t.Parallel()
 

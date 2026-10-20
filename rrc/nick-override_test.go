@@ -43,7 +43,7 @@ func nickOf(hub *RRCHub, room, hashHex string) string {
 // TestSetNickOverrideUpdatesTheUsersPane pins the immediate feedback a /nick
 // change owes the user: the Users pane renders every member through the
 // learned nick table, and the hub only learns our nick from our next message,
-// so without this the user's own row kept the previous name until they spoke
+// so without this the user's own row keeps the previous name until they speak
 // again.
 func TestSetNickOverrideUpdatesTheUsersPane(t *testing.T) {
 	t.Parallel()

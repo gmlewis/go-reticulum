@@ -116,9 +116,8 @@ func TestCreateDefaultConfigMatchesPythonShape(t *testing.T) {
 // TestDefaultConfigLoggingCommentMatchesPython pins the [logging] section's
 // log-level comment to match the Python Reticulum default config (Reticulum.py
 // __default_rns_config__: "0 through 8" with "7: Path logging" and
-// "8: Extreme logging"). The Go port previously shipped a stale "0 through 7"
-// comment, which was a parity gap surfaced by the gonomadnet embedded-editor
-// A/B (the editor renders the config file verbatim).
+// "8: Extreme logging"). The comment must be verbatim: the config editor renders
+// the file as written.
 func TestDefaultConfigLoggingCommentMatchesPython(t *testing.T) {
 	t.Parallel()
 	tmp := testutils.TempDir(t, tempDirPrefix)
@@ -279,8 +278,7 @@ func TestReticulumParsesStaticTransportIdentity(t *testing.T) {
 	// Both configs below set share_instance = No: the shared-instance role is
 	// irrelevant to the identity assertions, and the default (Yes) would claim
 	// the machine-global instance name @rns/default with @rns/default/rpc on
-	// Linux, which parallel tests in this package also bind (the 2026-09-12
-	// "bind: address already in use" CI failure).
+	// Linux, which parallel tests in this package also bind.
 	dir1 := testutils.TempDir(t, tempDirPrefix)
 	cfg1 := "[reticulum]\nenable_transport = No\nshare_instance = No\nstatic_transport_identity = Yes\n\n[logging]\nloglevel = 2\n\n[interfaces]\n"
 	if err := os.WriteFile(filepath.Join(dir1, "config"), []byte(cfg1), 0o600); err != nil {
@@ -926,7 +924,7 @@ loglevel = 4
 	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
-	// On a supported platform (darwin) an unavailable port no longer fails
+	// On a supported platform (darwin) an unavailable port does not fail
 	// construction: the interface is registered offline with a background
 	// reconnect (Python-faithful self-heal, RNodeInterface.__init__). On an
 	// unsupported platform the stub errors and nothing registers.

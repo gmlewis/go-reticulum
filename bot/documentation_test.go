@@ -39,10 +39,8 @@ func documentedCommands(text string) map[string]bool {
 }
 
 // TestEveryCommandIsDocumented asserts the registry and the documentation name the
-// same commands. A command that a refactor adds, renames, or drops and no document
-// follows is invisible to a reader who has only the docs, which is how the last
-// refactor left `kjv` out of the reference page and four commands out of the README
-// table.
+// same commands. A command that is added, renamed, or dropped without a document
+// following is invisible to a reader who has only the docs.
 func TestEveryCommandIsDocumented(t *testing.T) {
 	t.Parallel()
 
@@ -63,9 +61,7 @@ func TestEveryCommandIsDocumented(t *testing.T) {
 
 // TestUsageLinesNameTheirOwnCommand asserts a command's usage line begins with its
 // own name. A usage line that names something else — an alias, or a sibling view of
-// the same catalog — tells a reader to type a command they did not ask about, which
-// is what `help alerts` did while its usage began with "wxalert" and what `help cell`
-// did while its usage began with "tower".
+// the same catalog — tells a reader to type a command they did not ask about.
 func TestUsageLinesNameTheirOwnCommand(t *testing.T) {
 	t.Parallel()
 

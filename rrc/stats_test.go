@@ -12,8 +12,8 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
-// G5.5: the golden full-string output for a fixed counter snapshot,
-// newline-separated so MTU chunking delivers complete stat lines.
+// TestFormatStatsGolden pins the golden full-string output for a fixed counter
+// snapshot, newline-separated so MTU chunking delivers complete stat lines.
 func TestFormatStatsGolden(t *testing.T) {
 	t.Parallel()
 	wall := 1730000000.0

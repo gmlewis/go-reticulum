@@ -24,9 +24,7 @@ import (
 
 // TestHostPortAddrBracketsIPv6Literals pins the contract of hostPortAddr: an
 // IPv6 literal must be bracketed so the result is a valid net address, while
-// IPv4 and host names pass through untouched. The helper previously served only
-// the __str__/hash rendering, which is why the bug it guards against went
-// unnoticed: connect() built its dial address by hand instead.
+// IPv4 and host names pass through untouched.
 func TestHostPortAddrBracketsIPv6Literals(t *testing.T) {
 	t.Parallel()
 
@@ -43,13 +41,8 @@ func TestHostPortAddrBracketsIPv6Literals(t *testing.T) {
 		{"ipv6 unspecified", "::", 0, "[::]:0"},
 		// A literal that arrives ALREADY bracketed is how the standard IPv6 notation is
 		// written, and how a config file naturally writes it. Bracketing it a second time
-		// produced "[[::]]:port", which net rejects with "missing port in address" — a message
-		// that names neither the bracket nor the file it came from.
-		//
-		// That one case cost a fleet its hub. A hub configured with listen_ip = [::] failed to
-		// bind, gornsd logged the error once and skipped the interface, and every client in the
-		// fleet was refused while the operator could see the service active and the config
-		// correct. The net.SplitHostPort check below is what catches it.
+		// would produce "[[::]]:port", which net rejects with "missing port in address".
+		// The net.SplitHostPort check below is what catches it.
 		{"ipv6 unspecified already bracketed", "[::]", 4242, "[::]:4242"},
 		{"ipv6 loopback already bracketed", "[::1]", 4242, "[::1]:4242"},
 		{"ipv6 full already bracketed", "[2603:900b:3300:a::1be9]", 4242, "[2603:900b:3300:a::1be9]:4242"},
@@ -72,9 +65,9 @@ func TestHostPortAddrBracketsIPv6Literals(t *testing.T) {
 	}
 }
 
-// TestTCPConcatHostPortIsUndialable documents the failure the IPv6 fix removes:
-// a bare "host:port" concatenation of an IPv6 literal is rejected by the net
-// package before any I/O happens, so every IPv6 TCP interface was dead.
+// TestTCPConcatHostPortIsUndialable documents why hostPortAddr must bracket: a
+// bare "host:port" concatenation of an IPv6 literal is rejected by the net
+// package before any I/O happens.
 func TestTCPConcatHostPortIsUndialable(t *testing.T) {
 	t.Parallel()
 
@@ -84,19 +77,18 @@ func TestTCPConcatHostPortIsUndialable(t *testing.T) {
 	}
 }
 
-// TestTCPClientInterfaceConnectsToIPv6Literal is the regression test: a
-// TCPClientInterface whose target is a bare IPv6 literal must reach running
-// state. Before the fix, connect() dialled "::1:PORT" and failed with
-// "dial tcp: address ::1:PORT: too many colons in address", leaving the
-// interface permanently down on an IPv6-only hub.
+// TestTCPClientInterfaceConnectsToIPv6Literal verifies that a
+// TCPClientInterface whose target is a bare IPv6 literal reaches running state;
+// a hand-built "::1:PORT" dial address is rejected with "too many colons in
+// address" and would leave the interface permanently down on an IPv6-only hub.
 func TestTCPClientInterfaceConnectsToIPv6Literal(t *testing.T) {
 	t.Parallel()
 
 	// The port is held by a listener until the server adopts it (see
 	// reserveHeldIPv6TCPPort): this test is about the *client* reaching an IPv6
 	// literal, and the literal is still resolved for real on the client's dial.
-	// Releasing a probe here instead let a parallel test claim the port, which
-	// failed the bind with "address already in use" under -race -count=5.
+	// Releasing a probe would let a parallel test claim the port and fail the
+	// bind with "address already in use".
 	port := reserveHeldIPv6TCPPort(t)
 
 	server := mustTestNewTCPServerInterface(t, "v6-server", "::1", port, func([]byte, Interface) {})
@@ -108,18 +100,11 @@ func TestTCPClientInterfaceConnectsToIPv6Literal(t *testing.T) {
 	waitForIfaceRunning(t, client, 2*time.Second)
 }
 
-// TestTCPServerInterfaceBindsAnAlreadyBracketedIPv6Literal is the guard that must never be
-// deleted, and it is deliberately behavioural rather than a formatting check.
-//
-// A config file writing the standard IPv6 notation — `listen_ip = [::]` — must produce a hub
-// that binds, listens and accepts. Bracketing that literal a second time yields "[[::]]:port",
-// which net refuses with "missing port in address", a message that names neither the bracket
-// nor the file. gornsd then logs the failure once, skips the interface, and goes on reporting
-// itself healthy, so the operator sees an active service and a correct-looking config while
-// every client in the fleet is refused. That is exactly what took a whole network down, and it
-// happened after an earlier repair had been made by editing the config instead of the code —
-// which is why this asserts on the code's own behaviour and never on what a config happens to
-// say today.
+// TestTCPServerInterfaceBindsAnAlreadyBracketedIPv6Literal verifies that a config
+// file writing the standard IPv6 notation — `listen_ip = [::]` — produces a hub
+// that binds, listens and accepts. It asserts on the code's own behaviour, not
+// on a formatted string: bracketing the literal a second time yields "[[::]]:port",
+// which net refuses with "missing port in address", and the hub would never bind.
 func TestTCPServerInterfaceBindsAnAlreadyBracketedIPv6Literal(t *testing.T) {
 	t.Parallel()
 
@@ -164,8 +149,8 @@ func bracketedIPv6ServerBindsAndAccepts(t *testing.T, bindIP string, port int) b
 	}
 	defer func() { _ = server.Detach() }()
 
-	// Binding is not enough: the listener has to accept, or the hub is up on paper
-	// exactly as it was while the fleet was down.
+	// Binding is not enough: the listener has to accept, or the hub is up on
+	// paper only.
 	conn, err := net.DialTimeout("tcp", hostPortAddr(bindIP, port), 2*time.Second)
 	if err != nil {
 		t.Fatalf("nothing accepted on the address derived from listen_ip = %v: %v", bindIP, err)

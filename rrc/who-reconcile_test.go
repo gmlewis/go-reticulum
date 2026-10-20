@@ -21,14 +21,12 @@ import (
 	"time"
 )
 
-// The fleet's 2026-09-03 20:5x captures showed every client's member count
-// frozen at its own join-time snapshot (6/6/6/5/3/4 across six nodes on ONE
-// hub — even the Python SOT was wrong). rrcd's include_joined_member_list
+// Membership stays correct through a periodic silent /who reconciliation
+// plus reply-as-authority semantics. rrcd's include_joined_member_list
 // defaults to FALSE, so JOINED/PARTED fanouts carry body=None and no member
-// data, and the /who reply was only used to decorate members already in the
-// set — so membership never healed and parted members were never removed.
-// The periodic silent /who reconciliation plus the reply-as-authority
-// semantics heal every client to the hub's live list.
+// data; the /who reply is therefore the only authoritative source and must
+// replace the room's member set rather than decorate it, or departed members
+// are never removed.
 
 func reconcileFixture(t *testing.T) (*RRCManager, *RRCHub, *[]string) {
 	t.Helper()
@@ -194,11 +192,10 @@ func TestWhoReplyEmptyListEmptiesRoom(t *testing.T) {
 	}
 }
 
-// TestAutoWhoMarkerConsumesEveryReplyCopy pins the rrcd 0.3.2 fanout fix: the
-// hub fans the who-notice out once per room member, so the auto-request
-// marker must consume EVERY reply copy (a one-shot delete on the first copy
-// leaked the marker and the duplicates flooded the conversation window every
-// 60 s sweep — observed live). The marker stays set after the burst.
+// TestAutoWhoMarkerConsumesEveryReplyCopy pins the rrcd 0.3.2 fanout shape:
+// the hub fans the who-notice out once per room member, so the auto-request
+// marker must consume every reply copy, and the marker stays set after the
+// burst.
 func TestAutoWhoMarkerConsumesEveryReplyCopy(t *testing.T) {
 	t.Parallel()
 

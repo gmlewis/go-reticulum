@@ -20,12 +20,9 @@ import (
 	"testing"
 )
 
-// fanoutBurstFixture replays the REAL rrcd 0.3.2 fanout burst of the
-// 2026-09-03 12:26:55 A1 forward (~/rrcd-run.log:5039-5041: "Forwarded
-// t=20 peer=0a8b370a62de nick=None room=test recipients=6" — six per-member
-// copies with per-copy rewritten source hashes and registry nicks; the
-// registry nicks come from the log's JOIN lines). Copies with an empty nick
-// are the rrcd registry-miss case the A2 capture symptom rode on.
+// fanoutBurstFixture replays an rrcd 0.3.2 fanout burst: six per-member
+// copies with per-copy rewritten source hashes and registry nicks. Copies with
+// an empty nick are the registry-miss case.
 // zeroPad extends an rrcd 12-hex registry peer id to a full 32-byte
 // destination hash (the wire form the JOINED fanout body carries).
 const zeroPad = "0000000000000000000000000000000000000000000000000000"
@@ -56,7 +53,7 @@ func fanoutBurst(t *testing.T, h *RRCHub) {
 // (RRC.py:1031-1035) replayed through the burst: every copy with a non-empty
 // nick learns nicks[src] = nick AND adds src to the room's member set (an
 // empty-nick copy learns NOTHING — the learning block is gated on the nick),
-// and the collapse still renders the burst ONCE (the user-ordered deviation)
+// and the collapse still renders the burst ONCE (a deliberate divergence)
 // with the backfilled nick.
 func TestFanoutBurstLearningReplay(t *testing.T) {
 	t.Parallel()

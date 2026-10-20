@@ -71,8 +71,8 @@ func TestPacketReceiptCheckTimeout(t *testing.T) {
 
 // TestPacketReceiptCheckTimeoutFiresOnce verifies that repeated passes over the
 // same receipt — which is what the transport sweep and the channel's retry pass
-// both do once a second — retire it exactly once. Before the SENT guard the
-// callback fired on every pass, which for a channel envelope means a retry storm.
+// both do once a second — retire it exactly once. Without the SENT guard the
+// callback would fire on every pass, a retry storm for a channel envelope.
 func TestPacketReceiptCheckTimeoutFiresOnce(t *testing.T) {
 	t.Parallel()
 
@@ -95,11 +95,10 @@ func TestPacketReceiptCheckTimeoutFiresOnce(t *testing.T) {
 	}
 }
 
-// TestProcessReceiptsLeavesUnwatchedReceiptsAlone pins the Go-only conservatism
-// in TransportSystem.processReceipts: a receipt nobody registered a timeout
+// TestProcessReceiptsLeavesUnwatchedReceiptsAlone pins the conservative rule in
+// TransportSystem.processReceipts: a receipt nobody registered a timeout
 // callback for is never expired, however long it sits. Python arms and sweeps
-// every receipt, but with no observer there is nothing for the expiry to mean,
-// and inventing one is how a mesh-wide spurious teardown would start.
+// every receipt, but with no observer there is nothing for the expiry to mean.
 func TestProcessReceiptsLeavesUnwatchedReceiptsAlone(t *testing.T) {
 	t.Parallel()
 

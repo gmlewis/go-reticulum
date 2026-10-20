@@ -115,11 +115,9 @@ func runGornodeconfWithEnv(extraEnv map[string]string, args ...string) (string, 
 	return runGornodeconfWithInputAndEnv("", extraEnv, args...)
 }
 
-// gornodeconfBinaryOnce lazily builds the gornodeconf binary exactly once, the
-// first time a test invokes the runner. (A TestMain prebuild would also tax
-// unit-only and -short runs of this package, which never use the binary; a
-// lazy build keeps ~20 `go run .` full compiles off the per-test wall clock
-// without that cost.)
+// gornodeconfBinaryOnce builds the gornodeconf binary once, the first time a
+// test invokes the runner. Building lazily keeps unit-only and -short runs,
+// which never use the binary, from paying for a compile.
 var (
 	gornodeconfBinaryOnce sync.Once
 	gornodeconfBinaryPath string

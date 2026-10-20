@@ -149,8 +149,7 @@ func TestGolxmd_Status_WithNoRemote(t *testing.T) {
 		t.Skipf("could not generate identity for status test: %v\n%v", err, string(genOut))
 	}
 
-	// Try to get status (will fail without a running remote, but should fail gracefully)
-	// This test verifies the error handling path
+	// Without a running remote the status query must fail gracefully.
 	out, err := exec.Command(golxmdBin, "--status", "--config", configDir, "--rnsconfig", configDir, "--timeout", "1").CombinedOutput()
 	// We expect this to fail (no remote running), but it should fail with a proper error
 	if err == nil {
@@ -260,11 +259,11 @@ func TestGolxmd_Status_OutputFormat(t *testing.T) {
 		t.Fatalf("could not generate identity: %v\n%v", err, string(genOut))
 	}
 
-	// Run with --status (will timeout but we can check output format)
 	out, _ := exec.Command(golxmdBin, "--status", "--config", configDir, "--rnsconfig", configDir, "--timeout", "1").CombinedOutput()
 	output := string(out)
 
-	// If we got a successful response (unlikely without remote), check format
+	// A successful response is unlikely without a remote, so only check the
+	// format when one arrives.
 	if strings.Contains(output, "LXMF Propagation Node running on") {
 		// Verify key format elements are present
 		requiredPatterns := []string{
@@ -406,25 +405,20 @@ func TestGolxmd_Break_Timeout(t *testing.T) {
 	// Create a valid destination hash (32 hex chars = 16 bytes)
 	validHash := "0123456789abcdef0123456789abcdef"
 
-	// Run with -b (break/unpeer) - should timeout since no remote running.
+	// Run with -b (break/unpeer); it should time out since no remote is running.
 	//
-	// The --timeout 1 bounds the *operation* wait, but total wall-clock elapsed
-	// also includes RNS init (identity load, transport/interfaces setup,
-	// announce), which is machine/load dependent. When run under heavy
-	// parallel -race load the golxmd subprocess can be CPU-starved enough that
-	// RNS init alone exceeds the 1s operation timeout, in which case
-	// requestUnpeer exits immediately with "timed out" and elapsed equals the
-	// init time (observed ~6.7s). So elapsed is ~1s on a fast/idle machine but
-	// grows with load; it must NOT be asserted into a tight window. The real
-	// behavioral guarantees are: (a) it actually waited for the timeout rather
-	// than returning instantly, and (b) it did not hang. The "timed out"
-	// message is the primary assertion.
+	// The --timeout 1 bounds only the operation wait, while the elapsed
+	// wall-clock time also includes RNS init (identity load, transport and
+	// interface setup, announce), which is machine and load dependent. Elapsed
+	// must therefore not be asserted into a tight window: the guarantees are
+	// that the command waited for the timeout rather than returning instantly,
+	// and that it did not hang. The "timed out" message is the primary
+	// assertion.
 	start := time.Now()
 	out, err := exec.Command(golxmdBin, "-b", validHash, "--config", configDir, "--rnsconfig", configDir, "--timeout", "1").CombinedOutput()
-	// Exit code 200 is the expected "operation timed out" result for golxmd
-	// when no remote is reachable (see remote-init.go requestUnpeer). The
-	// whole point of this test is to observe that timeout, so exit 200 is a
-	// success, not a failure. Any other error is a real problem.
+	// Exit code 200 is the expected "operation timed out" result when no remote
+	// is reachable (see remote-init.go requestUnpeer), so it counts as success
+	// here; any other error is a real problem.
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 200 {
 			t.Fatalf("glxmd: %v\n%v", err, string(out))
@@ -452,9 +446,9 @@ func TestGolxmd_Break_Timeout(t *testing.T) {
 }
 
 // TestGolxmd_PropagationNodeHonorsNewConfigKeys verifies that a propagation
-// node configured with the four new v1.1.0 config keys (stamp_cost,
-// sequential_pn_stamp_validation, static_peers_bypass_sequential,
-// max_inbound_syncs) honors them: the config parses to the expected
+// node honors the stamp_cost, sequential_pn_stamp_validation,
+// static_peers_bypass_sequential, and max_inbound_syncs config keys: the
+// config parses to the expected
 // activeConfig values, NewRouterFromConfig accepts the propagation settings
 // without error, the delivery identity's inbound stamp cost reflects the
 // configured stamp_cost, and the propagation destination registers
@@ -493,7 +487,7 @@ stamp_cost = 8
 		t.Fatalf("loadConfig failed: %v", err)
 	}
 
-	// Verify the four new keys parsed to the expected activeConfig values.
+	// Verify the four keys parsed to the expected activeConfig values.
 	if ac.PeerStampCost == nil || *ac.PeerStampCost != 8 {
 		t.Fatalf("PeerStampCost = %v, want 8", ac.PeerStampCost)
 	}
@@ -518,7 +512,7 @@ stamp_cost = 8
 	}
 
 	// Create the router with the configured propagation settings. This
-	// verifies the three new propagation keys are accepted by
+	// verifies the three propagation keys are accepted by
 	// NewRouterFromConfig without error. The inversion of
 	// static_peers_bypass_sequential (False here) yields
 	// StaticSequential=true.
@@ -563,8 +557,8 @@ stamp_cost = 8
 	}
 
 	// Enable propagation and register the propagation destination to verify
-	// the node starts cleanly with the new sequential/max_inbound_syncs
-	// settings applied.
+	// the node starts cleanly with the sequential/max_inbound_syncs settings
+	// applied.
 	router.SetMessageStorageLimit(ac.MessageStorageLimit)
 	router.EnablePropagation()
 	if _, err := router.RegisterPropagationDestination(); err != nil {

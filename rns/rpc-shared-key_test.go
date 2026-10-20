@@ -22,9 +22,8 @@ import (
 // saved in the machine's storage, and not from the operative identity — which a process that
 // does not own the transport replaces with an ephemeral one of its own (Transport.py:234-237).
 // On a desktop both processes share one storage directory, so both derive the same key and the
-// RPC works. A port that keyed off the operative identity would have the client present a key
-// the instance never published, and every call would come back "unauthorized" — an appliance
-// that is connected, reported as though it were not.
+// RPC works. Keying off the operative identity instead would have the client present a key the
+// instance never published, and every call would come back "unauthorized".
 
 // rpcFreePort returns a port nothing is listening on, for a test's control listener.
 func rpcFreePort(t *testing.T) int {
@@ -113,9 +112,7 @@ func TestAttachedClientSharesTheInstanceRPCKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the client's interface stats were refused: %v", err)
 	}
-	// The instance's own interfaces, which is what the client cannot know by itself: it owns
-	// none, so an empty answer here is the appliance showing an Interfaces page that lists a
-	// network it is not actually on.
+	// The instance's own interfaces, which the client cannot know by itself: it owns none.
 	if !rpcHasInterface(snapshot, "Home Hub") {
 		t.Errorf("the client does not see the interface the instance owns: %v", rpcInterfaceNames(snapshot))
 	}
@@ -184,10 +181,9 @@ func rpcInterfaceNames(snapshot *InterfaceStatsSnapshot) []string {
 	return names
 }
 
-// TestAClientWithNoStatedKeyIsRefused covers the failure this all exists to prevent, from the
-// other side: two directories and no stated key is two different keys, and the client is told
-// so rather than being handed an empty interface list that looks like a transport with nothing
-// configured.
+// TestAClientWithNoStatedKeyIsRefused covers the other side of the key rule: two directories
+// and no stated key is two different keys, and the client is told so rather than being handed
+// an empty interface list that looks like a transport with nothing configured.
 func TestAClientWithNoStatedKeyIsRefused(t *testing.T) {
 	t.Parallel()
 

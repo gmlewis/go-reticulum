@@ -78,7 +78,7 @@ func TestDisablePropagationAnnouncesPropagationNode(t *testing.T) {
 }
 
 // TestDisablePropagationAnnounceIsIdempotentAndSafeWhenClosed verifies the
-// announce added to DisablePropagation cannot panic or wedge: repeated disables
+// announce in DisablePropagation cannot panic or wedge: repeated disables
 // each declare the withdrawal, and a router with no propagation destination
 // (closed) is a no-op.
 func TestDisablePropagationAnnounceIsIdempotentAndSafeWhenClosed(t *testing.T) {
@@ -104,7 +104,7 @@ func TestDisablePropagationAnnounceIsIdempotentAndSafeWhenClosed(t *testing.T) {
 }
 
 // TestPropagationNodeStateFromAppData pins the node-state reader against real
-// announce payloads captured from the livenetwork, plus the acceptance rules of
+// announce payloads captured from the live network, plus the acceptance rules of
 // Python's pn_announce_data_is_valid (all seven elements required).
 func TestPropagationNodeStateFromAppData(t *testing.T) {
 	t.Parallel()
@@ -120,8 +120,8 @@ func TestPropagationNodeStateFromAppData(t *testing.T) {
 		ok      bool
 	}{
 		{
-			// A live golxmd propagation-node announce (the fleet hub's own PN,
-			// 7acc095f…): node_state true, metadata names the node.
+			// A live golxmd propagation-node announce: node_state true, metadata
+			// names the node.
 			name:    "live_serving_node",
 			appData: mustHexDecode(t, "97c2d26ad36b28c3cb4070000000000000cb40c4000000000000931003108101c417676f2d6e6f6d61646e65742e6475636b646e732e6f7267"),
 			serving: true,

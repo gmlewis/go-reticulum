@@ -23,13 +23,7 @@ import (
 // packet and nothing more. A configured TCP client that goes down keeps its
 // registration in Transport.interfaces (TCPInterface.py:452-453 removes only
 // non-initiator interfaces), so its paths stay until the age-based cull.
-//
-// The Go port instead purged the whole path table (and every identity behind
-// it) when one send failed on an interface that reported itself up: on
-// 2026-10-12 a single failed transmit at 08:36:34 took the local node's path
-// table from 8707 entries to 0 and its known-destination store from 8708 to
-// 1, leaving it blind for the rest of a six-hour hub outage. These cases lock
-// in the Python behaviour for every send path that used to purge.
+// These cases lock in that behavior for every send path.
 func TestFailedSendKeepsPathAndIdentity(t *testing.T) {
 	t.Parallel()
 
@@ -148,8 +142,6 @@ func TestFailedSendKeepsPathAndIdentity(t *testing.T) {
 			ts.SetEnabled(true)
 
 			// A half-open peer: it reports itself up while every write fails.
-			// That is the transition the old code treated as a reason to purge
-			// the path table.
 			dead := newStormIface("half-open")
 			dead.setUp(true)
 			ts.interfaces = append(ts.interfaces, dead)

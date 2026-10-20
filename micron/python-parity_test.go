@@ -16,10 +16,9 @@ import (
 // These tests cross-check the Go micron port against the live reference
 // Python implementation in RNS.Utilities.rngit (util.convert_markdown_to_micron
 // and highlight.highlight_code), captured fresh from the installed RNS at test
-// time. They replace the prior committed "DO NOT EDIT" golden snapshots with a
-// real Go↔Python diff, gated on testutils.SkipIfNoPythonRNS (and Pygments for
-// the colored-reference structural check) so they skip cleanly in a
-// Python-less environment and fail hard when Go diverges from Python.
+// time. They are gated on testutils.SkipIfNoPythonRNS (and Pygments for the
+// colored-reference structural check) so they skip cleanly in a Python-less
+// environment and fail hard when Go diverges from Python.
 
 // pythonCache memoizes live Python captures across tests so the convert and
 // format-block tests (which share the goldenConvert inputs) don't each spawn

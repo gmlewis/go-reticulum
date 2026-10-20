@@ -93,8 +93,8 @@ func (s *serialDiscoveryState) discover() (string, []string, error) {
 // freebsdSerialCandidateScore scores /dev entries as likely RNode serial
 // ports. FreeBSD names USB-serial callout devices /dev/cuaU* and their
 // incoming counterparts /dev/ttyU*; the callout (cuaU) is preferred for
-// opening. Unlike linux there is no /dev/serial/by-id symlink tree, so a flat
-// /dev scan (the darwin model) is used.
+// opening. Unlike Linux there is no /dev/serial/by-id symlink tree, so a flat
+// /dev scan (the Darwin model) is used.
 func freebsdSerialCandidateScore(name string) (int, bool) {
 	lowerName := strings.ToLower(name)
 

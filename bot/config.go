@@ -76,10 +76,9 @@ type BotConfig struct {
 	CooldownSecs float64
 	// AnnounceOnJoin posts one self-introduction NOTICE per room per session.
 	// It is OFF by default: an always-on bot reconnects often, and each
-	// reconnect re-introduced it into every room, so a room filled up with
-	// "I am gorrbot, an RRC bot …" lines nobody asked for. Left off, the bot
-	// behaves like any other member — it joins, leaves, and speaks only when
-	// addressed. Set announce_on_join = true to publish the greeting.
+	// reconnect posts the greeting again. Left off, the bot behaves like any
+	// other member — it joins, leaves, and speaks only when addressed. Set
+	// announce_on_join = true to publish the greeting.
 	AnnounceOnJoin bool
 	// MaxReplyLines bounds the NOTICE lines a single reply may produce.
 	MaxReplyLines int
@@ -372,11 +371,9 @@ func (d *configDecoder) warn(format string, args ...any) {
 	d.warnings = append(d.warnings, d.name+": "+fmt.Sprintf(format, args...))
 }
 
-// decodeRoot reads the keys written above any table header. Only the two path
-// keys belong there; any other known key is misplaced, and saying so turns a
-// silent drop into a visible one. Both path keys used to be dropped here without
-// a word, so a bot told to keep its identity elsewhere quietly used the default
-// path — and the template wrote exactly that shape.
+// decodeRoot reads the keys written above any table header. Only the path keys
+// belong there; any other known key is misplaced, and saying so turns a silent
+// drop into a visible one.
 func (d *configDecoder) decodeRoot(root *toml.Table) error {
 	for i := range root.Keys {
 		kv := &root.Keys[i]
@@ -1121,9 +1118,8 @@ func (d *configDecoder) finish() error {
 		names = append(names, hub.Name)
 	}
 	sort.Strings(names)
-	// A propagation node without LXMF enabled is dead configuration: saying so
-	// once at startup is the difference between an operator noticing a typo and
-	// wondering for a week why nothing is store-and-forwarded.
+	// A propagation node without LXMF enabled is dead configuration, so say so
+	// once at startup.
 	if d.cfg.LXMFPropagationNode != "" && !d.cfg.LXMFEnabled {
 		d.warn("[bot] lxmf_propagation_node is set but lxmf_enabled is false, so LXMF stays off and no message is queued")
 	}

@@ -147,7 +147,7 @@ func TestFirstAidTopicsAreDistinct(t *testing.T) {
 
 // TestFirstAidIsRegisteredWithItsAliases asserts the command, its three
 // aliases, and the alias table all agree. "med" is the one the field guides and
-// the portal chat box use, and it was once silently missing from the alias map.
+// the portal chat box use.
 func TestFirstAidIsRegisteredWithItsAliases(t *testing.T) {
 	t.Parallel()
 

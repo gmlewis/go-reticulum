@@ -16,16 +16,14 @@
 // exactly the three shapes Reticulum's own shared instance already accepts.
 //
 // The scheme is carried by the existing gps_port and compass_port settings rather
-// than by new gps_url and compass_url keys. One source is configured in one
-// place, and the precedence rule the bot already implements — a configured source
-// beats a static fallback — stays literally intact instead of growing a third
-// tier and a second precedence question.
+// than by new gps_url and compass_url keys, so one source is configured in one
+// place and the precedence rule stays single: a configured source beats a static
+// fallback.
 //
 // Two behaviours here are deliberate, and both are about a node staying useful:
 //
-// A device path behaves exactly as it always has. It is opened read-only, its
-// errors are the errors an operator already knows, and a path with no scheme is
-// never guessed at.
+// A device path is opened read-only, its errors are the ordinary file errors an
+// operator knows, and a path with no scheme is never guessed at.
 //
 // A socket that cannot be reached does not stop the node. The sensor service
 // lives in another application and may not have started yet, so a failed dial is
@@ -87,11 +85,10 @@ func (e sensorEndpoint) isDevice() bool { return e.device != "" }
 // parseSensorEndpoint reads one gps_port or compass_port value.
 //
 // A value with no scheme is a device or file path and is returned as it stands,
-// so every configuration written before this file existed keeps its meaning. A
-// value with a scheme must name a transport this package can dial, with an
-// address that transport can use: anything else is refused rather than ignored,
-// because an endpoint that is silently dropped is a node that never gets a
-// position and never says why.
+// so a scheme-less configuration keeps its meaning. A value with a scheme must
+// name a transport this package can dial, with an address that transport can
+// use: anything else is refused rather than ignored, because an endpoint that is
+// silently dropped is a node that never gets a position and never says why.
 func parseSensorEndpoint(text string) (sensorEndpoint, error) {
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
@@ -199,9 +196,9 @@ func validateUnixEndpoint(address string) (string, error) {
 }
 
 // open resolves the endpoint into a byte stream. A device path is opened
-// read-only, exactly as it always was. A socket is dialled in the background and
-// reconnected as it drops, so a sensor service that is not up yet is a state to
-// wait out rather than a startup failure.
+// read-only. A socket is dialled in the background and reconnected as it drops,
+// so a sensor service that is not up yet is a state to wait out rather than a
+// startup failure.
 func (e sensorEndpoint) open() (io.ReadCloser, error) {
 	if !e.isDevice() {
 		return newSensorSocket(e), nil
@@ -295,8 +292,8 @@ func (s *sensorSocket) Read(p []byte) (int, error) {
 				return n, nil
 			}
 			// Either the peer closed the stream or it handed back no bytes; both
-			// mean this connection is spent, and retrying it in a tight loop is
-			// the failure this whole file exists to avoid.
+			// mean this connection is spent, and retrying it in a tight loop
+			// would only spin.
 			s.discard(conn)
 			_ = readErr
 		}
@@ -337,21 +334,18 @@ func (s *sensorSocket) isClosed() bool {
 var errSensorClosed = errors.New("sensor stream is closed")
 
 // acquire returns the live connection, dialling one when there is none.
-// acquire returns the live connection, dialling one when there is none.
 //
-// The dial happens WITHOUT the lock, and the connection it produces is refused once the socket
-// has been closed. Both matter, and for the same reason: a reader must never end up blocked on
-// a connection that nothing will ever close.
+// The dial happens without the lock, and the connection it produces is refused
+// once the socket has been closed. Both matter, and for the same reason: a
+// reader must never end up blocked on a connection that nothing will ever close.
 //
-// Holding the lock across the dial parks Close on that mutex for the operating system's whole
-// connect timeout whenever the peer is down, so the reader that owns the lock is the last thing
-// Close can reach.
+// Holding the lock across the dial parks Close on that mutex for the operating
+// system's whole connect timeout whenever the peer is down, so the reader that
+// owns the lock is the last thing Close can reach.
 //
-// And a dial that finishes after Close has run is the worse case, because it is silent. Close
-// runs its body exactly once; a connection published after that body has finished is closed by
-// nobody, the read on it blocks forever, and the wait for the scan goroutine never returns. The
-// window is one instruction wide — retry reports true an instant before the close lands — which
-// is why it showed up as a test that hung for the package timeout under load and passed alone.
+// A dial that finishes after Close has run is the worse case, because it is
+// silent: Close runs its body exactly once, so a connection published after
+// that body has finished is closed by nobody and the read on it blocks forever.
 func (s *sensorSocket) acquire() (net.Conn, error) {
 	s.mu.Lock()
 	if s.conn != nil {

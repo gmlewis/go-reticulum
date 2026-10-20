@@ -196,7 +196,7 @@ func solarHourAngle(lat, declination, zenith float64) (float64, int) {
 
 // solarMinutesToTime converts minutes past the given UTC midnight into a time.
 // The value may be negative or beyond a day, which is exactly how an event that
-// falls on the neighbouring UTC day is represented without losing the ordering.
+// falls on the neighboring UTC day is represented without losing the ordering.
 func solarMinutesToTime(midnight time.Time, minutes float64) time.Time {
 	return midnight.Add(time.Duration(minutes * float64(time.Minute)))
 }

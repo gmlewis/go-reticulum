@@ -19,8 +19,6 @@ import (
 // replace the path. The observable: the same announce delivered first on a
 // low-gravity interface and then on a higher-gravity interface (same emission
 // timebase) must replace the path entry to use the higher-gravity interface.
-// Before the fix the second copy is dropped at the dedup gate, so the path
-// entry stays on the low-gravity interface.
 func TestInboundAcceptsDuplicateAnnounceAcrossInterfaces(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)

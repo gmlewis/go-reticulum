@@ -11,7 +11,7 @@ import (
 	"github.com/gmlewis/go-reticulum/rsg"
 )
 
-// rsgOptions controls the extended createRSGWithOptions behaviour,
+// rsgOptions controls the extended createRSGWithOptions behavior,
 // matching Python's create_rsg embed and meta parameters. It is a thin
 // adapter over rsg.Options so existing gornid callers keep their
 // lower-case field names.

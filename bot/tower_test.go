@@ -699,8 +699,7 @@ func TestClockPositionNamesTheClockFace(t *testing.T) {
 
 // TestFormatSteeringInstructionAcrossTheFourQuadrants asserts the four things a
 // steering instruction may say — ahead, a graded right turn, a graded left
-// turn, and behind — and pins the Phase 0.6 worked example, a fifteen-degree
-// right turn at one o'clock.
+// turn, and behind — including a fifteen-degree right turn at one o'clock.
 func TestFormatSteeringInstructionAcrossTheFourQuadrants(t *testing.T) {
 	t.Parallel()
 
@@ -713,7 +712,7 @@ func TestFormatSteeringInstructionAcrossTheFourQuadrants(t *testing.T) {
 		{"dead ahead", 42, 42, "[Ahead · 12 o'clock]"},
 		{"two degrees off is still ahead", 42, 40, "[Ahead · 12 o'clock]"},
 		{"the ahead boundary", 42, 37, "[Ahead · 12 o'clock]"},
-		{"the brief's worked example", 42, 27, "[Turn 15° RIGHT · 1 o'clock]"},
+		{"a fifteen-degree right turn", 42, 27, "[Turn 15° RIGHT · 1 o'clock]"},
 		{"due right", 90, 0, "[Turn 90° RIGHT · 3 o'clock]"},
 		{"due left", 270, 0, "[Turn 90° LEFT · 9 o'clock]"},
 		{"a little left", 42, 60, "[Turn 18° LEFT · 11 o'clock]"},
@@ -794,9 +793,8 @@ func TestTowerNearSteersTheAntennaWithALiveHeading(t *testing.T) {
 	}
 }
 
-// TestTowerNearOmitsSteeringWithoutACompass asserts the answer an operator with
-// no compass gets is exactly the answer the command gave before the compass
-// existed: a distance and a bearing, with nothing invented.
+// TestTowerNearOmitsSteeringWithoutACompass asserts an operator with no compass
+// gets a distance and a bearing, with no steering and nothing invented.
 func TestTowerNearOmitsSteeringWithoutACompass(t *testing.T) {
 	t.Parallel()
 

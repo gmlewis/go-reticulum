@@ -7,7 +7,7 @@
 // directory at bring-up and adapts the loaded hosts to the rrc
 // CustomHandler hook, so unknown slash commands run through the sandboxed
 // plugins in-process. It compiles for both the stub and the wago build; the
-// per-build behavior lives in plugins_stub.go and plugins_wago.go.
+// per-build behavior lives in plugins-stub.go and plugins-wago.go.
 
 package main
 

@@ -175,8 +175,8 @@ func TestMentionCacheIsBoundedAndCorrect(t *testing.T) {
 // TestFlagMention pins the hub-level rule: an inbound message whose body names the
 // local nick is flagged, and the flag is what populates the hub's mention rooms.
 // Python does this at the tail of its T_MSG and T_ACTION branches (RRC.py:1086-1091,
-// 1119-1124); the port never set the flag, so MentionRooms stayed empty, the "!"
-// marker never appeared on the hub list and stored history never carried H_MENTION.
+// 1119-1124); without the flag MentionRooms stays empty, the "!" marker never
+// appears on the hub list, and stored history never carries H_MENTION.
 func TestFlagMention(t *testing.T) {
 	t.Parallel()
 

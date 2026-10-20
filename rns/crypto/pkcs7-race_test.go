@@ -12,9 +12,8 @@ import (
 )
 
 // TestPKCS7PadDoesNotMutateInput pins that padding never writes into the
-// caller's slice backing array. append(data, pad…) reuses spare capacity
-// and races under concurrent Encrypt (CI: WARNING: DATA RACE in PKCS7Pad
-// during concurrent Link.Teardown).
+// caller's slice backing array: append(data, pad...) would reuse spare
+// capacity and let concurrent callers race on the shared array.
 func TestPKCS7PadDoesNotMutateInput(t *testing.T) {
 	t.Parallel()
 
@@ -40,7 +39,7 @@ func TestPKCS7PadDoesNotMutateInput(t *testing.T) {
 }
 
 // TestPKCS7PadConcurrent runs concurrent pads over slices that share a
-// backing array with spare capacity — the race the CI detector caught.
+// backing array with spare capacity; the race detector must stay quiet.
 func TestPKCS7PadConcurrent(t *testing.T) {
 	t.Parallel()
 

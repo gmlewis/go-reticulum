@@ -7,7 +7,7 @@
 // callback: it scans the plugins directory at bring-up and wraps the router's
 // delivery callback so inbound messages run through the plugins before the
 // normal delivery handler. It compiles for both the stub and the wago build;
-// the per-build behavior lives in plugins_stub.go and plugins_wago.go.
+// the per-build behavior lives in plugins-stub.go and plugins-wago.go.
 
 package main
 

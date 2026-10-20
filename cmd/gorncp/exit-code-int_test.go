@@ -153,10 +153,8 @@ func TestMainExitCodeHelper(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
 
-	// Test that os.Exit is called with correct codes
 	tmpDir := testutils.TempDir(t, tempDirPrefix)
 
-	// This test verifies the exit code behavior
 	cmd := exec.Command(gorncpBinaryPath, "-a", "invalid")
 	cmd.Dir = "."
 	cmd.Env = append(os.Environ(), "HOME="+tmpDir)
@@ -184,11 +182,10 @@ func TestCorruptIdentityFileExitCode(t *testing.T) {
 	}
 	identityPath := filepath.Join(tmpDir, "identity")
 
-	// Write corrupt data to identity file
 	mustTest(t, os.WriteFile(identityPath, []byte("corrupt data"), 0o644))
 
-	// TestMain already built the binary (go run doesn't preserve exit codes
-	// reliably; the per-test `go build` was redundant with it).
+	// TestMain already built the binary; `go run` does not preserve exit codes
+	// reliably.
 	cmd := exec.Command(gorncpBinaryPath, "-l", "-i", identityPath, "--config", configDir)
 	cmd.Dir = "."
 	cmd.Env = append(os.Environ(), "HOME="+tmpDir)
@@ -223,8 +220,8 @@ func TestOutputDirectoryNotFoundExitCode(t *testing.T) {
 		t.Fatalf("failed to create identity dir: %v", err)
 	}
 
-	// TestMain already built the binary (go run doesn't preserve exit codes
-	// reliably; the per-test `go build` was redundant with it).
+	// TestMain already built the binary; `go run` does not preserve exit codes
+	// reliably.
 
 	// Run the binary with non-existent save directory
 	nonExistentDir := "/nonexistent-gorncp-test-dir"
@@ -268,8 +265,8 @@ func TestOutputDirectoryNotWritableExitCode(t *testing.T) {
 		t.Fatalf("failed to create readonly dir: %v", err)
 	}
 
-	// TestMain already built the binary (go run doesn't preserve exit codes
-	// reliably; the per-test `go build` was redundant with it).
+	// TestMain already built the binary; `go run` does not preserve exit codes
+	// reliably.
 
 	// Run the binary with read-only save directory
 	cmd := exec.Command(gorncpBinaryPath, "-l", "-s", readOnlyDir, "--config", configDir)

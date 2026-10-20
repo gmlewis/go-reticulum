@@ -99,7 +99,8 @@ func newTestSessionManager(t *testing.T) (*SessionManager, *recordingSessionHook
 	return m, hooks
 }
 
-// G6.1 OnLinkEstablished.
+// TestOnLinkEstablished pins that a new link gets a default session and a
+// full rate bucket, and that the creation is logged.
 func TestOnLinkEstablished(t *testing.T) {
 	t.Parallel()
 	m, hooks := newTestSessionManager(t)
@@ -130,7 +131,8 @@ func (m *SessionManager) RateStateForTest(link *rns.Link) *RateState {
 	return m.rate[link]
 }
 
-// G6.1 OnRemoteIdentified.
+// TestOnRemoteIdentified pins that a remote identity stores the peer hash and
+// reports the ban verdict; an unknown link returns (false, nil).
 func TestOnRemoteIdentified(t *testing.T) {
 	t.Parallel()
 	m, hooks := newTestSessionManager(t)
@@ -164,7 +166,8 @@ func TestOnRemoteIdentified(t *testing.T) {
 	}
 }
 
-// G6.2 OnLinkClosed: PARTED fanout.
+// TestOnLinkClosedPartedFanout pins that closing a link fans a PARTED out to
+// the room's remaining members and counts bytes_out for the send.
 func TestOnLinkClosedPartedFanout(t *testing.T) {
 	t.Parallel()
 	m, hooks := newTestSessionManager(t)
@@ -210,8 +213,8 @@ func TestOnLinkClosedPartedFanout(t *testing.T) {
 	}
 }
 
-// The multi-link suppression quirk: when another session of the SAME peer
-// remains in the room, no PARTED is sent.
+// When another session of the same peer remains in the room, no PARTED is
+// sent.
 func TestOnLinkClosedPeerStillInRoom(t *testing.T) {
 	t.Parallel()
 	m, hooks := newTestSessionManager(t)
@@ -281,7 +284,8 @@ func TestOnLinkClosedUnknown(t *testing.T) {
 	}
 }
 
-// G6.3 UpdateNickIndex.
+// TestUpdateNickIndex pins that a nick change drops the old index key and adds
+// the new one (normalized).
 func TestUpdateNickIndex(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestSessionManager(t)
@@ -306,7 +310,8 @@ func TestUpdateNickIndex(t *testing.T) {
 	}
 }
 
-// G6.4 RefillAndTake token bucket.
+// TestRefillAndTake pins the token bucket: a full bucket drains, refills at
+// the per-minute rate, and an unknown link is always allowed.
 func TestRefillAndTake(t *testing.T) {
 	t.Parallel()
 	m, hooks := newTestSessionManager(t)
@@ -345,7 +350,8 @@ func TestRefillAndTake(t *testing.T) {
 	}
 }
 
-// G6.5 SendWelcome.
+// TestSendWelcome pins that a welcome sets the welcomed flag, reindexes the
+// nick, and queues the WELCOME payload.
 func TestSendWelcome(t *testing.T) {
 	t.Parallel()
 	m, hooks := newTestSessionManager(t)
@@ -383,9 +389,10 @@ func TestSendWelcome(t *testing.T) {
 	_ = outgoing2
 }
 
-// G15.5 The teardown PARTED payload decodes as a proper RRC envelope:
-// type PARTED with the room, the one-element peer-hash body iff
-// include_joined_member_list, and the leaving session's nick.
+// TestOnLinkClosedPartedFanoutPayloadDecodes pins that the teardown PARTED
+// payload decodes as a proper RRC envelope: type PARTED with the room, the
+// one-element peer-hash body iff include_joined_member_list, and the leaving
+// session's nick.
 func TestOnLinkClosedPartedFanoutPayloadDecodes(t *testing.T) {
 	t.Parallel()
 
@@ -457,9 +464,10 @@ func TestOnLinkClosedPartedFanoutPayloadDecodes(t *testing.T) {
 	}
 }
 
-// G16.15 A failed teardown PARTED send must not count bytes_out: Python
-// increments only after RNS.Packet.send() succeeds, so the hook reports
-// the real error instead of swallowing it.
+// TestOnLinkClosedPartedFanoutSendFailureNoBytesOut pins that a failed
+// teardown PARTED send does not count bytes_out: Python increments only after
+// RNS.Packet.send() succeeds, so the hook reports the real error instead of
+// swallowing it.
 func TestOnLinkClosedPartedFanoutSendFailureNoBytesOut(t *testing.T) {
 	t.Parallel()
 	m, hooks := newTestSessionManager(t)

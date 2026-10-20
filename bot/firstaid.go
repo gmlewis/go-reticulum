@@ -8,17 +8,13 @@
 // make no network call of any kind, because the moment somebody needs them is
 // exactly the moment no network exists.
 //
-// Each card is one line, deliberately: a single line fits one RRC envelope, so
-// a card can never be truncated into a half-instruction, and it can be read out
-// over a voice link between two people without either of them having to page
-// through anything. The wording is the standard field protocol — direct
-// pressure, tourniquet time, hypothermia handling, START triage — because that
-// is what a responder has already been trained on and will recognize under
-// stress.
+// Each card is one line: a single line fits one RRC envelope, so a card can
+// never be truncated into a half-instruction, and it can be read out over a
+// voice link between two people. The wording is the standard field protocol —
+// direct pressure, tourniquet time, hypothermia handling, START triage —
+// because that is what a responder is already trained on.
 //
-// This is decision support, not a substitute for training. The operator-facing
-// help says so; the cards themselves stay terse because a terse card is one
-// that gets read.
+// This is decision support, not a substitute for training.
 
 package bot
 

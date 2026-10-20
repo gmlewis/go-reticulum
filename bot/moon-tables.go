@@ -5,8 +5,7 @@
 
 // This file holds the periodic terms of the Moon's position: tables 47.A and
 // 47.B of Meeus, *Astronomical Algorithms* (2nd ed.). The numbers are the
-// published series coefficients, transcribed once and never edited by hand;
-// moon.go is the only reader.
+// published series coefficients; moon.go is the only reader.
 //
 // Table 47.A gives, for each row, the integer arguments D, M, M-prime and F of
 // the sine argument, the coefficient of the longitude series (units of 1e-6

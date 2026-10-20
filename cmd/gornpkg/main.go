@@ -99,8 +99,7 @@ func main() {
 
 	code := rt.run()
 	// The rns logger writes asynchronously; flush it before exiting so queued
-	// diagnostics (including the "Could not initialize Reticulum" error path)
-	// are not silently lost.
+	// diagnostics are not silently lost.
 	rt.logger.Close()
 	os.Exit(code)
 }

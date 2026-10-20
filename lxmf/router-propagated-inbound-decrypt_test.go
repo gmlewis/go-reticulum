@@ -21,11 +21,9 @@ import (
 // packed payload), the same envelope a paper (URI) message carries, so the
 // router has to decrypt it with the local delivery destination before it can
 // unpack anything. Python does that in lxmf_propagation (LXMRouter.py:2508-2514)
-// and Go's own paper-message path does it in ingestURIOutcome — but the
-// network-sync path skipped it, so every propagated message was counted as
-// downloaded by messageGetResponse and then silently discarded here: the sync
-// reported "Downloaded 1 new messages" while the recipient's conversation
-// stayed empty.
+// and Go's paper-message path does it in ingestURIOutcome; this test pins the
+// same decryption on the network-sync path, where messageGetResponse must
+// deliver the message locally rather than count it as downloaded and discard it.
 func TestRouterPropagatedInboundDecryptsAndDelivers(t *testing.T) {
 	t.Parallel()
 

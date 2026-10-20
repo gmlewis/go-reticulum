@@ -55,13 +55,10 @@ func testPartData(n int, size int) [][]byte {
 // request goes out only when no request is already in flight, and each clean
 // round lets the window grow toward its maximum.
 //
-// Requesting after every single received part — as this port did — multiplies
-// the request traffic by the number of parts in flight, and each extra request
-// makes the sender re-send parts it has already sent. The link fills with
-// duplicates, the receiver's watchdog shrinks the window to its minimum to
-// recover, and nothing ever grows it back, so the transfer then advances at two
-// parts per backoff round: a page that should cross a two-hop path in a fraction
-// of a second was measured taking 138 seconds.
+// Requesting after every received part multiplies the request traffic by the
+// number of parts in flight, and each extra request makes the sender re-send
+// parts it has already sent. The link fills with duplicates, and the receiver's
+// watchdog shrinks the window to its minimum to recover.
 func TestReceivePartGrowsWindowOnlyWhenNoRequestIsOutstanding(t *testing.T) {
 	t.Parallel()
 

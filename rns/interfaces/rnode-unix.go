@@ -243,7 +243,6 @@ func (r *RNodeInterface) stopReadLoopAndConn() {
 	_ = r.closeConn()
 }
 
-// openPort opens and termios-configures the configured serial device.
 // openPort opens the configured transport: a TCP connection for a tcp:// port
 // URI (RNodeInterface.open_port TCP path), or a termios-configured serial
 // device otherwise.
@@ -457,22 +456,19 @@ func (r *RNodeInterface) readLoopOnce() error {
 		// A read that was interrupted, or that had nothing to give, has not ended:
 		// the line is still there and the next read may carry a frame.
 		//
-		// "Nothing to give" includes io.EOF, and that is not a quirk of any one
-		// platform. configureTermios sets VMIN=0 and VTIME=1, so an idle line hands
-		// back a zero-byte read every time its timer expires, and Go reports a
-		// zero-byte read on an *os.File as io.EOF (poll.FD.ZeroReadIsEOF, which
-		// os.newFile sets for every file it opens). Measured on the appliance
-		// itself with a pseudo-terminal: an idle port reads `n=0 err=io.EOF` once
-		// per 100ms for as long as nobody is talking. Taking that for the end of
-		// the link would take a healthy radio offline ten times a second.
+		// "Nothing to give" includes io.EOF: configureTermios sets VMIN=0 and
+		// VTIME=1, so an idle line hands back a zero-byte read every time its timer
+		// expires, and Go reports a zero-byte read on an *os.File as io.EOF
+		// (poll.FD.ZeroReadIsEOF, which os.newFile sets for every file it opens).
+		// Taking that for the end of the link would take a healthy radio offline
+		// ten times a second.
 		//
-		// Measured on a pseudo-terminal (TestRNodePortReportsAnIdleLineAsNothingAndACloseAsEIO):
-		// the far end going away is reported as EIO exactly once, and only to a reader
-		// that is already parked in the read when it happens — a read started after
-		// the close cannot tell it apart from the line's own idle timer and reports
-		// io.EOF forever. That is why the port is asked as well: a zero-byte read is
-		// the idle timer expiring unless the line has hung up, and no read can say
-		// which, but poll(2) can.
+		// The far end going away, by contrast, is reported as EIO exactly once, and
+		// only to a reader that is already parked in the read when it happens: a read
+		// started after the close cannot tell it apart from the line's own idle timer
+		// and reports io.EOF forever. That is why the port is asked as well: a
+		// zero-byte read is the idle timer expiring unless the line has hung up, and
+		// no read can say which, but poll(2) can.
 		if errors.Is(err, syscall.EINTR) || errors.Is(err, syscall.EAGAIN) || errors.Is(err, io.EOF) {
 			if portHungUp(conn) {
 				return fmt.Errorf("serial port hung up on %v", r.Name())
@@ -495,11 +491,10 @@ func (r *RNodeInterface) readLoopOnce() error {
 		//
 		// The port has to be believed here, because nothing else can tell: the
 		// bridge that owns the radio closes the pseudo-terminal when the radio is
-		// unplugged, and on this platform that close arrives as EIO exactly once,
-		// at the moment it happens — every read after it goes back to the idle
-		// io.EOF above. A reader that counted EIO as "nothing to read" (which this
-		// one did) reports a radio that has been gone for hours as connected,
-		// because the condition it is waiting on never changes.
+		// unplugged, and that close arrives as EIO exactly once, at the moment it
+		// happens — every read after it goes back to the idle io.EOF above. A reader
+		// that counted EIO as "nothing to read" would report a radio that is gone as
+		// connected, because the condition it waits on never changes.
 		return err
 	}
 	var delivered [][]byte

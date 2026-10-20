@@ -55,8 +55,8 @@ func TestMinAcceptedStampCostAppliesMaxLowerBound(t *testing.T) {
 }
 
 // TestMinAcceptedStampCostNilPeerDefensive verifies that a nil peer reports
-// ok=false (cost 0) rather than panicking, so the future offer-prep
-// branch can call it defensively.
+// ok=false (cost 0) rather than panicking, so callers can invoke it
+// defensively.
 func TestMinAcceptedStampCostNilPeerDefensive(t *testing.T) {
 	t.Parallel()
 	var peer *Peer

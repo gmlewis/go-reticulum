@@ -54,7 +54,7 @@ func portalCompassFixture(t *testing.T, fix GPSFix, heading CompassHeading) *Por
 	return portal
 }
 
-// portalReferenceHeading is the heading the Phase 0.6 brief prints on the card:
+// portalReferenceHeading is the reference heading the compass tests render:
 // 029° magnetic, 13° east variation, 042° true, in the north-east sector.
 func portalReferenceHeading() CompassHeading {
 	return CompassHeading{

@@ -243,9 +243,8 @@ func TestShouldAckDefaultsToAll(t *testing.T) {
 }
 
 func TestAckEveryDefaultIsFive(t *testing.T) {
-	// The default keeps a 1757 bps LoRa channel from saturating with
-	// acknowledgements (Run 1 of the fleet test showed 25-30s RTTs under
-	// ack-everything); lock it so it cannot drift back to 1 silently.
+	// Acknowledging every packet saturates a 1757 bps LoRa channel, so the
+	// default must stay at 5 rather than drifting back to 1.
 	if f := flag.Lookup("ack-every"); f == nil || f.DefValue != "5" {
 		t.Fatalf("ack-every default = %v, want 5", f)
 	}

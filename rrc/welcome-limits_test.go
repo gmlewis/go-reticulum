@@ -102,16 +102,13 @@ func TestWelcomeLimitsFallBackWithoutAdvertisement(t *testing.T) {
 }
 
 // TestMsgBodyEnvelopesFitOneLinkPacket pins the reason the 350-byte default
-// exists — gorrcd's bootstrap config: "max_msg_body_bytes should not allow
-// messages so large that they cannot fit within the link MTU after UTF-8
-// encoding and envelope overhead". Every body up to that limit, and the
-// 362-byte draft from the 2026-09-14 live forensics on the RNS Community hub,
-// must still travel as a single RNS link packet: the client-side over-limit gate
-// and the split dialog enforce the HUB's rule, never a transport limit. The
-// expected sizes are the ones measured on the wire in that session (a 172-byte
-// body left the client as a 239-byte send, a 189-byte body as 256 bytes), so
-// this also pins the 67-byte envelope overhead for bodies under 256 bytes — one
-// byte more at and above 256, where the CBOR text header grows.
+// exists: "max_msg_body_bytes should not allow messages so large that they
+// cannot fit within the link MTU after UTF-8 encoding and envelope overhead".
+// Every body up to that limit must still travel as a single RNS link packet —
+// the client-side over-limit gate and the split dialog enforce the hub's rule,
+// never a transport limit. The expected sizes pin the 67-byte envelope
+// overhead for bodies under 256 bytes, and one byte more at and above 256,
+// where the CBOR text header grows.
 func TestMsgBodyEnvelopesFitOneLinkPacket(t *testing.T) {
 	t.Parallel()
 
@@ -119,10 +116,10 @@ func TestMsgBodyEnvelopesFitOneLinkPacket(t *testing.T) {
 	for _, tc := range []struct {
 		body, wantEnvelope int
 	}{
-		{172, 239},                // live forensics: part 1 of the 2026-09-14 draft
-		{189, 256},                // live forensics: part 2
+		{172, 239}, // 67-byte envelope overhead
+		{189, 256},
 		{DefaultMaxMsgBytes, 418}, // the hub-side default
-		{362, 430},                // the full draft that C-d failed to send
+		{362, 430},                // a full over-limit draft
 	} {
 		// MsgID is 8 bytes in production (Python os.urandom(8), RRC.py:113).
 		env := MakeClientEnvelope(TypeMsg, src, []byte("general"), []byte("gonomadnet"),

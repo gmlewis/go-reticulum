@@ -19,10 +19,10 @@ import (
 	"testing"
 )
 
-// Type 40 (ERROR) was previously dropped entirely. Per the Python T_ERROR
-// branch (RRC.py:1145-1170) the text is recorded as an error notice in the
-// affected room (or the active room when roomless), a pending join for that
-// room rolls back, and per doc 4-RRC a refusal error ends the session.
+// Type 40 (ERROR) handling follows the Python T_ERROR branch
+// (RRC.py:1145-1170): the text is recorded as an error notice in the affected
+// room (or the active room when roomless), a pending join for that room rolls
+// back, and a refusal error ends the session.
 
 // errorEnvelope builds one inbound T_ERROR envelope.
 func errorEnvelope(t *testing.T, room, text, mid string) []byte {
@@ -105,9 +105,9 @@ func TestErrorRollsBackPendingJoin(t *testing.T) {
 	}
 }
 
-// TestRefusalErrorFailsHub pins doc 4-RRC: an ERROR that clearly indicates
-// refusal fails the hub (the client session is over); an ordinary error does
-// not touch the status.
+// TestRefusalErrorFailsHub pins the refusal rule: an ERROR that clearly
+// indicates refusal fails the hub (the client session is over); an ordinary
+// error does not touch the status.
 func TestRefusalErrorFailsHub(t *testing.T) {
 	t.Parallel()
 

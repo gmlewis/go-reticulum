@@ -6,8 +6,7 @@
 // Fixture inputs for the Go micron port's live cross-checks against Python's
 // RNS.Utilities.rngit convert_markdown_to_micron and highlight_code. The
 // expected output for each fixture is captured fresh from the installed Python
-// at test time (see python-parity_test.go); these tables hold only the inputs,
-// not committed "golden" output snapshots.
+// at test time (see python-parity_test.go); these tables hold only the inputs.
 package micron
 
 // goldenConvert holds markdown->micron inputs run through both Go

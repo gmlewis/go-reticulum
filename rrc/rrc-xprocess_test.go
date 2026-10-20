@@ -99,7 +99,7 @@ func newStartedTSWithTCPClient(t *testing.T, host string, port int) (*rns.Transp
 	}
 	ts.RegisterInterface(goIface)
 	// Wait for the TCP client to connect before returning (poll the interface
-	// status; callers previously paid a fixed 500ms sleep for this).
+	// status rather than sleeping a fixed interval).
 	if !testutils.PollUntil(5*time.Second, func() bool { return goIface.Status() }) {
 		t.Fatalf("TCP client to %v:%v never connected", host, port)
 	}
@@ -247,7 +247,7 @@ while True:
 `
 
 // pythonRRCClientScript drives the REAL nomadnet.RRC.RRCHub client against a
-// Go RRC server (task 2.2 reverses the 2.1 roles). It:
+// Go RRC server. It:
 //   - brings up RNS over a config-supplied TCPServerInterface,
 //   - mints a local RNS.Identity and a minimal app/manager so the real RRCManager
 //   - RRCHub client logic runs unchanged (only nomadnet's own code sends/receives),
@@ -260,9 +260,9 @@ while True:
 //   - send_message("general", "Hello from Python!") and prints MSG_SENT=1,
 //   - then waits up to 30 s for the Go server to send a MSG (printed as RECV_MSG=).
 //
-// Using the real nomadnet.RRC client (not a hand-rolled script) is the point of
-// task 2.2: it exercises the actual Python _connect_worker, link.identify,
-// _send_hello, _on_packet T_MSG/T_WELCOME paths against the Go server.
+// Using the real nomadnet.RRC client (not a hand-rolled script) is the point:
+// it exercises the actual Python _connect_worker, link.identify, _send_hello,
+// _on_packet T_MSG/T_WELCOME paths against the Go server.
 const pythonRRCClientScript = `
 import sys, os, time, threading
 import RNS
@@ -364,9 +364,9 @@ print("CLIENT_DONE=1", flush=True)
 `
 
 // TestIntegrationXProcessMSGRoundTrip verifies a full RRC MSG round-trip across a
-// real Go↔Python RNS link bridged by a TCP RNS transport (task 2.2), with roles
-// reversed from 2.1: the Go side is the RRC *server* and the Python side drives
-// the real nomadnet.RRC.RRCHub *client*.
+// real Go↔Python RNS link bridged by a TCP RNS transport: the Go side is the
+// RRC *server* and the Python side drives the real nomadnet.RRC.RRCHub
+// *client*.
 //
 //   - Python subprocess: TCPServerInterface + real RRCManager/RRCHub client.
 //   - Go side: TCPClientInterface + a real RRCHub acting as server (announces
@@ -512,7 +512,7 @@ func TestIntegrationXProcessMSGRoundTrip(t *testing.T) {
 }
 
 // TestIntegrationXProcessHelloWelcome verifies the RRC HELLO/WELCOME handshake
-// across a real Go↔Python RNS link bridged by a TCP RNS transport (task 2.1):
+// across a real Go↔Python RNS link bridged by a TCP RNS transport:
 //
 //   - A Python subprocess runs a minimal RRC server (rrc.chat, announced over a
 //     TCPServerInterface).

@@ -89,7 +89,8 @@ var discoveryDiscoverableTypes = map[string]bool{
 	"KISSInterface":      true,
 }
 
-// InterfaceAnnouncer manages the periodic broadcast of local interface availability to dynamically discoverable peers on the network.
+// InterfaceAnnouncer manages the periodic broadcast of local interface
+// availability to dynamically discoverable peers on the network.
 type InterfaceAnnouncer struct {
 	logger *Logger
 	owner  *Reticulum
@@ -426,9 +427,9 @@ func (ia *InterfaceAnnouncer) resolveLocation(cfg interfaces.DiscoveryConfig) (l
 	if dlat < -90 || dlat > 90 {
 		return abort("Invalid latitude: %v", dlat)
 	}
-	// NOTE: RNS/Discovery.py:119 reads `dlat > 180` (not dlon) — a latent
-	// upstream bug. We replicate it verbatim for parity; the upper-bound
-	// longitude check is effectively gated on latitude instead.
+	// RNS/Discovery.py:119 tests `dlat > 180` rather than `dlon`; the port
+	// replicates that quirk verbatim for parity, so the upper-bound longitude
+	// check is effectively gated on latitude.
 	if dlon < -180 || dlat > 180 {
 		return abort("Invalid longitude: %v", dlon)
 	}
@@ -1213,7 +1214,8 @@ func discoveryBackboneTargetPortValue(v any) (int, error) {
 	}
 }
 
-// InterfaceDiscovery actively listens for and processes inbound presence announcements from remote nodes to establish automatic connections.
+// InterfaceDiscovery actively listens for and processes inbound presence
+// announcements from remote nodes to establish automatic connections.
 type InterfaceDiscovery struct {
 	owner *Reticulum
 
@@ -1445,19 +1447,16 @@ func (id *InterfaceDiscovery) Stop() {
 }
 
 // discoveryStoragePath returns the directory holding the discovered-interface
-// store. Python computes the identical path as
-// `os.path.join(RNS.Reticulum.storagepath, "discovery", "interfaces")`
+// store: `os.path.join(RNS.Reticulum.storagepath, "discovery", "interfaces")`
 // (RNS/Discovery.py:462), where `Reticulum.storagepath = configdir+"/storage"`
-// (RNS/Reticulum.py:249) — so the store lives under the STORAGE root, not
-// directly under the config directory. Getting this wrong puts the cache
-// somewhere the other implementation never looks, so discovered interfaces are
-// lost whenever a user switches between them.
+// (RNS/Reticulum.py:249). The store therefore lives under the STORAGE root,
+// not directly under the config directory, so both implementations find it.
 //
 // The file NAME is the bare lowercase hex of the discovery hash, with no
 // extension, mirroring `filename = RNS.hexrep(discovery_hash, delimit=False)`
 // (RNS/Discovery.py:539-540). The re-hear stat guard keys on that same name
-// (:543), so an extension makes a re-announce create a duplicate file instead
-// of updating the existing one.
+// (:543), so an extension would make a re-announce create a duplicate file
+// instead of updating the existing one.
 func (id *InterfaceDiscovery) discoveryStoragePath() string {
 	return filepath.Join(id.owner.StoragePath(), "discovery", "interfaces")
 }

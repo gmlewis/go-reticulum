@@ -22,9 +22,8 @@ type statsEntry struct {
 	PhyGot float64
 }
 
-// waitForTransferCompletion waits for the transfer callback or a bounded timeout.
-// The timeout is a deliberate safety guard in the Go port to avoid hanging
-// indefinitely when a transfer stalls.
+// waitForTransferCompletion waits for the transfer callback or a bounded
+// timeout that prevents an indefinite hang when a transfer stalls.
 func waitForTransferCompletion(done <-chan struct{}, timeout time.Duration, onTick func()) error {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
@@ -227,7 +226,6 @@ established:
 	i = 0
 	if err := waitForTransferCompletion(done, a.transferTimeout, func() {
 		if !silent {
-			// Update progress
 			prg := res.GetProgress()
 			segPrg := res.GetSegmentProgress()
 			percent := prg * 100.0

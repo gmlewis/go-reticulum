@@ -432,7 +432,7 @@ type resourceRecorder struct {
 	stats map[string]int
 }
 
-// G10.4 OnResourceConcluded mirrors _resource_concluded: unbinding, the
+// OnResourceConcluded mirrors _resource_concluded: unbinding, the
 // status gate, the sha256 match (bound rid wins over size), the mismatch
 // keeping the expectation, the pop + stats, and the dispatch call.
 func TestOnResourceConcluded(t *testing.T) {
@@ -540,7 +540,7 @@ func TestOnResourceConcluded(t *testing.T) {
 	})
 }
 
-// G10.5 DispatchReceivedResource mirrors _dispatch_received_resource: the
+// DispatchReceivedResource mirrors _dispatch_received_resource: the
 // notice kind forwards to room members except the sender, the motd and
 // blob kinds log only, and unknown kinds warn.
 func TestDispatchReceivedResource(t *testing.T) {
@@ -610,7 +610,7 @@ func TestDispatchReceivedResource(t *testing.T) {
 	})
 }
 
-// G10.6 SendViaResource mirrors send_via_resource: the disabled and
+// SendViaResource mirrors send_via_resource: the disabled and
 // oversized rejections, the immediate envelope send with the exact body
 // key order, the resource hand-off, the active-resource registration,
 // and the failure paths.
@@ -895,7 +895,7 @@ func TestAcceptAdvertisedResource(t *testing.T) {
 	})
 }
 
-// G10.7 StartResourceCleanupLoop mirrors _resource_cleanup_loop: a fixed
+// StartResourceCleanupLoop mirrors _resource_cleanup_loop: a fixed
 // 30-second interval, a cleanup pass each cycle, and the shutdown exit.
 // The simulated sleep hook advances the clock and reports whether the
 // loop should keep running.
@@ -947,7 +947,7 @@ func TestResourceCleanupLoop(t *testing.T) {
 	}
 }
 
-// G16.8 DispatchReceivedResource's NOTICE forward is inert the way
+// DispatchReceivedResource's NOTICE forward is inert the way
 // Python's is: the forward call on a listener-side link always fails
 // with TypeError('NoneType' object is not callable), so nothing is
 // delivered, the notices_forwarded counter never increments, and the

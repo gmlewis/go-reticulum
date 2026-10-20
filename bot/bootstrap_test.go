@@ -116,13 +116,13 @@ func TestEnsureFirstRunCreatesConfigAndIdentity(t *testing.T) {
 		}
 	}
 	// The public RNS Community Hub must not appear in the generated config at
-	// all, neither live nor as a copy-pasteable example: it does not work, and
-	// a first run must never reach it.
+	// all, neither live nor as a copy-pasteable example: a first run must never
+	// reach it.
 	if strings.Contains(string(raw), "28c7c1a68c735693aa8e6b8193ed44b2") {
-		t.Error("the generated config still carries the public RNS Community Hub hash")
+		t.Error("the generated config carries the public RNS Community Hub hash")
 	}
 	if strings.Contains(string(raw), "RNS Community") {
-		t.Error("the generated config still names the public RNS Community Hub")
+		t.Error("the generated config names the public RNS Community Hub")
 	}
 	for _, hub := range cfg.Hubs {
 		if hub.Destination == "28c7c1a68c735693aa8e6b8193ed44b2" {
@@ -276,8 +276,7 @@ func TestFirstRunMessageNamesThePaths(t *testing.T) {
 }
 
 // TestBotPathsStorageIsADirectory asserts the one path the bot hands to the RRC
-// client is named like the directory it is. It was called state.toml, so the
-// client created a DIRECTORY with a file's name.
+// client is named like the directory the client creates there.
 func TestBotPathsStorageIsADirectory(t *testing.T) {
 	t.Parallel()
 

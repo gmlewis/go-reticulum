@@ -25,8 +25,8 @@ type MessageHooks struct {
 	SendPacket             func(link *rns.Link, payload []byte) error
 	EnableResourceTransfer func() bool
 	// EnablePrivateCommands reports the private-command setting, which adds
-	// CAPPrivateCommand to the WELCOME caps. Nil means disabled, so a test
-	// helper that predates the extension still emits Python's exact caps.
+	// CAPPrivateCommand to the WELCOME caps. Nil means disabled, which keeps
+	// the emitted caps exactly Python's.
 	EnablePrivateCommands  func() bool
 	SendViaResource        func(link *rns.Link, kind string, payload []byte, room *string, encoding string) bool
 	HubName                func() string
@@ -314,8 +314,8 @@ func (m *MessageHelper) EmitDirectNotice(outgoing *OutgoingList, targetLink *rns
 }
 
 // privateCommandsEnabled reports whether the hub advertises the private
-// command extension. A nil hook means disabled, so a hook set that predates
-// the extension emits Python's exact WELCOME caps.
+// command extension. A nil hook means disabled, which keeps the emitted
+// WELCOME caps exactly Python's.
 func (m *MessageHelper) privateCommandsEnabled() bool {
 	return m.hooks.EnablePrivateCommands != nil && m.hooks.EnablePrivateCommands()
 }

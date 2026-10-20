@@ -14,10 +14,9 @@ import (
 // `if self.status == Link.STALE: self.status = Link.ACTIVE`. When the
 // watchdog marks a link STALE it sleeps one stale-grace window before
 // tearing it down, and a packet arriving during that window flips the link
-// back to ACTIVE. Without the revival a link whose keepalive echo arrived
-// a few seconds late (the loopback echo-skip knife edge) is torn down by
-// the next watchdog step even though traffic resumed during the grace
-// period, making Go links strictly more fragile than the Python stack.
+// back to ACTIVE. The revival ensures the next watchdog step does not tear
+// down a link whose traffic resumed during the grace period, such as one
+// whose keepalive echo arrived a few seconds late.
 //
 // The revival is gated on the same guard as the rx counter (Python
 // Link.py:931): a CLOSED link stays closed, and the initiator's own 0xFF

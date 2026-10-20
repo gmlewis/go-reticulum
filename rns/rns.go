@@ -364,9 +364,8 @@ func (r *Reticulum) Close() error {
 	// find the RPC name free. Releasing the local socket first — which is what
 	// happens when transport.Stop detaches every registered interface,
 	// including the LocalInterface server — opens a window in which another
-	// process claims the shared-instance role and then fails to start with
-	// "bind: address already in use" on @rns/<instance_name>/rpc
-	// (TestReticulumParsesStaticTransportIdentity CI failure, 2026-09-12).
+	// process claims the shared-instance role and then fails to bind
+	// @rns/<instance_name>/rpc with "address already in use".
 	rpcDone := r.rpcDone
 	watchDone := r.watchDone
 	if r.rpcListener != nil {
@@ -1416,10 +1415,7 @@ func (r *Reticulum) initInterfaces() error {
 
 		// Match Python RNS/Reticulum.py:835 — an interface is created only when
 		// interface_enabled == True OR enabled == True. The default (neither key
-		// present, or set to false) is disabled (skip). This previously diverged:
-		// Go read only "enabled" and defaulted to enabled when it was absent or
-		// when "interface_enabled" was used, so Python-idiomatic configs that
-		// disabled via interface_enabled = false were silently left enabled here.
+		// present, or set to false) is disabled (skip).
 		ifaceEnabled := false
 		if v, ok := sub.GetProperty("interface_enabled"); ok {
 			ifaceEnabled = parseBoolLike(v)

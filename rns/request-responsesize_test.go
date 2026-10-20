@@ -75,8 +75,7 @@ func TestRequestReceiptResponseSizeRecordedExactlyOnceInline(t *testing.T) {
 // pending/pre-response state: the size fields can only be set by the
 // response-data path (handleResponse -> recordResponseSize), which never runs.
 // Requesting "/p" against the echo handler would race the assertion against a
-// fast loopback response that records the sizes (observed as a flaky CI
-// failure where ResponseSize came back 100 instead of nil).
+// fast loopback response that records the sizes.
 func TestRequestReceiptResponseSizeUnsetBeforeResponse(t *testing.T) {
 	t.Parallel()
 	initiator, _, _ := establishMaxResponseLinkPair(t, bytes.Repeat([]byte{0x01}, 100))

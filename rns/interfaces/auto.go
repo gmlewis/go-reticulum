@@ -22,12 +22,14 @@ import (
 
 // Constants defining the structural limits and default behaviors for AutoInterfaces.
 const (
-	// AutoHWMTU defines the absolute maximum transmission unit byte size supported at the hardware layer for this interface type.
+	// AutoHWMTU is the maximum transmission unit supported at the hardware
+	// layer for this interface type.
 	AutoHWMTU = 1196
 
-	// AutoDefaultDiscoveryPort specifies the standard UDP port utilized for broadcasting presence announcements and discovery packets.
+	// AutoDefaultDiscoveryPort is the UDP port used for discovery
+	// announcements.
 	AutoDefaultDiscoveryPort = 29716
-	// AutoDefaultDataPort specifies the standard UDP port allocated for actual payload data transmission between peers.
+	// AutoDefaultDataPort is the UDP port used for payload data between peers.
 	AutoDefaultDataPort = 42671
 
 	// autoUDPReadErrorDelay floors the retry rate when a UDP reader socket
@@ -35,7 +37,8 @@ const (
 	// socket returns instantly, so an unbackoffed retry loop burns a full
 	// core per loop in kernel/errno churn with no log output.
 	autoUDPReadErrorDelay = 100 * time.Millisecond
-	// AutoDefaultGroupID dictates the default network partitioning ID to ensure discovery frames are constrained to intended participants.
+	// AutoDefaultGroupID is the default group ID that scopes discovery traffic
+	// to intended participants.
 	AutoDefaultGroupID = "reticulum"
 
 	// ipv6MulticastIf is the socket option constant for IPV6_MULTICAST_IF
@@ -44,36 +47,45 @@ const (
 	// syscall.IPV6_MULTICAST_IF is not available on all platforms in Go's
 	// standard library.
 	ipv6MulticastIf = 9
-	// AutoDefaultIFACSize specifies the standard byte length for the cryptographic IFAC authentication signature.
+	// AutoDefaultIFACSize is the default byte length of the IFAC signature.
 	AutoDefaultIFACSize = 16
 
-	// AutoScopeLink restricts the IPv6 multicast scope strictly to the local physical link.
+	// AutoScopeLink restricts IPv6 multicast to the local physical link.
 	AutoScopeLink = "2"
-	// AutoScopeAdmin elevates the multicast scope to the administrative boundary.
+	// AutoScopeAdmin sets the multicast scope to the administrative boundary.
 	AutoScopeAdmin = "4"
-	// AutoScopeSite expands the multicast propagation domain to the site level.
+	// AutoScopeSite sets the multicast scope to the site level.
 	AutoScopeSite = "5"
-	// AutoScopeOrganisation broadens the multicast envelope to encompass the entire organization's routing boundary.
+	// AutoScopeOrganisation sets the multicast scope to the organization
+	// boundary.
 	AutoScopeOrganisation = "8"
-	// AutoScopeGlobal establishes a globally routable multicast domain.
+	// AutoScopeGlobal sets a globally routable multicast scope.
 	AutoScopeGlobal = "e"
 
-	// AutoMulticastPermanent designates the multicast address as permanently assigned and universally recognized by routing infrastructure.
+	// AutoMulticastPermanent marks the multicast address as permanently
+	// assigned.
 	AutoMulticastPermanent = "0"
-	// AutoMulticastTemporary indicates the multicast address is transient and locally administered.
+	// AutoMulticastTemporary marks the multicast address as transient and
+	// locally administered.
 	AutoMulticastTemporary = "1"
 
-	// AutoPeeringTimeout establishes the maximum duration a peer can remain silent before its state is purged and resources reclaimed.
+	// AutoPeeringTimeout is how long a peer may remain silent before its state
+	// is purged.
 	AutoPeeringTimeout = 22 * time.Second
-	// AutoAnnounceInterval sets the pacing frequency at which this interface broadcasts its existence to the local broadcast domain.
+	// AutoAnnounceInterval is how often the interface announces itself on the
+	// local segment.
 	AutoAnnounceInterval = 1600 * time.Millisecond
-	// AutoPeerJobInterval determines the execution frequency for the background worker responsible for culling dead peers and managing state.
+	// AutoPeerJobInterval is the period of the worker that culls dead peers and
+	// refreshes interface health.
 	AutoPeerJobInterval = 4 * time.Second
-	// AutoMcastEchoTimeout defines the threshold after which missing local multicast loopbacks signal a potential network partition or socket failure.
+	// AutoMcastEchoTimeout is how long a missing local multicast loopback may
+	// persist before the interface is marked timed out.
 	AutoMcastEchoTimeout = 6500 * time.Millisecond
-	// AutoMultiIFDequeTTL dictates how long an incoming frame's hash is cached to rigorously suppress duplicate packet loops across bridged interfaces.
+	// AutoMultiIFDequeTTL is how long an incoming frame hash is cached to
+	// suppress duplicate loops across bridged interfaces.
 	AutoMultiIFDequeTTL = 750 * time.Millisecond
-	// AutoBitrateGuess furnishes a conservative fallback estimation of the underlying interface's operational capacity, expressed in bits per second.
+	// AutoBitrateGuess is the conservative fallback bitrate estimate, in bits
+	// per second.
 	AutoBitrateGuess = 10 * 1000 * 1000
 )
 
@@ -87,8 +99,8 @@ var (
 	}
 )
 
-// AutoInterfaceConfig defines the comprehensive suite of initialization parameters required to bootstrap an AutoInterface.
-// It exposes low-level tuning for network namespaces, port allocations, and device binding constraints.
+// AutoInterfaceConfig holds the parameters used to construct an AutoInterface:
+// group scoping, ports, multicast discovery settings, and device filters.
 type AutoInterfaceConfig struct {
 	// GroupID scopes discovery traffic so only peers with the same group
 	// participate in the same AutoInterface overlay.
@@ -130,8 +142,10 @@ type autoSocketSet struct {
 	data      *net.UDPConn
 }
 
-// AutoInterface orchestrates fully autonomous, zero-configuration peer discovery and data plane management over IPv6 link-local networks.
-// It actively manages a dynamic pool of peer sub-interfaces, transparently handling multicast announcements, socket lifecycle, and duplicate frame suppression.
+// AutoInterface provides zero-configuration peer discovery and a data plane
+// over IPv6 link-local networks. It manages a dynamic pool of peer
+// sub-interfaces, multicast announcements, socket lifecycle, and duplicate
+// frame suppression.
 type AutoInterface struct {
 	*BaseInterface
 
@@ -189,8 +203,8 @@ type AutoInterface struct {
 	final   int32
 }
 
-// NewAutoInterface strategically provisions and activates a new autonomous discovery interface.
-// It parses the provided configuration, allocates necessary UDP sockets across allowable hardware interfaces, and spawns the core asynchronous multiplexing loops.
+// NewAutoInterface builds and starts an AutoInterface. It parses cfg, binds
+// UDP sockets on every eligible interface, and starts the background loops.
 func NewAutoInterface(name string, cfg AutoInterfaceConfig, handler InboundHandler, onPeer func(Interface)) (*AutoInterface, error) {
 	bi := NewBaseInterface(name, ModeFull, AutoBitrateGuess)
 	bi.setDefaultIFACSize(AutoDefaultIFACSize)
@@ -334,12 +348,9 @@ func (ai *AutoInterface) start() error {
 		return err
 	}
 
-	// Arm the lifecycle flag BEFORE spawning any per-interface goroutine.
-	// The reader and announce loops check the lifecycle state as their first
-	// action, and spawning them while it was still unset let them all
-	// self-destruct silently at birth depending on scheduler timing. The
-	// adopted UDP sockets then stayed open forever with nobody reading them,
-	// so the interface looked Up while deaf (0 bytes ever transferred).
+	// Set the lifecycle flag before spawning any per-interface goroutine: the
+	// reader and announce loops return immediately unless it is set, so
+	// starting them first would leave the adopted sockets open but unread.
 	ai.running.Store(1)
 
 	started := 0
@@ -491,9 +502,9 @@ func (ai *AutoInterface) discoveryLoop(ifname string, conn *net.UDPConn) {
 				return
 			}
 			// A dead NIC or removed address leaves the socket failing
-			// instantly forever. With panic_on_interface_error at its
-			// default (No) the old path logged nothing and slept nothing,
-			// pegging a core per loop in total silence; back off instead.
+			// instantly forever, so back off to avoid a silent CPU spin.
+			// With panic_on_interface_error at its default (No) nothing is
+			// logged by the caller, hence report the error here.
 			ai.panicOnInterfaceErrorf("auto interface %v discovery read failed: %v", ifname, err)
 			time.Sleep(autoUDPReadErrorDelay)
 			continue
@@ -701,11 +712,7 @@ func (ai *AutoInterface) processIncoming(data []byte, addr string) {
 	// Gate on running only. Python never couples inbound data processing to
 	// echo freshness (AutoInterface.py:350 sets online once at final_init and
 	// :607 clears it only on detach; a missed echo just logs into
-	// timed_out_interfaces, :463-467). The previous ai.online gate here
-	// dropped every LAN datagram for the duration of an echo gap > 6.5 s
-	// (Wi-Fi power-save windows, AP multicast rate-limiting, interface roams)
-	// while sockets stayed open and TCP planes kept flowing, silently blacking
-	// out the node's entire AutoInterface data plane.
+	// timed_out_interfaces, :463-467).
 	if ai.running.Load() != 1 {
 		return
 	}
@@ -774,10 +781,9 @@ func (ai *AutoInterface) peerJobs() {
 
 		// Re-adopt link-local addresses that the kernel changed underneath us
 		// (Wi-Fi roam, wlan restart, DHCPv6 refresh). Python rescans every job
-		// tick (AutoInterface.py:405-455); without this the discovery token
-		// kept hashing a stale address while packets sourced from the new one,
-		// so every peer silently dropped our beacons and the node stayed
-		// invisible on the LAN until restart.
+		// tick (AutoInterface.py:405-455); a stale adopted address would make
+		// the discovery token hash the old value while packets source from the
+		// new one, so peers would drop our beacons.
 		ai.resyncAdoptedAddresses()
 
 		for _, addr := range timedOut {
@@ -799,9 +805,9 @@ type ipPair struct {
 // addrResyncPlan is the classification result of comparing the adopted
 // interface map against a fresh scan: addresses whose interface still exists
 // but changed value, interfaces that vanished entirely, and (reserved) new
-// interfaces to adopt. Additions are intentionally unused today: rescans only
-// refresh already-adopted interfaces, matching the narrow bug of stale
-// addresses; brand-new interfaces keep requiring a restart.
+// interfaces to adopt. Additions are currently unused: rescans only refresh
+// already-adopted interfaces, and newly appearing interfaces still require a
+// restart.
 type addrResyncPlan struct {
 	changed map[string]ipPair
 	removed []string
@@ -857,8 +863,8 @@ func closeAutoSocketSet(s *autoSocketSet, ifname string) {
 
 // scanLinkLocals re-reads the first IPv6 link-local address for each given
 // interface name. Interfaces that cannot be resolved or expose no link-local
-// are omitted so they classify as removed (or unchanged-if-absent on transient
-// failures handled by the caller's retry next tick).
+// are omitted, so they classify as removed; transient failures are retried on
+// the caller's next tick.
 func scanLinkLocals(names []string) map[string]net.IP {
 	next := make(map[string]net.IP, len(names))
 	for _, name := range names {
@@ -1125,8 +1131,9 @@ func (ai *AutoInterface) AdoptedInterfaces() []string {
 	return out
 }
 
-// AutoInterfacePeer signifies a distinct, dynamically discovered point-to-point connection originating from a parent AutoInterface.
-// It provides dedicated egress targeting and metrics tracking for a specific neighbor while deferring complex state logic back to the orchestrating parent.
+// AutoInterfacePeer is a point-to-point link to a discovered neighbor. It
+// tracks per-peer metrics and delegates transmission to the parent
+// AutoInterface.
 type AutoInterfacePeer struct {
 	*BaseInterface
 	owner         *AutoInterface

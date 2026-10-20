@@ -23,8 +23,7 @@ import (
 // Differential fuzzing at the packet boundary: the same corpus is parsed by the
 // Python reference and by the port, and the parsed state is compared field by
 // field. Golden vectors only cover cases someone thought of; this covers the
-// cases nobody did, and it is the harness that turns a newly found difference
-// into a Pillar 1 vector.
+// cases nobody did.
 //
 // The corpus is deterministic (a fixed PRNG seed, plus structured near-miss
 // frames and mutations of well-formed frames), so a failure reproduces exactly.
@@ -361,10 +360,10 @@ func truncateForLog(s string) string {
 // and to the port's, in three states — a first sight, a hash already seen, and a
 // client of a shared instance — and requires the same verdict from each.
 //
-// The remaining halves of the boundary the brief asks for (the resulting path and
-// destination tables, and the bytes each side emits in response) still need a
-// full-transport differential; the filter is what decides whether a frame reaches
-// that machinery at all, so it comes first.
+// The remaining halves of the boundary — the resulting path and destination
+// tables, and the bytes each side emits in response — need a full-transport
+// differential. The filter decides whether a frame reaches that machinery at
+// all, so it is covered first.
 
 // filterFuzzState is one (frame, state) pair's index into the corpus.
 type filterFuzzState struct {

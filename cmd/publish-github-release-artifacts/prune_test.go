@@ -133,7 +133,7 @@ func TestSelectPrunable(t *testing.T) {
 // The asset names here cover the three shapes a real release carries: the
 // platform binaries this publisher generates, the ESP32-C5 firmware it also
 // builds, and a file it never produced. All three must be planned for deletion
-// on a pruned release; an earlier name-matching guard kept the last two.
+// on a pruned release.
 func TestPlanPruneDeletesEveryAsset(t *testing.T) {
 	t.Parallel()
 

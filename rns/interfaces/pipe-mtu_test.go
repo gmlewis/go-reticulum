@@ -15,8 +15,8 @@ import (
 )
 
 // TestPipeHardwareMTUSeam pins the seam that lets a test build an MTU-limited link. An
-// in-memory pipe has no wire MTU, so it has always delivered every frame; that is still
-// the default (PipeDefaultMTU). Setting a ceiling makes the RECEIVING interface drop
+// in-memory pipe has no wire MTU, so by default it delivers every frame
+// (PipeDefaultMTU). Setting a ceiling makes the RECEIVING interface drop
 // frames over it, exactly as the TCP and Backbone receive loops do before dispatching an
 // inbound frame (CheckFrameLen, mirroring Python's check_frame_len), which is what a
 // resource-segmentation test needs.

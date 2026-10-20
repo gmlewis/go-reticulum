@@ -252,8 +252,7 @@ func TestApplyLoggingConfiguresTheSharedLogger(t *testing.T) {
 
 // TestApplyConfiguredPathsHonourTheConfigFile asserts the configuration file can
 // move the identity and the storage directory, and that an explicit command-line
-// option still wins. The keys were parsed and documented but never consulted, so
-// a deliberate override silently used the default path.
+// option still wins.
 func TestApplyConfiguredPathsHonourTheConfigFile(t *testing.T) {
 	t.Parallel()
 

@@ -127,14 +127,11 @@ func (a *appT) doListen(ts rns.Transport) {
 		fatalf(a.logger, "Could not create destination: %v\n", err)
 	}
 
-	// Build allowed identity hashes list
 	var allowedIdentityHashes [][]byte
 	destLen := (rns.TruncatedHashLength / 8) * 2
 
-	// Get home directory for searching allowed identities file
 	homeDir, _ := os.UserHomeDir()
 
-	// Load allowed identities from file
 	allowedFileName := "allowed_identities"
 	var allowedFile string
 	if _, err := os.Stat("/etc/rncp/" + allowedFileName); err == nil {
@@ -173,7 +170,6 @@ func (a *appT) doListen(ts rns.Transport) {
 		}
 	}
 
-	// Validate and build allowed identity hashes
 	for _, a := range allowed {
 		if len(a) != destLen {
 			fatalf(logger, "Allowed destination length is invalid, must be %v hexadecimal characters (%v bytes).\n", destLen, destLen/2)
@@ -194,7 +190,6 @@ func (a *appT) doListen(ts rns.Transport) {
 			a.exitCh <- 3
 			return
 		}
-		// Test if directory is writable by trying to open a temp file
 		tmpFile := filepath.Join(sp, ".gorncp_write_test")
 		f, err := os.OpenFile(tmpFile, os.O_CREATE|os.O_WRONLY, 0o600)
 		if err != nil {
@@ -240,7 +235,8 @@ func (a *appT) doListen(ts rns.Transport) {
 		return
 	}
 
-	// Always register fetch handler, but check allowFetch inside (matches Python behavior)
+	// The handler is always registered; allowFetch is checked inside, matching
+	// the Python behavior.
 	logger.Warning("Registering fetch_file handler, allowFetch=%v", allowFetch)
 	dest.RegisterRequestHandler("fetch_file", newFetchRequestHandler(logger, allowFetch, jail, noCompress, ts), rns.AllowAll, nil, !noCompress)
 

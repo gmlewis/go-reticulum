@@ -22,9 +22,9 @@ func pollIntervalFor(timeout time.Duration) time.Duration {
 
 // PollUntil polls cond every few milliseconds until it returns true or
 // timeout elapses, and returns the final cond() value. It takes no
-// *testing.T, so it can back package-local wrappers whose signatures predate
-// this helper. Safe inside a synctest bubble (the poll sleep is virtualized)
-// and from any goroutine.
+// *testing.T, so package-local wrappers with any signature can back it. Safe
+// inside a synctest bubble (the poll sleep is virtualized) and from any
+// goroutine.
 func PollUntil(timeout time.Duration, cond func() bool) bool {
 	deadline := time.Now().Add(timeout)
 	for {

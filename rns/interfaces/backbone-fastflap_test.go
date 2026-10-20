@@ -20,7 +20,7 @@ func fastFlapNowFn(unix int64) func() time.Time {
 }
 
 // newFastFlapBackbone builds a BackboneInterface with the fast-flap registry
-// initialised and the given config, without binding a socket. The nowFn is
+// initialized and the given config, without binding a socket. The nowFn is
 // installed so recordFlap / isBlocked / blockedCount are deterministic.
 func newFastFlapBackbone(block bool, threshold float64, grace int, expiry float64, now func() time.Time) *BackboneInterface {
 	bi := NewBaseInterface("test-flap-backbone", ModeFull, TCPBitrateGuess)

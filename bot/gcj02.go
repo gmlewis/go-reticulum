@@ -3,8 +3,7 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-// This file forwards the WGS-84 <-> GCJ-02 coordinate converter to package geo;
-// see olc.go in this package for why the implementation moved.
+// This file forwards the WGS-84 <-> GCJ-02 coordinate converter to package geo.
 
 package bot
 

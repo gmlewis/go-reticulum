@@ -14,13 +14,10 @@ import (
 	"time"
 )
 
-// The card's reference position and the codes it really produces. The Phase 0
-// brief pairs these coordinates with Google's own 849VCWC8+R9, but that code
-// belongs to the Googleplex at 37.422,-122.0841; the code these coordinates
-// encode to is 849VQG4W+4W, which is what the in-tree encoder returns (and it
-// is pinned to the Googleplex vector in olc_test.go, so the encoder itself is
-// not in question). The Maidenhead square and the coordinate formatting do
-// match the brief.
+// The card's reference position and the codes it really produces. Google's own
+// 849VCWC8+R9 belongs to the Googleplex at 37.422,-122.0841; these coordinates
+// encode to 849VQG4W+4W, which is what the in-tree encoder returns. The
+// encoder is pinned to the Googleplex vector in olc_test.go.
 const (
 	refLat      = 37.755321
 	refLng      = -122.452719
@@ -33,10 +30,8 @@ const (
 // whereamiTestNow is the fixed clock every card test is answered against: the
 // instant the reference fix carries, which is 12:45 local solar at the reference
 // position and therefore hours inside the daylight the countdown describes. A
-// card asked against the wall clock instead asserts "daylight remaining" by day
-// and fails every night once the sun is down — which is exactly how a build that
-// ran at 18:22 local solar failed a card whose answer was correct, and how it
-// would have failed again every evening after that.
+// card asked against the wall clock would assert "daylight remaining" by day
+// and fail every night once the sun is down.
 var whereamiTestNow = time.Date(2026, time.September, 16, 20, 45, 33, 0, time.UTC)
 
 // sfFix is the reference GNSS fix the whereami tests build on.
@@ -148,8 +143,8 @@ func TestWhereAmIFormats(t *testing.T) {
 			t.Errorf("card line %v = %q,\nwant %q", i, lines[i], want[i])
 		}
 	}
-	// The elevation is the conversion of 142.4 m, which rounds to 467 ft; the
-	// brief's example 466 ft is the conversion of exactly 142.0 m.
+	// The elevation is the conversion of 142.4 m, which rounds to 467 ft; 466 ft
+	// would be the conversion of exactly 142.0 m.
 	if got := int(math.Round(refAltitude * feetPerMeter)); got != 467 {
 		t.Errorf("elevation conversion = %v ft, want 467", got)
 	}
@@ -275,8 +270,8 @@ func TestWhereAmINoFixStillAnswersManualArgs(t *testing.T) {
 	}
 }
 
-// TestWhereAmISlashForm asserts the slash notation the field brief uses reaches
-// the same command, so "/whereami" is registered in every way that matters.
+// TestWhereAmISlashForm asserts the slash notation reaches the same command, so
+// "/whereami" is registered in every way that matters.
 func TestWhereAmISlashForm(t *testing.T) {
 	t.Parallel()
 
@@ -287,9 +282,9 @@ func TestWhereAmISlashForm(t *testing.T) {
 	}
 }
 
-// TestWhereAmICommandIsLocalAndRegistered asserts the command exists under the
-// name the field brief uses and is marked runnable with no hub session, which
-// is what the captive portal needs.
+// TestWhereAmICommandIsLocalAndRegistered asserts the command exists under its
+// own name and is marked runnable with no hub session, which is what the
+// captive portal needs.
 func TestWhereAmICommandIsLocalAndRegistered(t *testing.T) {
 	t.Parallel()
 
@@ -524,9 +519,9 @@ func TestWhereAmIWithoutAMeasuredAltitude(t *testing.T) {
 	}
 }
 
-// The compass sentences the card tests build a heading from. The first is the
-// worked example the Phase 0.6 brief prints: 029° magnetic with 13.0° of east
-// variation, which is 042° true, and 042° is in the north-east sector.
+// The compass sentences the card tests build a heading from. The first pairs
+// 029° magnetic with 13.0° of east variation, which is 042° true, and 042° is
+// in the north-east sector.
 const (
 	cardHDGSentence = "$HCHDG,29.0,,,13.0,E*20"
 	cardHDTSentence = "$HCHDT,42.0,T*1F"
@@ -547,8 +542,8 @@ func whereamiCompassFixture(t *testing.T, sentence string) (*registry, *hubSessi
 	return reg, session
 }
 
-// TestWhereAmIHeadingLineFormats pins the exact heading line the Phase 0.6 brief
-// specifies, and the two frames it degrades to when only one is known.
+// TestWhereAmIHeadingLineFormats pins the exact heading line the card carries,
+// and the two frames it degrades to when only one is known.
 func TestWhereAmIHeadingLineFormats(t *testing.T) {
 	t.Parallel()
 
@@ -558,7 +553,7 @@ func TestWhereAmIHeadingLineFormats(t *testing.T) {
 		want    string
 	}{
 		{
-			"the brief's worked example",
+			"east variation",
 			CompassHeading{
 				Valid: true, MagneticDeg: 29, TrueDeg: 42, DeclinationDeg: 13,
 				HasDeclination: true, HasMagnetic: true, HasTrue: true, Cardinal: "NE",
@@ -595,8 +590,7 @@ func TestWhereAmIHeadingLineFormats(t *testing.T) {
 }
 
 // TestWhereAmICardCarriesTheHeading asserts the operational card prints the
-// heading between the elevation and the fix status, exactly where the brief
-// puts it, and that the line is the one the briefing specifies.
+// heading between the elevation and the fix status, in the card's own wording.
 func TestWhereAmICardCarriesTheHeading(t *testing.T) {
 	t.Parallel()
 
@@ -619,8 +613,8 @@ func TestWhereAmICardCarriesTheHeading(t *testing.T) {
 }
 
 // TestWhereAmICardOmitsTheHeadingWithoutACompass asserts a node with no compass
-// prints exactly the card it always printed: no empty label, no invented
-// heading, and the same line count.
+// prints the plain card: no empty label, no invented heading, and the expected
+// line count.
 func TestWhereAmICardOmitsTheHeadingWithoutACompass(t *testing.T) {
 	t.Parallel()
 
@@ -700,8 +694,7 @@ func TestWhereAmICardCorrectsAMagneticHeadingFromTheFix(t *testing.T) {
 }
 
 // TestWhereAmIHeadingIsLocalAndRegisteredWithTheCard asserts the heading text
-// survives the slash form the field brief uses, so "/whereami" prints the same
-// card as "whereami".
+// survives the slash form, so "/whereami" prints the same card as "whereami".
 func TestWhereAmIHeadingIsLocalAndRegisteredWithTheCard(t *testing.T) {
 	t.Parallel()
 

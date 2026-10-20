@@ -9,14 +9,6 @@
 //
 // Everything here is offline, because the moment it is needed there is no
 // network: a person is in the water, and somebody on shore is reading a screen.
-// The physics it encodes is the reason cold water kills so much faster than
-// people expect. The gasp reflex fires within seconds and drowns people who can
-// swim perfectly well; muscle control in the hands and arms goes in about ten
-// minutes, which is why swimming to a shore that is a hundred meters away is
-// usually not an option; and hypothermia, the thing people actually worry
-// about, is the third problem rather than the first. Without a lifejacket,
-// drowning beats hypothermia to it every time.
-//
 // The water temperature is the input that matters, and it is worth carrying a
 // thermometer for: the air can be warm enough to swim in while the water is
 // cold enough to disable a swimmer in ten minutes.

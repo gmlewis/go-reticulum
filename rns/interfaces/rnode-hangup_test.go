@@ -20,10 +20,8 @@ import (
 // reader that is already parked in the read when it happens. A read started after
 // the close is indistinguishable from the line's own idle timer — the same
 // zero-byte read, reported the same way — so an interface that only ever looks at
-// what the read returned holds a dead descriptor and goes on reporting itself up.
-// That is exactly what wedged a replug of the appliance at "Connected": the radio
-// was gone, the bridge that owned the terminal had exited, and the transport never
-// noticed.
+// what the read returned would keep a dead descriptor and go on reporting itself
+// up.
 //
 // So the port itself has to be asked, and this test asks it in the one state that
 // leaves the read no clue at all: after the close.

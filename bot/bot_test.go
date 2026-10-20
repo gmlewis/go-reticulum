@@ -828,9 +828,8 @@ func TestEngineRegistersInboundHookBeforeConnecting(t *testing.T) {
 // TestEngineJoinsOnlyAfterTheWelcome asserts the link-established callback does
 // not itself join. The callback fires before the hub has welcomed the session,
 // and the hub answers a JOIN in that window with "send HELLO first" and drops
-// it: the client then keeps the room in no confirmed state, the bot never
-// greets, and a bot that joined there came up connected and permanently silent.
-// The join belongs to the first CONNECTED sync.
+// it, leaving the room in no confirmed state. The join belongs to the first
+// CONNECTED sync.
 func TestEngineJoinsOnlyAfterTheWelcome(t *testing.T) {
 	f := newEngineFixture(t, nil)
 	hub := f.dialer.hub(t, "One")

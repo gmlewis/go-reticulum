@@ -26,15 +26,11 @@ import (
 // instance.
 //
 // gornpkg attaches to a shared instance whenever the configuration shares one
-// (WithRequireSharedInstance in initReticulum) and must never become one
-// itself, so a configuration that leaves share_instance at its default of Yes
-// starts only while some unrelated instance happens to be listening: the
-// developer's own daemon locally, and nothing at all in CI. As in every other
-// tool's integration helper here, the configuration therefore asks for a
-// standalone instance. The empty [interfaces] section keeps interface synthesis
-// from adding an AutoInterface, so no test traffic can leave the process, and
-// the unique instance_name keeps concurrent tests from ever addressing the same
-// instance.
+// (WithRequireSharedInstance in initReticulum) and must never become one itself,
+// so the configuration asks for a standalone instance. The empty [interfaces]
+// section keeps interface synthesis from adding an AutoInterface, so no test
+// traffic can leave the process, and the unique instance_name keeps concurrent
+// tests from addressing the same instance.
 func standaloneConfig(dir string) string {
 	return fmt.Sprintf("[reticulum]\nshare_instance = No\ninstance_name = %v\n\n[interfaces]\n", filepath.Base(dir))
 }
@@ -172,10 +168,9 @@ func TestIntegration_ExitCodeZero(t *testing.T) {
 //
 // It is the counterpart of standaloneConfig above: a tool that quietly became
 // the shared instance would satisfy an "exits 0" test while redefining the
-// network for every other process on the host, so the refusal is asserted
-// directly. shared_instanceConfig addresses the instance inside the test's own
-// config directory, which keeps this test independent of whatever the host is
-// running.
+// network for every other process on the host. sharedInstanceConfig addresses
+// the instance inside the test's own config directory, which keeps this test
+// independent of whatever the host is running.
 func TestIntegration_NoSharedInstanceExitsOne(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
@@ -191,13 +186,12 @@ func TestIntegration_NoSharedInstanceExitsOne(t *testing.T) {
 // TestIntegration_SIGINTCleanExit verifies that signaling gornpkg never turns a
 // clean startup into a failure exit status.
 //
-// gornpkg initializes Reticulum and exits immediately, exactly as rnpkg does
+// gornpkg initializes Reticulum and exits immediately, as rnpkg does
 // (program_setup ends in exit(0)), so the child has usually finished before the
-// signal is delivered and the signal reaches a process that is already gone.
-// Both cases are covered by the same assertions: a SIGINT delivered while the
-// child is still initializing must exit 0 through the handler, and a child that
-// finished on its own must have exited 0. The short wait below exists to give
-// the signal a chance to find a running process, not to guarantee one.
+// signal arrives. Both outcomes are accepted: a SIGINT delivered while the child
+// is still initializing must exit 0 through the handler, and a child that
+// finished on its own must have exited 0. The short wait below only gives the
+// signal a chance to find a running process.
 func TestIntegration_SIGINTCleanExit(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)

@@ -214,12 +214,10 @@ func TestAsQRErrorsWhenPaperPackedNil(t *testing.T) {
 
 	m := mustTestNewMessage(t, destination, source, "content", "title", nil)
 	m.DesiredMethod = MethodPaper
-	// Deliberately do NOT pack, and clear any packed state so PaperPacked is
-	// nil. Pack() would populate PaperPacked, so instead set Method to paper
-	// without packing by forcing the guard: AsQR calls Pack() first, which
-	// WOULD set PaperPacked. To exercise the nil-paper guard we must prevent
-	// Pack from succeeding — point the message at a destination whose identity
-	// has no public key so encryption cannot produce a payload.
+	// AsQR calls Pack() first, and Pack would populate PaperPacked for a
+	// destination with a known public key. To reach the nil-PaperPacked guard,
+	// use a destination identity whose public key is unknown, so packing
+	// cannot produce a paper payload.
 	destinationIDNoKey, err := rns.NewIdentity(false, nil)
 	if err != nil {
 		t.Fatalf("NewIdentity(nokey): %v", err)

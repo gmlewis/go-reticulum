@@ -68,7 +68,7 @@ func startPythonMiniHub(t *testing.T, port int) (string, string, func()) {
 	cmd.Stderr = os.Stderr
 	// StartWithReaper arms a watchdog that SIGKILLs the mini hub if this
 	// test binary dies (go test timeout panic, Ctrl-C) — paths where
-	// t.Cleanup never runs and the hub used to be orphaned to init.
+	// t.Cleanup never runs, so the hub would otherwise be orphaned to init.
 	if err := testutils.StartWithReaper(cmd); err != nil {
 		t.Fatalf("start python mini-hub: %v", err)
 	}

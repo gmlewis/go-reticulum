@@ -20,8 +20,8 @@ const (
 	recoveryEsptoolSHA256   = "3ff47c999807a1ecf732016f65b6b863c3c80f56e39464694490c4a0c456b943"
 )
 
-// recoveryEsptoolSource is generated mechanically from the original Python
-// source-of-truth extract_recovery_esptool() helper.
+// recoveryEsptoolSource is the embedded helper generated mechanically from the
+// Python extract_recovery_esptool() function.
 //
 //go:embed recovery_esptool.py
 var recoveryEsptoolSource []byte
@@ -66,8 +66,8 @@ type extractTarget struct {
 	filename string
 }
 
-// defaultExtractTargets returns the Python source-of-truth extraction targets
-// in the order they are read from the device.
+// defaultExtractTargets returns the extraction targets in the order they are
+// read from the device, matching the Python implementation.
 func defaultExtractTargets() []extractTarget {
 	return []extractTarget{
 		{name: "bootloader", offset: 0x1000, size: 0x4650, filename: "extracted_rnode_firmware.bootloader"},

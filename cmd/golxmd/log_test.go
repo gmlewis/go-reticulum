@@ -31,10 +31,8 @@ func TestStartupLogMessages(t *testing.T) {
 	})
 	logger.SetLogLevel(rns.LogVerbose)
 
-	// Mocking the environment
 	identityPath := filepath.Join(configDir, "identity")
 
-	// Call loadOrCreateIdentity - should log something after fix
 	c := &clientT{logger: logger}
 	if _, err := c.loadOrCreateIdentity(identityPath); err != nil {
 		t.Fatalf("loadOrCreateIdentity: %v", err)
@@ -58,7 +56,7 @@ func TestStartupLogMessages(t *testing.T) {
 		}
 	}
 
-	// Now test loading existing identity
+	// Loading an existing identity takes the other log path.
 	capturedLogs = nil
 	if _, err := c.loadOrCreateIdentity(identityPath); err != nil {
 		t.Fatalf("loadOrCreateIdentity (existing): %v", err)

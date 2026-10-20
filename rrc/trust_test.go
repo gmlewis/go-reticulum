@@ -14,7 +14,7 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// G5.1: vectors captured from Python HubService._parse_identity_hash.
+// TestParseIdentityHash pins vectors from Python HubService._parse_identity_hash.
 func TestParseIdentityHash(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -130,7 +130,8 @@ func TestTrustManagerAddRemoveBan(t *testing.T) {
 	}
 }
 
-// G5.3: banned list persistence into rrcd.toml's [hub] table.
+// TestPersistBannedIdentitiesToConfig pins banned-list persistence into
+// rrcd.toml's [hub] table.
 func TestPersistBannedIdentitiesToConfig(t *testing.T) {
 	dir := testutils.TempDir(t, "trust-persist-")
 	cfgPath := writeTemp(t, dir, "rrcd.toml", "# rrcd config\n\n[hub]\nhub_name = \"rrc\"\n\n[logging]\nlevel = \"INFO\"\n")
@@ -158,7 +159,7 @@ func TestPersistBannedIdentitiesToConfig(t *testing.T) {
 	}
 }
 
-// The union-merge quirk: an entry removed from the config re-imports on
+// The union-merge behavior: an entry removed from the config re-imports on
 // the next persist (trust.py:152-167).
 func TestPersistBannedUnionMergeQuirk(t *testing.T) {
 	dir := testutils.TempDir(t, "trust-union-")
@@ -181,7 +182,7 @@ func TestPersistBannedUnionMergeQuirk(t *testing.T) {
 	second.PersistBannedIdentitiesToConfig(nil, "")
 
 	if !strings.Contains(readTemp(t, cfgPath), "aabb") {
-		t.Error("union-merge quirk must re-import the live ban")
+		t.Error("union-merge must re-import the live ban")
 	}
 }
 
@@ -195,9 +196,10 @@ func readTemp(t *testing.T, path string) string {
 	return string(data)
 }
 
-// G16.14 Non-string banned_identities entries must str()-convert during
-// the union-merge persist the way Python's str(x).strip().lower() does:
-// a hand-edited [123] survives as "123" instead of vanishing.
+// TestPersistBannedIdentitiesNonStringEntries pins that non-string
+// banned_identities entries str()-convert during the union-merge persist the
+// way Python's str(x).strip().lower() does: a hand-edited [123] survives as
+// "123" instead of vanishing.
 func TestPersistBannedIdentitiesNonStringEntries(t *testing.T) {
 	t.Parallel()
 

@@ -172,15 +172,12 @@ func TestIntegrationMultiHopIdleLinkSurvives(t *testing.T) {
 	// its own last outbound is ≥keepalive old, and the initiator's
 	// keepalives arrive exactly on that 5s boundary, so the echo is
 	// occasionally skipped; the next echo then races the initiator's 10s
-	// stale clock. 2026-09-04 forensics (CI run 33931694854 and a local
-	// repro): the Go transport forwarded every keepalive in both directions
-	// — the deaths were Python-hub echo-skip races against the stale
-	// boundary, not transport loss. One death therefore proves nothing
-	// about the transport, but repeated deaths do: a transport that actually
-	// loses keepalives kills every link attempt within seconds of silence.
-	// So each death triggers a reconnect and restarts the full silent
-	// window, and only a third death (or a failed re-welcome) fails the
-	// test.
+	// stale clock. A skipped echo is not transport loss, so one death proves
+	// nothing about the transport, but repeated deaths do: a transport that
+	// actually loses keepalives kills every link attempt within seconds of
+	// silence. So each death triggers a reconnect and restarts the full
+	// silent window, and only a third death (or a failed re-welcome) fails
+	// the test.
 	const (
 		silentFor     = 60 * time.Second
 		maxLinkDeaths = 2

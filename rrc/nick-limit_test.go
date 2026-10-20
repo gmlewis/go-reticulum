@@ -21,10 +21,10 @@ import (
 )
 
 // Hub limits enforcement: real hubs silently drop envelopes whose nickname
-// exceeds the WELCOME max_nick_bytes, so over-long-named Go clients
-// registered as bare hashes in the hub's member list (observed live). The
-// effective nick is truncated rune-safely to the active limit (defaulting to
-// 32 bytes before the first WELCOME) in every outgoing envelope.
+// exceeds the WELCOME max_nick_bytes, so an over-long-named client is
+// registered as a bare hash in the hub's member list. The effective nick is
+// truncated rune-safely to the active limit (defaulting to 32 bytes before
+// the first WELCOME) in every outgoing envelope.
 
 // TestTruncateUTF8 pins the rune-safe byte truncation helper.
 func TestTruncateUTF8(t *testing.T) {
@@ -61,7 +61,7 @@ func TestTruncateUTF8(t *testing.T) {
 	}
 }
 
-// TestSendHelloTruncatesOverLongNick pins the live bug: a display name longer
+// TestSendHelloTruncatesOverLongNick pins the contract: a display name longer
 // than the 32-byte default limit must leave the HELLO envelope within the
 // limit, or the hub registers the client as a bare hash.
 func TestSendHelloTruncatesOverLongNick(t *testing.T) {

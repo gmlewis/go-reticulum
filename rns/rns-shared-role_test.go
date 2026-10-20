@@ -52,15 +52,12 @@ loglevel = 4
 [interfaces]
 `
 
-// TestRequireSharedInstanceHonorsStandaloneConfig covers the regression that
-// broke the whole integration suite: a tool asked to require a shared instance
-// on a configuration that says share_instance = No (which is what every
-// subprocess integration test writes, because the tools under test are peers
-// on a private loopback interface rather than clients of a daemon) refused to
-// start at all. Python never consults require_shared_instance on that branch —
-// share_instance = No makes the process standalone (Reticulum.py:448-452) — so
-// the tool must come up standalone, owning its own interfaces, instead of
-// demanding an instance the configuration never described.
+// TestRequireSharedInstanceHonorsStandaloneConfig pins that a tool asked to
+// require a shared instance on a configuration that says share_instance = No
+// comes up standalone, owning its own interfaces. Python never consults
+// require_shared_instance on that branch — share_instance = No makes the
+// process standalone (Reticulum.py:448-452) — so it must not demand an
+// instance the configuration never described.
 func TestRequireSharedInstanceHonorsStandaloneConfig(t *testing.T) {
 	t.Parallel()
 
@@ -82,7 +79,7 @@ func TestRequireSharedInstanceHonorsStandaloneConfig(t *testing.T) {
 }
 
 // TestRequireSharedInstanceConfigKeyHonorsStandaloneConfig pins the same
-// regression for the config-file spelling of the flag: require_shared_instance
+// contract for the config-file spelling of the flag: require_shared_instance
 // in the [reticulum] section behaves exactly like the constructor option, so a
 // standalone configuration keeps running standalone with it set.
 func TestRequireSharedInstanceConfigKeyHonorsStandaloneConfig(t *testing.T) {
@@ -104,11 +101,10 @@ func TestRequireSharedInstanceConfigKeyHonorsStandaloneConfig(t *testing.T) {
 	}
 }
 
-// TestRequireSharedInstanceToolFailsWithoutRunningInstance covers the incident
-// this option exists for: a short-lived tool must report that no shared instance
-// is running instead of becoming one, because an instance created by a tool
-// disappears when the tool exits and leaves every process attached to it without
-// a network stack.
+// TestRequireSharedInstanceToolFailsWithoutRunningInstance pins that a
+// short-lived tool reports that no shared instance is running instead of
+// becoming one: an instance created by a tool disappears when the tool exits
+// and leaves every process attached to it without a network stack.
 func TestRequireSharedInstanceToolFailsWithoutRunningInstance(t *testing.T) {
 	t.Parallel()
 
@@ -245,20 +241,12 @@ func TestAttachedClientTakesOverWhenSharedInstanceStops(t *testing.T) {
 	}
 }
 
-// TestAttachedClientTakesOverWhenInstanceStopsDuringAttach covers the recovery
-// of TestAttachedClientTakesOverWhenSharedInstanceStops at the moment that used
-// to break it: the owner is closed immediately after the client attaches, with
-// no settling time, so the server may still be accepting that client's
-// connection when the owner detaches. Detaching then closed the listener and a
-// spawned list the connection had not reached yet, leaving it open and unowned:
-// the client kept running=1 with a read loop blocked on a socket nothing would
-// ever close, so its watcher never saw the instance stop and never took over.
-// This surfaced in CI as "expected the attached client to take over, got
-// connected=true standalone=false" after the full 15s deadline. The
-// interface-level tests (TestLocalServerClosesConnectionAcceptedWhileDetaching
-// and TestLocalServerDetachClosesEveryAcceptedConnection) pin the defect
-// deterministically; this one pins the end-to-end contract, repeating the
-// attach/close pair to vary the interleaving.
+// TestAttachedClientTakesOverWhenInstanceStopsDuringAttach covers the same
+// recovery with no settling time: the owner is closed immediately after the
+// client attaches, so the server may still be accepting that client's
+// connection when the owner detaches. The client's watcher must still notice
+// the loss and take over. The attach/close pair repeats to vary the
+// interleaving.
 func TestAttachedClientTakesOverWhenInstanceStopsDuringAttach(t *testing.T) {
 	t.Parallel()
 
@@ -307,12 +295,8 @@ func TestAttachedClientTakesOverWhenInstanceStopsDuringAttach(t *testing.T) {
 // and that decision is not instant: it binds a server and may then make up to
 // four attach attempts with waits between them. The watcher can therefore tick
 // with the interface cleared while the role still says "connected to a shared
-// instance". Reading the cleared interface as "this process owns the instance
-// now" ended the watch inside its own recovery — so when the attempt re-attached
-// as a client rather than taking over, nothing was left to notice the next loss,
-// and the instance kept reporting the client role with no recovery behind it.
-// This surfaced as a rare failure of
-// TestAttachedClientTakesOverWhenSharedInstanceStops in the full suite.
+// instance"; reading that as ownership would end the watch inside its own
+// recovery, leaving nothing to notice the next loss.
 func TestSharedInstanceWatcherSurvivesAnInFlightTakeover(t *testing.T) {
 	t.Parallel()
 
@@ -388,10 +372,8 @@ func TestSharedInstanceWatcherSurvivesAnInFlightTakeover(t *testing.T) {
 // recover its loss by becoming the shared instance. Python aborts rather than
 // take over (Reticulum.py:403-406,445-446), and a takeover by a short-lived
 // process would be torn down again when the tool exits, stranding every client
-// that attached to it in the meantime — the incident this option exists for. It
-// keeps a reconnecting client instead (LocalInterface.py:160-192), so the
-// application case that DOES take over is covered by
-// TestAttachedClientTakesOverWhenSharedInstanceStops.
+// that attached to it in the meantime. It keeps a reconnecting client instead
+// (LocalInterface.py:160-192).
 func TestRequireSharedInstanceToolNeverTakesOverSharedInstance(t *testing.T) {
 	t.Parallel()
 
@@ -431,10 +413,9 @@ func TestRequireSharedInstanceToolNeverTakesOverSharedInstance(t *testing.T) {
 	}
 	ownerClosed = true
 
-	// The watcher that an ordinary application would run takes over within a
-	// few milliseconds on this configuration
-	// (TestAttachedClientTakesOverWhenSharedInstanceStops). Observe for far
-	// longer than that: the tool must still never become the shared instance.
+	// An ordinary application's watcher takes over within a few milliseconds on
+	// this configuration. Observe for far longer than that: the tool must still
+	// never become the shared instance.
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		if tool.IsSharedInstance() {

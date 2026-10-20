@@ -11,28 +11,15 @@ import (
 	"testing"
 )
 
-// TestAnEmptyConfigdirInTheFileDoesNotEraseTheCommandLine is the regression test for a bug
-// that cost a working hub and its bot an entire evening.
+// TestAnEmptyConfigdirInTheFileDoesNotEraseTheCommandLine pins the precedence
+// rule for configdir: a NON-empty value in the file wins over the command line
+// (TestBuildConfigPrecedence pins that), while an EMPTY value means "I have
+// nothing to say" and must not erase what the operator passed.
 //
-// The bootstrapped config file contains `configdir = ""`, and an empty value means
-// "unset". The precedence chain loads that file OVER the path seeds, so the empty value
-// erased an explicitly provided --configdir, and the hub then let Reticulum choose its
-// default directory instead — a DIFFERENT Reticulum instance from the one its clients
-// were attached to.
-//
-// The symptom was a bot that reported
-//
-//	gorrcbot: hub "local hub": cannot connect: Hub identity unknown
-//
-// for as long as it ran, while the hub was up, announcing, and publishing its
-// destination, because the two were never on the same instance at all:
-//
-//	gorrcd   TCP 127.0.0.1:54932->127.0.0.1:37428   (the wrong instance)
-//	gorrcbot TCP 127.0.0.1:54939->127.0.0.1:47428   (the right one)
-//
-// The rule is narrow and it is worth stating exactly: a NON-empty value in the file wins
-// over the command line (TestBuildConfigPrecedence pins that), and an EMPTY value means "I
-// have nothing to say" and must not erase what the operator passed.
+// The bootstrapped config file contains `configdir = ""`. If that erased an
+// explicit --configdir, the hub would let Reticulum choose its default
+// directory — a different Reticulum instance from the one its clients are
+// attached to, so no client could ever hear the hub announce.
 func TestAnEmptyConfigdirInTheFileDoesNotEraseTheCommandLine(t *testing.T) {
 	t.Parallel()
 
@@ -66,7 +53,7 @@ func TestAnEmptyConfigdirInTheFileDoesNotEraseTheCommandLine(t *testing.T) {
 	}
 }
 
-// TestAnAbsentConfigdirStillLetsTheFileDecide asserts the fix is narrow: with no
+// TestAnAbsentConfigdirStillLetsTheFileDecide asserts the rule is narrow: with no
 // --configdir on the command line, the file's value is the one that counts, including
 // the empty value that means "let Reticulum choose".
 func TestAnAbsentConfigdirStillLetsTheFileDecide(t *testing.T) {

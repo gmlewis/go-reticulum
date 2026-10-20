@@ -21,13 +21,12 @@ import (
 	"testing"
 )
 
-// The PONG regression: answering a hub PING with the PING's source as the
-// PONG's sender identity (Field 4) made every real hub attribute the pong to
-// ITSELF, treat the client as dead, tear the link down, and spam every room
-// member with the client's re-join fanouts (observed live on the RNS
-// Community hub). Per the Python SOT (RRC.py:857-863) the pong carries the
-// RESPONDER's own identity hash, the body echoed unchanged, no room field,
-// and a fresh message id.
+// Per the Python SOT (RRC.py:857-863), a PONG carries the RESPONDER's own
+// identity hash, the body echoed unchanged, no room field, and a fresh message
+// id. Answering a hub PING with the PING's source as the PONG's sender
+// identity (Field 4) makes a real hub attribute the pong to ITSELF, treat the
+// client as dead, tear the link down, and spam every room member with the
+// client's re-join fanouts.
 
 func pingFixture(t *testing.T) (*RRCManager, *RRCHub, *[]map[any]any) {
 	t.Helper()

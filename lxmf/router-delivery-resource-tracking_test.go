@@ -102,7 +102,7 @@ func TestCancelInboundCancelsActiveResource(t *testing.T) {
 // TestCancelAllInboundCancelsOnlyActive verifies that CancelAllInbound cancels
 // every active incoming delivery resource and returns the count
 // cancelled, leaving terminal resources untouched
-// (LNMRouter.py:1708-1717, v1.1.0).
+// (LXMRouter.py:1708-1717, v1.1.0).
 func TestCancelAllInboundCancelsOnlyActive(t *testing.T) {
 	t.Parallel()
 

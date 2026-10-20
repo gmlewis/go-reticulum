@@ -14,11 +14,9 @@ import (
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
 
-// poisonedBlob returns a 10-byte random blob whose embedded uint40 emission
-// timebase is garbage. Blobs like these were written into persisted
-// destination_table files by pre-fix binaries that misparsed truncated
-// announces: the values (10^10 .. 10^12) are far beyond any unix timestamp
-// (real emissions in 2026 are ~0x6A9xxxxx ≈ 1.79e9, always starting with a
+// poisonedBlob returns a 10-byte blob whose embedded uint40 emission timebase
+// is garbage: values in the range 10^10..10^12 are far beyond any unix
+// timestamp (real emissions are ~0x6A9xxxxx ≈ 1.79e9 and always start with a
 // 0x00 byte).
 func poisonedBlob(v uint64) []byte {
 	b := make([]byte, 10)
@@ -46,8 +44,8 @@ func validBlob(secondsAgo uint64) []byte {
 
 // TestPlausibleAnnounceTimebase pins the plausibility predicate used to
 // neutralize poisoned random blobs: real emission timestamps sit near local
-// time (and are always < 2^32 until 2106), while the observed poisoned blobs
-// carry values from ~6e10 to ~1.1e12.
+// time (and are always < 2^32 until 2106), while poisoned blobs carry values
+// from ~6e10 to ~1.1e12.
 func TestPlausibleAnnounceTimebase(t *testing.T) {
 	t.Parallel()
 	now := time.Now()
@@ -55,7 +53,7 @@ func TestPlausibleAnnounceTimebase(t *testing.T) {
 	valid := []uint64{
 		uint64(now.Unix()),         // now
 		uint64(now.Unix()) - 86400, // a day ago
-		0x6A906D80,                 // a real 2026 emission from the fleet logs
+		0x6A906D80,                 // a real 2026 emission timestamp
 		uint64(now.Unix()) + 3600,  // one hour of clock skew is tolerated
 		766445,                     // embedded device uptime (e.g. M29-LoRa-Repeater)
 		83450,                      // embedded device uptime (e.g. esp32nomad)
@@ -69,9 +67,9 @@ func TestPlausibleAnnounceTimebase(t *testing.T) {
 	}
 
 	poisoned := []uint64{
-		0xB7F1963C4E,                      // nano's stored garbage (~789e9)
-		0xFFFBA686BE,                      // the Mac hub's stored garbage (~1.1e12)
-		0x11A79C9FAE,                      // penguin's stored garbage (~7.6e10)
+		0xB7F1963C4E,                      // stored garbage (~789e9)
+		0xFFFBA686BE,                      // stored garbage (~1.1e12)
+		0x11A79C9FAE,                      // stored garbage (~7.6e10)
 		uint64(now.Unix()) + 86400 + 3600, // future beyond the skew window
 	}
 	for _, tb := range poisoned {
@@ -82,11 +80,10 @@ func TestPlausibleAnnounceTimebase(t *testing.T) {
 }
 
 // TestTimebaseFromRandomBlobsIgnoresPoisonedBlobs verifies that a poisoned
-// blob no longer blocks path replacement: the timebase comparison must see
-// only plausible emissions, so an entry whose stored blobs are all garbage
-// behaves like an entry with no blobs (timebase 0) and the next real announce
-// replaces it. This is the self-healing half of the nano fleet bug, where
-// poisoned timebases silently blocked every announce handler from firing.
+// blob does not block path replacement: the timebase comparison sees only
+// plausible emissions, so an entry whose stored blobs are all garbage behaves
+// like an entry with no blobs (timebase 0) and the next real announce replaces
+// it.
 func TestTimebaseFromRandomBlobsIgnoresPoisonedBlobs(t *testing.T) {
 	t.Parallel()
 
@@ -133,11 +130,10 @@ func writeTableFile(t *testing.T, entries []([]any)) string {
 	return dir
 }
 
-// TestLoadPathTableSanitizesPoisonedBlobs verifies self-healing of the
-// persisted destination_table: entries written by pre-fix binaries with
-// poisoned random blobs load with the poisoned blobs removed and plausible
-// blobs kept, so the next periodic persistPathTable writes the cleaned state
-// back to disk and the table heals on the first start with fixed code.
+// TestLoadPathTableSanitizesPoisonedBlobs verifies that a persisted
+// destination_table entry with poisoned random blobs loads with the poisoned
+// blobs removed and plausible blobs kept, so the next periodic persistPathTable
+// writes the cleaned state back to disk.
 func TestLoadPathTableSanitizesPoisonedBlobs(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)
@@ -177,13 +173,12 @@ func TestLoadPathTableSanitizesPoisonedBlobs(t *testing.T) {
 	}
 }
 
-// TestAnnounceReplacesPoisonedPathAndFiresHandler is the fleet-symptom
-// regression test: nano's poisoned destination_table entries (garbage blob
-// timebases + a high hop count from a relay-only route) silently blocked
-// every later announce — ValidateAnnounce passed, but the path table never
-// replaced the entry and the announce handler never fired, so the node never
-// saw its peers. With poisoned blobs neutralized, a valid lower-hop announce
-// must replace the entry AND fire the handler.
+// TestAnnounceReplacesPoisonedPathAndFiresHandler verifies that a poisoned
+// path entry (garbage blob timebase plus a high hop count from a relay-only
+// route) does not block later announces: the entry passes ValidateAnnounce but
+// the path table never replaces it and the announce handler never fires. With
+// poisoned blobs neutralized, a valid lower-hop announce must replace the entry
+// AND fire the handler.
 func TestAnnounceReplacesPoisonedPathAndFiresHandler(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)
@@ -207,8 +202,8 @@ func TestAnnounceReplacesPoisonedPathAndFiresHandler(t *testing.T) {
 
 	iface := &capturingInterface{name: "rx-poison", gravity: 0}
 
-	// Poisoned state as found on the fleet: a 40-hop route learned via public
-	// relays, with a garbage timebase that blocks every replacement.
+	// Poisoned state: a 40-hop route learned via public relays, with a
+	// garbage timebase that blocks every replacement.
 	ts.mu.Lock()
 	ts.pathTable[string(dest.Hash)] = &PathEntry{
 		Timestamp:   time.Now().Add(-150 * time.Minute),

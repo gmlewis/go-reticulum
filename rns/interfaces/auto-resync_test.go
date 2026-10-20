@@ -15,11 +15,9 @@ import (
 // when the kernel replaces an interface's IPv6 link-local address (Wi-Fi roam,
 // wlan restart, DHCPv6 refresh) the node must re-adopt the new address,
 // rebuild its bound sockets, and stop announcing the stale hash. Python
-// resyncs every job tick (AutoInterface.py:405-455); the Go port previously
-// adopted once at construction and never looked again, leaving the node
-// permanently invisible on the LAN while TCP planes kept working.
+// resyncs every job tick (AutoInterface.py:405-455).
 //
-// These tests pin the resync planning + application behavior that keeps
+// These tests pin the resync planning and application behavior that keeps
 // adoptedInterfaces, the self-address set, echo bookkeeping, and the bound
 // socket sets consistent across address churn.
 

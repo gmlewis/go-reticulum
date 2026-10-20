@@ -43,12 +43,10 @@ func TestRNodePortClosingTakesTheInterfaceOffline(t *testing.T) {
 	_ = r.Detach()
 }
 
-// TestRNodeIdlePortIsNotTheEndOfTheLink is the other half of the rule, and it is
-// not hypothetical: configureTermios sets VMIN=0 and VTIME=1, so an idle line
-// hands back a zero-byte read every 100ms and Go reports that on an *os.File as
-// io.EOF. A reader that took io.EOF for the end of the link would take a healthy
-// radio offline ten times a second — the opposite fault, and one this port's
-// reader has already been through once.
+// TestRNodeIdlePortIsNotTheEndOfTheLink is the other half of the rule: configureTermios
+// sets VMIN=0 and VTIME=1, so an idle line hands back a zero-byte read every 100ms and
+// Go reports that on an *os.File as io.EOF. A reader that took io.EOF for the end of the
+// link would take a healthy radio offline ten times a second.
 func TestRNodeIdlePortIsNotTheEndOfTheLink(t *testing.T) {
 	t.Parallel()
 

@@ -20,17 +20,10 @@ import (
 //	   packet.context != RNS.Packet.PATH_RESPONSE:
 //	    # Insert announce into announce table for retransmission
 //
-// The Go port previously gated rebroadcast on !connectedToSharedInstance
-// instead of ts.Enabled() || isFromLocalClient. A standalone node with
-// enable_transport=False had connectedToSharedInstance=false, so the Go
-// code rebroadcast announces using an ephemeral transport identity even
-// though transport was disabled. Other nodes receiving this rebroadcast
-// learned paths pointing to the ephemeral identity — paths that could never
-// be used because the non-transport node does not forward transport-id-
-// addressed packets (Inbound's transport-handling block is gated on
-// ts.Enabled()). This is a root cause of "No path to destination known":
-// the node knows the destination (from the announce handler) but the
-// learned path points to a non-functional ephemeral next-hop.
+// The rebroadcast gate is ts.Enabled() || isFromLocalClient, matching the
+// Python condition above. A node with transport disabled does not forward
+// transport-id-addressed packets, so a rebroadcast from it would teach peers
+// a path to a next hop that cannot carry their traffic.
 func TestAnnounceRebroadcastGateTransportDisabled(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)
@@ -160,11 +153,6 @@ func TestAnnounceRebroadcastGatePathResponseNotRebroadcast(t *testing.T) {
 //	if   interface.mode == MODE_ACCESS_POINT: expires = now + AP_PATH_TIME (1 day)
 //	elif interface.mode == MODE_ROAMING:      expires = now + ROAMING_PATH_TIME (6h)
 //	else:                                    expires = now + PATHFINDER_E (1 week)
-//
-// The Go port previously used a fixed 1-week expiry for all modes, so paths
-// learned from Access-Point and Roaming interfaces persisted up to 168x
-// longer than Python intended, causing stale unreachable paths to clog the
-// path table long after the mobile/ephemeral peer had departed.
 func TestAnnouncePathExpiryInterfaceMode(t *testing.T) {
 	t.Parallel()
 

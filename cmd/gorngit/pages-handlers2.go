@@ -60,7 +60,7 @@ func (n *reticulumGitNode) lastUpstreamSync(repoPath string) int64 {
 // de-duplication deque, inserting it (evicting the oldest past
 // thanksDequeMax) when it is new. Returns true when the hash was already
 // present, mirroring the `if thanks_hash in self.thanks_deque` guard
-// (pages.py:2453-2455, 2478-2480). caller holds thanksMu via this method.
+// (pages.py:2453-2455, 2478-2480). thanksMu is acquired internally.
 func (p *pageNode) thanksSeenOrAdd(hash []byte) bool {
 	p.thanksMu.Lock()
 	defer p.thanksMu.Unlock()

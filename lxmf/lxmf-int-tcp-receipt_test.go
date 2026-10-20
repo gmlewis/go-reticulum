@@ -20,11 +20,9 @@ import (
 // packet (mirroring Python LXMRouter.delivery_packet's unconditional
 // packet.prove(), LXMRouter.py:1927) so the proof travels back over the
 // receiver's reverse path, validates the sender's packet receipt, and the
-// receipt callback marks the sender's message StateDelivered. Before the fix,
-// the message DATA arrived at the receiver but no proof ever returned: the
-// sender's message stayed stuck at StateSent and was re-transmitted forever —
-// exactly the "remote box never received my message" symptom reported between
-// two gonomadnet nodes sharing the same shared instance.
+// receipt callback marks the sender's message StateDelivered. Without the
+// proof the message data arrives at the receiver but the sender's message
+// stays at StateSent and is re-transmitted forever.
 func TestTCPDirectDeliverySenderReceiptReachesDelivered(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 

@@ -7,13 +7,13 @@ package rns
 
 import "testing"
 
-// TestEnablingTheHopsDeltaDrawsIt pins the ordering the config layer actually uses. Python
-// draws the delta once at Transport.start as `(ord(os.urandom(1))%6)+2`
-// (Transport.py:328) because it reads [reticulum] local_hops_delta there. The port applies
-// the option from applyConfig, which runs AFTER TransportSystem.Start — so a setter that
-// only stored the flag left the delta at 0, and shouldApplyDelta, which requires a
-// non-zero delta (Transport.py:1555-1560), could never fire. The disguise was silently
-// inert with `local_hops_delta = yes`.
+// TestEnablingTheHopsDeltaDrawsIt pins the ordering the config layer uses.
+// Python draws the delta once at Transport.start as `(ord(os.urandom(1))%6)+2`
+// (Transport.py:328) because it reads [reticulum] local_hops_delta there. The
+// port applies the option from applyConfig, which runs AFTER
+// TransportSystem.Start, so the setter must draw the delta itself; otherwise
+// the delta stays 0 and shouldApplyDelta, which requires a non-zero delta
+// (Transport.py:1555-1560), can never fire.
 //
 // The delta source is injected so the drawn value is deterministic: (3%6)+2 = 5.
 func TestEnablingTheHopsDeltaDrawsIt(t *testing.T) {

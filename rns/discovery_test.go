@@ -3,15 +3,11 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-// The tests in this file are Go BEHAVIORAL unit tests.
-// They assert real Go behavior — sort order, error/log messages, display
-// formatting — against hardcoded expected strings. The expected values were
-// derived from the RNS reference behavior; they are NOT captured from a live
-// `python3` run, and these tests do not exec python3. Any inline comment that
-// mentions "Python" is reference-behavior documentation (explaining why a given
-// expected value is what it is), not a claim of live cross-implementation
-// parity. The test names have been demoted (e.g. *LikePython -> *PerSpec,
-// *MatchesPython -> *MatchesSpec, *LogsPython* -> *Logs*) to reflect this.
+// These are Go behavioral unit tests. They assert real Go behavior — sort
+// order, error/log messages, display formatting — against expected strings
+// derived from the RNS reference behavior. The tests do not exec python3, so an
+// inline comment mentioning "Python" documents why an expected value is what it
+// is rather than claiming a live cross-implementation comparison.
 
 package rns
 
@@ -14057,9 +14053,8 @@ func TestInterfaceAnnouncerPayloadPlainTCPClient(t *testing.T) {
 	t.Parallel()
 
 	// RNS/Discovery.py:139-141: a TCPClientInterface that is not KISS-framed
-	// aborts the discovery announce, even when reachable_on is configured.
-	// The previous non-parity behavior announced it as TCPClientInterface;
-	// Python returns None.
+	// aborts the discovery announce, even when reachable_on is configured, so
+	// the announce payload is nil.
 	logger := NewLogger()
 	ts := newAnnounceCaptureTransport(logger)
 	transportIdentity := mustTestNewIdentity(t, true)

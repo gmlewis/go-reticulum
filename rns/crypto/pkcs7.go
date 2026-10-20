@@ -16,8 +16,8 @@ var (
 
 // PKCS7Pad returns a new buffer with PKCS#7 padding so len(result) is a
 // multiple of blockSize. It never writes into data's backing array: a naive
-// append would reuse spare capacity and race when concurrent Encrypt calls
-// share a slice (CI data race in Link.Teardown → Token.Encrypt).
+// append would reuse spare capacity and let concurrent callers that share a
+// slice race on it.
 func PKCS7Pad(data []byte, blockSize int) []byte {
 	padding := blockSize - (len(data) % blockSize)
 	out := make([]byte, len(data)+padding)

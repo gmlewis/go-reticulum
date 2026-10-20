@@ -3,7 +3,7 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-// work_client.go implements the gorngit client work-document operations,
+// work-client.go implements the gorngit client work-document operations,
 // mirroring the work_list/work_view/work_create/work_propose/work_edit/
 // work_delete/work_comment/work_complete/work_activate/work_permissions
 // methods of ReticulumGitClient (RNS/Utilities/rngit/server.py, rngit v1.4.2).

@@ -8,8 +8,9 @@ package rns
 // Resolver provides core identity and path resolution services within the network.
 type Resolver struct{}
 
-// ResolveIdentity resolves a fully qualified network name to its corresponding cryptographic identity.
-// The original implementation is intentionally a no-op (returning nil) for future extensibility.
+// ResolveIdentity resolves a fully qualified network name to its corresponding
+// cryptographic identity. It is intentionally unimplemented and always returns
+// nil; the type is reserved for future extensibility.
 func (r *Resolver) ResolveIdentity(fullName string) *Identity {
 	return nil
 }

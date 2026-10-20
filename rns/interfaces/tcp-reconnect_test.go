@@ -90,9 +90,7 @@ func reconnectScenario(t *testing.T) bool {
 	// that fires with the client still down is a broken re-announce contract
 	// and stays fatal, while a hook that fires with the client up means a
 	// stranger is listening on the reserved port and the scenario restarts on
-	// a fresh one. CI failed on exactly this: three refused dials, then a
-	// fourth that connected 150ms in, while this test's listener was still
-	// 100ms away from binding.
+	// a fresh one.
 	select {
 	case <-connected:
 		if !client.Status() {

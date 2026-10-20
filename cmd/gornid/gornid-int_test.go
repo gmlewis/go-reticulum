@@ -531,7 +531,7 @@ func TestParity_MultiFileSign(t *testing.T) {
 	}
 
 	// Cross-validation: gornid validates rnid-signed f1.rsg.
-	_ = os.Remove(f2 + ".rsg") // cleanup not needed but tidy
+	_ = os.Remove(f2 + ".rsg")
 	goCrossOut, err := exec.Command(gornidBin, "--config", tmpDir, "-i", idFile, "-V", f1+".rsg", "-r", f1).CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornid cross-validate rnid f1.rsg failed: %v\n%v", err, string(goCrossOut))

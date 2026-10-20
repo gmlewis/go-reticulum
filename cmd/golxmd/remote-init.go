@@ -863,8 +863,7 @@ func anyToBytes(v any) []byte {
 
 // anyToMapStringAny returns the map[string]any value of v, or nil if v is not
 // such a map. Reading from the returned nil map yields zero values, so callers
-// that only read fields can use it directly; callers that iterate should guard
-// against nil (an empty/nil map iterates zero times).
+// that only read fields can use it directly; range over a nil map is a no-op.
 func anyToMapStringAny(v any) map[string]any {
 	if m, ok := v.(map[string]any); ok {
 		return m

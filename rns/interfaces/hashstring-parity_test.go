@@ -1,3 +1,8 @@
+// Copyright 2026 Glenn Lewis. All rights reserved.
+//
+// Use of this source code is governed by the Reticulum License
+// that can be found in the LICENSE file.
+
 package interfaces
 
 import (
@@ -9,13 +14,10 @@ import (
 )
 
 // These tests pin the Go interface hashes to Python's Interface.get_hash =
-// full_hash(str(self)) for the interface types the TCP fix (tcp-hash_test.go)
-// did not cover. The same class of bug applies everywhere: Go previously
-// hashed "Type[Name]" for UDP, Local and Backbone interfaces, so a
-// destination_table written by Python nomadnet (storing the hash in field
-// [6]) could never have its receiving interface resolved by Go's
-// findInterfaceByHash, leaving PathEntry.Interface nil and the path
-// unusable.
+// full_hash(str(self)) for the UDP, Local, and Backbone interface types. A
+// hash that differs from Python's cannot be resolved by findInterfaceByHash
+// against a destination_table written by Python nomadnet, which stores the
+// hash in field [6].
 
 // pythonFullHash returns Python RNS.Identity.full_hash of a string (SHA-256),
 // or "" if the Reticulum python module is unavailable.

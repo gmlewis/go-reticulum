@@ -83,8 +83,9 @@ type commitFile struct {
 }
 
 // commitSigStatus is the (stubbed) result of get_commit_signature
-// (pages.py:2285-2361). Commit-signature validation needs rnid+commitsigs,
-// which are deferred; the page-node always reports "Not signed".
+// (pages.py:2285-2361). Commit-signature validation requires rnid and
+// commitsigs, which this port does not implement; the page-node always
+// reports "Not signed".
 type commitSigStatus struct {
 	signed      bool
 	valid       bool
@@ -506,8 +507,9 @@ func safeInt(s string) string {
 }
 
 // getCommitSignature is a stub mirroring get_commit_signature
-// (pages.py:2285-2361). Commit-signature validation requires rnid +
-// commitsigs, which are deferred; the page-node always reports "Not signed".
+// (pages.py:2285-2361). Commit-signature validation requires rnid and
+// commitsigs, which this port does not implement; the page-node always
+// reports "Not signed".
 func (p *pageNode) getCommitSignature(repoPath, hash string) commitSigStatus {
 	return commitSigStatus{signed: false, valid: false, message: "Not signed"}
 }

@@ -26,7 +26,7 @@ func lockSendRecorder(t *testing.T, env *hubTestEnv) {
 	}
 }
 
-// G16.5 The PING loop and concurrent PONG packets must not race the
+// The PING loop and concurrent PONG packets must not race the
 // pending-pong bookkeeping: Python routes packets and scans sessions
 // under one re-entrant state lock, and the Go port serializes the ping
 // scan, routing, and the link lifecycle callbacks under its dispatch
@@ -88,7 +88,7 @@ func TestPingLoopPongClearsAwaitingPong(t *testing.T) {
 	}
 }
 
-// G16.5 A JOIN routed concurrently with the link's closure must produce
+// A JOIN routed concurrently with the link's closure must produce
 // the Python-serialized outcome: each operation is atomic, so the room
 // membership and the session's room set stay coherent, and no concurrent
 // map access panics. Run under -race.

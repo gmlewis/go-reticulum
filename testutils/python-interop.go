@@ -18,11 +18,9 @@ import (
 )
 
 // SOTRNSVersions are the RNS releases the Python-derived vector suites have been
-// verified against: 1.4.2, the release the port was written against and the one
-// a plain `python3` resolves to on this machine, and 1.5.0, which CI installs.
-// Both are accepted because both were measured; anything else is not the
-// reference the expectations were derived from, so a run against it fails
-// loudly rather than passing quietly on values nobody checked.
+// verified against. Anything else is not the reference the expectations were
+// derived from, so a run against it fails loudly rather than passing quietly on
+// values nobody checked.
 //
 // Bump or extend this set in the same change that re-verifies the affected
 // vectors against the new release.
@@ -190,9 +188,8 @@ func PythonRRCDRepoDir(t *testing.T) string {
 // the exit code gates failure, so scripts should drive pass/fail via
 // `assert`/`raise` and communicate results via `print`.
 //
-// The interpreter comes from the same probe SkipIfNoPythonRNS pins, so the
-// version a script runs under is the version the test was allowed to run
-// against rather than whatever `python3` happens to be.
+// The interpreter comes from the same probe SkipIfNoPythonRNS pins, so a
+// script runs under the version the test was allowed to run against.
 func RunPython(t *testing.T, script string, args ...string) string {
 	t.Helper()
 	exe, _ := pythonRNSReference()

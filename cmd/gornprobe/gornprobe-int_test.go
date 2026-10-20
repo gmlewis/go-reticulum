@@ -113,11 +113,9 @@ loglevel = 4
 }
 
 // TestGornprobeScenarioParity verifies the rendered output of the probe scenario
-// formatters (timeout / success / packet-loss) end-to-end via the synthetic
-// in-process clock/receipt renderers. The sent/reply/RTT lines are Go-internal
-// renderer checks; the loss-summary line is live cross-impl verified against
-// Python rnprobe.py by TestProbeLossSummaryPythonParity (Python str(round(x,2))
-// drops trailing zeros: "100.0%", "0.0%", "50.0%").
+// formatters (timeout / success / packet-loss) through the synthetic in-process
+// clock and receipt renderers. The loss-summary line is also checked against
+// Python rnprobe.py by TestProbeLossSummaryPythonParity.
 func TestGornprobeScenarioParity(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
@@ -296,9 +294,6 @@ func renderProbePacketLossScenario() probeCommandOutcome {
 	out.WriteString(formatProbeSentLine(2, 16, []byte{0xaa, 0xbb}, ""))
 	secondReceipt := &rns.PacketReceipt{Status: rns.ReceiptSent}
 	_ = waitForProbeReceiptAt(&out, secondReceipt, 0.1, clock.Now, clock.Sleep)
-	// if !waitForProbeReceiptAt(&out, secondReceipt, 0.1, clock.Now, clock.Sleep) {
-	//   timeout output already written by the helper
-	// }
 	summary, exitCode := formatProbeLossSummary(2, 1)
 	out.WriteString(summary + "\n")
 	return probeCommandOutcome{stdout: normalizeProbeOutput(out.String()), exitCode: exitCode}

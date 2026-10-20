@@ -46,11 +46,12 @@ func i2pB64Encode(b []byte) string { return i2pB64Encoding.EncodeToString(b) }
 // i2pB64Decode decodes an I2P base64 string to binary data.
 func i2pB64Decode(s string) ([]byte, error) { return i2pB64Encoding.DecodeString(s) }
 
-// i2pB32Hash returns the 52-char lowercase base32 SHA-256 destination hash for
-// binary destination data (sam.Destination.base32). The hash is 32 bytes → 52
-// base32 chars; Python lowercases the result.
+// i2pB32Encoding is unpadded base32, used for I2P destination hashes.
 var i2pB32Encoding = base32.StdEncoding.WithPadding(base32.NoPadding)
 
+// i2pB32Hash returns the 52-char lowercase base32 SHA-256 destination hash for
+// binary destination data (sam.Destination.base32). Python lowercases the
+// result.
 func i2pB32Hash(data []byte) string {
 	sum := sha256.Sum256(data)
 	return strings.ToLower(i2pB32Encoding.EncodeToString(sum[:]))

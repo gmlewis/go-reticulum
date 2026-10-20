@@ -178,7 +178,6 @@ func plural(n int) string {
 }
 
 func formatInt(n int) string {
-	// Simple comma-formatter for integers
 	s := fmt.Sprintf("%v", n)
 	if n < 1000 {
 		return s
@@ -578,8 +577,3 @@ func renderTransportFooter(w io.Writer, stats *rns.InterfaceStatsSnapshot, lstr 
 		}
 	}
 }
-
-// renderTraffic was previously a standalone helper; traffic rendering is
-// now inlined into renderInterface so the rx/tx columns share a common
-// alignment width with the Announces and Path Rqs. columns (matching
-// Python rnstatus.py:606-636).

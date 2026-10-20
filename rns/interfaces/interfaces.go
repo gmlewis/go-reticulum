@@ -3,9 +3,11 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-// Package interfaces formalizes the robust, polymorphic communication abstractions central to the Reticulum Network Stack.
-//
-// This package dictates the strict operational contracts required to integrate diverse physical and virtual media—ranging from UDP/TCP links to raw Serial and LoRa radios—into a unified, hardware-agnostic routing fabric. It provides the foundational boilerplate, cryptographic boundary enforcements, and lifecycle managers that all concrete interface implementations must inherit and honor.
+// Package interfaces defines the communication abstractions used by the
+// Reticulum Network Stack: the Interface contract, interface modes, shared
+// lifecycle and statistics, IFAC frame authentication, ingress/egress
+// control, and the concrete transports (UDP, TCP, serial, pipe, local, I2P,
+// Auto and Backbone).
 package interfaces
 
 import (
@@ -15,17 +17,21 @@ import (
 
 // Interface modes dictate the architectural role and forwarding behavior an interface adopts within the broader network topology.
 const (
-	// ModeFull indicates the interface is a fully participating, bidirectional routing nexus.
+	// ModeFull indicates a fully participating, bidirectional interface.
 	ModeFull = 0x01
-	// ModePointToPoint signifies a direct, unshared link between exactly two peers, optimizing broadcast behaviors.
+	// ModePointToPoint is a direct, unshared link between exactly two peers.
 	ModePointToPoint = 0x02
-	// ModeAccessPoint designates the interface as a hub serving multiple downstream, potentially transient, client nodes.
+	// ModeAccessPoint is a hub serving multiple downstream, potentially
+	// transient, client nodes.
 	ModeAccessPoint = 0x03
-	// ModeRoaming specifies that the interface is highly mobile and expects its underlying network attachment to change frequently.
+	// ModeRoaming marks an interface whose underlying network attachment
+	// changes frequently.
 	ModeRoaming = 0x04
-	// ModeBoundary establishes a strict routing partition, carefully filtering traffic bridging disparate network segments.
+	// ModeBoundary is a routing boundary that filters traffic between
+	// disparate network segments.
 	ModeBoundary = 0x05
-	// ModeGateway acts as an egress or ingress gateway, actively brokering traffic into external, potentially non-Reticulum networks.
+	// ModeGateway brokers traffic into external, potentially non-Reticulum
+	// networks.
 	ModeGateway = 0x06
 	// ModeInternal marks an interface as internal to the local node; transport
 	// nodes discover paths for it (added at RNS v1.3.7) and it may host
@@ -58,8 +64,9 @@ func ModeIn(mode int, modes []int) bool {
 	return slices.Contains(modes, mode)
 }
 
-// Interface strictly defines the operational contract that all Reticulum physical and virtual transport mechanisms must fulfill.
-// It enforces uniform lifecycle management, capability introspection, and asynchronous payload delivery, allowing the routing core to remain entirely hardware-agnostic.
+// Interface is the contract all Reticulum physical and virtual transport
+// mechanisms implement: lifecycle management, capability introspection, and
+// asynchronous payload delivery, so the routing core stays hardware-agnostic.
 type Interface interface {
 	// Name returns the configured interface name.
 	Name() string

@@ -211,10 +211,9 @@ func ValidateAnnounce(ts Transport, packet *Packet) bool {
 		minLen += ratchetSize
 	}
 	if len(packet.Data) < minLen {
-		// A truncated announce (frame loss on a flaky medium, an
-		// undersized hardware MTU on one hop) previously failed here
-		// without any trace, leaving operators to wonder why one peer
-		// never heard an announcement that every other node accepted.
+		// Log the rejection: a truncated announce (frame loss on a flaky
+		// medium, an undersized hardware MTU on one hop) otherwise leaves
+		// no trace of why one peer never heard an announcement.
 		logger.Debug("Announce validation failed: data too short (%v bytes, need >= %v)", len(packet.Data), minLen)
 		return false
 	}

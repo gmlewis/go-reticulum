@@ -27,12 +27,11 @@ import (
 // Python therefore inserts nothing into a packet that already arrives stamped
 // HEADER_2 (which is what a co-located client of a shared instance builds, and
 // what every packet of a multi-hop link carries), and transmits nothing at all
-// for it. The port instead prepended path_entry.NextHop in front of raw[2:],
-// which already held the incoming transport id — putting two ids in one frame.
-// The next hop then reads the second id as the destination hash and drops the
-// packet, so unicast traffic dies two hops out while announces (which never take
-// this branch) keep flowing: links never establish, direct delivery silently
-// fails and messages fall back to the propagation node.
+// for it. Prepending a second transport id in front of the existing one makes
+// the next hop read that second id as the destination hash and drop the packet,
+// so unicast traffic dies two hops out while announces (which never take this
+// branch) keep flowing: links never establish, direct delivery silently fails
+// and messages fall back to the propagation node.
 func TestOutboundInsertsAtMostOneTransportHeader(t *testing.T) {
 	t.Parallel()
 

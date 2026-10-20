@@ -18,9 +18,8 @@ import (
 // edit API must load in Python (tomlkit and the original rrcd.rooms loader),
 // and Python-written files must load here with identical structure.
 
-// writeGoRoomsTOML builds a rooms.toml exactly the way the Go port of the
-// persist flow will: quoted room tables, sorted hex lists, invited
-// sub-tables with Python-repr floats.
+// writeGoRoomsTOML builds a rooms.toml the way the persist flow does: quoted
+// room tables, sorted hex lists, invited sub-tables with Python-repr floats.
 func writeGoRoomsTOML(t *testing.T, dir string) string {
 	t.Helper()
 	doc, err := Parse("[rooms]\n")

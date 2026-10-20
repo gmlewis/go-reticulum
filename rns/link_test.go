@@ -551,8 +551,8 @@ func TestLinkResourceManagement(t *testing.T) {
 		t.Fatalf("NewLink: %v", err)
 	}
 
-	// Use a placeholder resource for registration tests; we don't
-	// need an active link for these bookkeeping methods.
+	// Use a placeholder resource for registration tests; these bookkeeping
+	// methods need no active link.
 	res := &Resource{link: link}
 
 	// Register outgoing.
@@ -594,9 +594,9 @@ func TestLinkResourceManagement(t *testing.T) {
 }
 
 // TestLinkIdentifyBlackholedTearsDownLink verifies the blackholed-identity
-// guard in the ContextLinkIdentify branch (RNS/Link.py:974-976, v1.3.2): when
-// the initiator's identity verifies but is on the receiver's local blackhole
-// list, the receiver tears down the link and does NOT fire RemoteIdentified.
+// guard in the ContextLinkIdentify branch (RNS/Link.py:974-976): when the
+// initiator's identity verifies but is on the receiver's local blackhole list,
+// the receiver tears down the link and does NOT fire RemoteIdentified.
 func TestLinkIdentifyBlackholedTearsDownLink(t *testing.T) {
 	t.Parallel()
 
@@ -699,9 +699,10 @@ func TestTeardownReasonName(t *testing.T) {
 	}
 }
 
-// The teardown reason is recorded and readable through the accessor: a local
-// Teardown marks the initiator-closed reason, mirroring Python's
-// Link.teardown (Link.py:670: initiator → INITIATOR_CLOSED).
+// TestTeardownReasonRecorded asserts the teardown reason is recorded and
+// readable through the accessor: a local Teardown marks the initiator-closed
+// reason, mirroring Python's Link.teardown (Link.py:670: initiator →
+// INITIATOR_CLOSED).
 func TestTeardownReasonRecorded(t *testing.T) {
 	t.Parallel()
 
@@ -717,11 +718,9 @@ func TestTeardownReasonRecorded(t *testing.T) {
 	}
 }
 
-// Link data is proven only when the link's destination demands it: PROVE_ALL
-// always, PROVE_APP via the proof-request callback, and PROVE_NONE never
-// (Python Link.py:953-960). Unconditional proving generated a proof for every
-// message on every link, and proofs routed through a shared instance are
-// frequently undeliverable, starving senders' receipts.
+// TestLinkDataProofFollowsDestinationStrategy asserts that link data is proven
+// only when the link's destination demands it: PROVE_ALL always, PROVE_APP via
+// the proof-request callback, and PROVE_NONE never (Python Link.py:953-960).
 func TestLinkDataProofFollowsDestinationStrategy(t *testing.T) {
 	t.Parallel()
 

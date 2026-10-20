@@ -433,9 +433,9 @@ func TestPrivateCommandNoticeReachesTheCommandHandler(t *testing.T) {
 	}
 }
 
-// TestPeerNoticeStillRelaysToThePeer guards the standard path next to the new
-// branch: a notice addressed to another participant is relayed to that peer's
-// link with the sender's source hash and no room.
+// TestPeerNoticeStillRelaysToThePeer guards the standard relay path: a notice
+// addressed to another participant is relayed to that peer's link with the
+// sender's source hash and no room.
 func TestPeerNoticeStillRelaysToThePeer(t *testing.T) {
 	t.Parallel()
 

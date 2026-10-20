@@ -4,7 +4,7 @@
 // that can be found in the LICENSE file.
 
 // This file implements Open Location Codes (Plus Codes) in pure Go, with no
-// dependency outside the standard library, so a bot on a mesh link can turn a
+// dependency outside the standard library, so a client on a mesh link can turn a
 // coordinate into a short, speakable, error-resistant string and back without
 // any network service at all. That property is the whole point in the field:
 // a Plus Code survives being read out over a 1 kbps voice or packet link, and
@@ -13,8 +13,8 @@
 // The algorithm is the published Open Location Code specification: a base-20
 // alphabet excluding vowels and easily confused glyphs, five latitude/longitude
 // pairs followed by an optional 5x4 grid refinement. The integer arithmetic
-// mirrors the reference implementation exactly, so a code this bot produces is
-// byte-for-byte the code every other implementation produces for the same
+// mirrors the reference implementation exactly, so a code this package produces
+// is byte-for-byte the code every other implementation produces for the same
 // coordinate, and vice versa.
 
 package geo

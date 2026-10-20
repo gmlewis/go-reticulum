@@ -142,10 +142,9 @@ sys.stdout.write(bytes([KISS.FEND, KISS.CMD_ROM_READ, 0x00, KISS.FEND]).hex())
 }
 
 // pythonKissEscape runs the real Python rnodeconf KISS.escape
-// (RNS/Utilities/rnodeconf.py:136-139) over each supplied raw byte slice
-// and returns the escaped output, captured live from the installed RNS.
-// It is gated on SkipIfNoPythonRNS so it runs whenever Python+RNS are
-// available and skips otherwise.
+// (RNS/Utilities/rnodeconf.py:136-139) over each supplied raw byte slice and
+// returns the escaped output, captured live from the installed RNS. Gated on
+// SkipIfNoPythonRNS.
 func pythonKissEscape(t *testing.T, raws [][]byte) [][]byte {
 	t.Helper()
 	testutils.SkipIfNoPythonRNS(t)

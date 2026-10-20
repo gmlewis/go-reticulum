@@ -121,8 +121,7 @@ func TestPropagationStoreIndexesPythonWrittenFile(t *testing.T) {
 }
 
 // TestPropagationStoreUnstampedNameDeviationIsDocumented pins the one deliberate
-// deviation in this format, so a future "fix" that quietly restores Python's rule
-// has to argue with a test. For a message accepted with no stamp, Python omits the
+// deviation in this format. For a message accepted with no stamp, Python omits the
 // value component (LXMRouter.py:2513-2514) and writes a TWO-component name that
 // Python's own indexer then skips, because it requires three components
 // (LXMRouter.py:568). The port keeps the explicit zero, which both indexers accept,
@@ -174,7 +173,7 @@ func TestPropagationStoreUnstampedNameDeviationIsDocumented(t *testing.T) {
 
 // storeStampedScript applies the reference's own store-file naming rule and body
 // rule to the inputs, and reads back the file the port wrote, so both the name and
-// the body are compared against the reference rather than against a transcription.
+// the body are compared against the reference's behavior.
 const storeStampedScript = `import os, sys
 sys.path.insert(0, "/Users/glenn/Library/Python/3.14/lib/python/site-packages")
 from RNS.vendor import umsgpack

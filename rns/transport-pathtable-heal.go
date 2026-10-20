@@ -9,8 +9,8 @@ import "time"
 
 // maxAnnounceTimebaseSkew bounds how far in the future an announce emission
 // may sit relative to local time before it is treated as garbage. Real
-// deployments tolerate some clock skew; a day is generous while still keeping
-// the poisoned values observed on the fleet (10^10..10^12) firmly excluded.
+// deployments tolerate some clock skew; a day is generous while still
+// excluding values that cannot be real emissions.
 const maxAnnounceTimebaseSkew = 24 * time.Hour
 
 // plausibleAnnounceTimebase reports whether tb — the uint40 big-endian
@@ -18,11 +18,10 @@ const maxAnnounceTimebaseSkew = 24 * time.Hour
 // a plausible timestamp. Real emissions from standard nodes sit near local
 // time, while embedded devices without battery-backed RTCs (e.g. ESP32, LoRa
 // repeaters) emit timestamps counting up from zero or system uptime (such as
-// 83,450 or 766,445). Blobs written by pre-fix binaries that misparsed
-// truncated announces carried values from ~6e10 to ~1.1e12 (far in the
-// future); because path replacement requires a newer emission than the stored
-// maximum, one such future blob would block every future announce for the
-// destination until the entry expired. Any non-future timestamp is plausible.
+// 83,450 or 766,445). Because path replacement requires a newer emission than
+// the stored maximum, a far-future timebase would block every later announce
+// for the destination until the entry expired. Any non-future timestamp is
+// plausible.
 func plausibleAnnounceTimebase(tb uint64, now time.Time) bool {
 	if tb > uint64(now.Unix())+uint64(maxAnnounceTimebaseSkew/time.Second) {
 		return false

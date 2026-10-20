@@ -938,7 +938,7 @@ func silentRNSLogger() *rns.Logger {
 	return logger
 }
 
-// G13.2 The gorrcd binary builds and advertises its own version; probing the
+// The gorrcd binary builds and advertises its own version; probing the
 // built artifact needs no Python.
 func TestIntegrationGorrcdBinaryBuilds(t *testing.T) {
 	t.Parallel()
@@ -951,7 +951,7 @@ func TestIntegrationGorrcdBinaryBuilds(t *testing.T) {
 	}
 }
 
-// G13.1 + G13.3 The real Python client connects through the PipeInterface,
+// The real Python client connects through the PipeInterface,
 // sends HELLO, and parses the hub's WELCOME: the hub name, version string,
 // caps map, and limits map all match the expected values.
 func TestIntegrationHelloWelcomeOverPipe(t *testing.T) {
@@ -1087,7 +1087,7 @@ func countEnvelopesOf(er *eventReader, hubIndex int, msgType int64) int {
 	return n
 }
 
-// G13.4 JOIN and PART over the pipe: the joining client receives its own
+// JOIN and PART over the pipe: the joining client receives its own
 // JOINED (no nick) plus the room-info NOTICE, a second client receives the
 // fanout JOINED with the actor's nick, and the PART produces the PARTED
 // self copy plus the fanout with the actor's nick.
@@ -1181,7 +1181,7 @@ func TestIntegrationJoinPartOverPipe(t *testing.T) {
 	}
 }
 
-// G15.7 PING/PONG over the pipe: the real client's send_ping reaches the
+// PING/PONG over the pipe: the real client's send_ping reaches the
 // hub, the hub echoes the ping body byte-identically in a t=31 envelope,
 // and the client renders its `Pong from hub: N ms` system row.
 func TestIntegrationPingPongOverPipe(t *testing.T) {
@@ -1247,7 +1247,7 @@ func TestIntegrationPingPongOverPipe(t *testing.T) {
 	}
 }
 
-// G15.8 The hub-initiated PING loop over the pipe: with
+// The hub-initiated PING loop over the pipe: with
 // ping_interval_s = 1.0 and ping_timeout_s = 5.0 every welcomed client
 // receives t=30 envelopes with a float body and the auto-PONGing client's
 // link survives; a deliberately silent client is torn down after the
@@ -1340,7 +1340,7 @@ func TestIntegrationHubPingLoopOverPipe(t *testing.T) {
 	}
 }
 
-// G15.9 The include_joined_member_list = true hub config: fanout bodies
+// The include_joined_member_list = true hub config: fanout bodies
 // are one-element hash lists, so the real client renders the
 // `<nick> joined` / `<nick> left` system rows and each joiner gets its
 // own `You joined #<room>` row.
@@ -1416,7 +1416,7 @@ func TestIntegrationJoinedMemberListOverPipe(t *testing.T) {
 	}
 }
 
-// G13.5 MSG fanout over the pipe: a second client receives the forwarded
+// MSG fanout over the pipe: a second client receives the forwarded
 // envelope with the sender's hash and nick, and the sender receives its own
 // echo with identical payload bytes.
 func TestIntegrationMsgFanoutOverPipe(t *testing.T) {
@@ -1510,7 +1510,7 @@ func TestIntegrationMsgFanoutOverPipe(t *testing.T) {
 	_ = fwdSrc
 }
 
-// G13.6 /register, /list, and /who over the pipe: the Python client parses
+// /register, /list, and /who over the pipe: the Python client parses
 // the NOTICE texts, so the byte-exact strings are the contract.
 func TestIntegrationListWhoOverPipe(t *testing.T) {
 	t.Parallel()
@@ -1588,7 +1588,7 @@ func containsString(list []string, want string) bool {
 	return false
 }
 
-// G13.7 Error paths over the pipe: an oversized MSG, a bad CBOR packet, a
+// Error paths over the pipe: an oversized MSG, a bad CBOR packet, a
 // pre-HELLO JOIN, an unknown slash command, and rate limiting all produce
 // the exact wire-visible ERROR texts.
 func TestIntegrationErrorPathsOverPipe(t *testing.T) {
@@ -1666,7 +1666,7 @@ func errorBodies(er *eventReader, hubIndex int) []string {
 	return out
 }
 
-// G13.10 Direct notices over the pipe: a hand-crafted T_NOTICE with K_DST
+// Direct notices over the pipe: a hand-crafted T_NOTICE with K_DST
 // and no room is forwarded with K_SRC rewritten and K_DST preserved; a
 // room+dst mix errors with `direct notice must not include room`; an
 // unknown destination errors with `destination not connected`.
@@ -1730,7 +1730,7 @@ func TestIntegrationDirectNoticeOverPipe(t *testing.T) {
 	}
 }
 
-// G13.11 Lifecycle: dropping a client's link delivers the disconnect-driven
+// Lifecycle: dropping a client's link delivers the disconnect-driven
 // PARTED with the departed nick to the remaining members; a banned
 // identity is disconnected with the `banned` ERROR (two-phase hub start).
 func TestIntegrationLifecycleOverPipe(t *testing.T) {
@@ -1809,7 +1809,7 @@ func TestIntegrationLifecycleOverPipe(t *testing.T) {
 	}
 }
 
-// G13.8 Slash-command matrix over the pipe: the operator commands run from
+// Slash-command matrix over the pipe: the operator commands run from
 // the real Python client against a trusted-operator hub, and the persistent
 // commands land in rooms.toml / rrcd.toml.
 func TestIntegrationSlashCommandMatrixOverPipe(t *testing.T) {
@@ -1962,7 +1962,7 @@ func runPythonScript(t *testing.T, script string) string {
 	return ""
 }
 
-// G13.12 Storage round-trip through the live hub: /register from the
+// Storage round-trip through the live hub: /register from the
 // Python client persists rooms.toml that the ORIGINAL Python loader reads;
 // a Python-written second room shows up in the hub's /list after a restart.
 func TestIntegrationStorageRoundTripOverPipe(t *testing.T) {
@@ -2038,7 +2038,7 @@ func TestIntegrationStorageRoundTripOverPipe(t *testing.T) {
 	}
 }
 
-// G13.9 MOTD delivery: with resource transfer enabled the client receives
+// MOTD delivery: with resource transfer enabled the client receives
 // the RESOURCE_ENVELOPE (kind "motd"); with it disabled the chunked-NOTICE
 // fallback delivers the same text. (The RNS resource part transfer itself
 // is an rns-package cross-implementation surface, exercised separately.)
@@ -2104,7 +2104,7 @@ func TestIntegrationMotdDeliveryOverPipe(t *testing.T) {
 	}
 }
 
-// G15.10 The live-fleet soak: the exact raspberrypi deployment config
+// The live-fleet soak: the exact raspberrypi deployment config
 // (ping_interval_s=30, ping_timeout_s=60, include_joined_member_list=true,
 // announce_period_s=300) with three real Python clients joined to one room,
 // soaked long enough to cross several ping cycles. The hub must keep

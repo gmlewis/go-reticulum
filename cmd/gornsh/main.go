@@ -335,14 +335,12 @@ func isDir(path string) bool {
 // realListenSignals subscribes to the process's interrupt signals and returns
 // the channel plus a stop function that releases the subscription.
 //
-// The subscription is injected through runtimeT rather than taken directly in
-// doListen so a unit test can drive the shutdown path without delivering a real
-// signal to the test binary: signal delivery is process-wide, so a test that
-// raises SIGINT at its own PID also reaches every other SIGINT subscriber in
-// that binary — including testutils' interrupted-run temp-dir sweep, which
-// resets the disposition and re-raises, killing the test process. Real signal
-// delivery stays covered by the integration suite, which signals a real gornsh
-// child process.
+// The subscription is injected through runtimeT so a unit test can drive the
+// shutdown path without raising a real signal at the test binary: signal
+// delivery is process-wide, and testutils' interrupted-run temp-dir sweep
+// resets the disposition and re-raises, which would kill the test process.
+// Real signal delivery is covered by the integration suite, which signals a
+// real gornsh child process.
 func realListenSignals() (<-chan os.Signal, func()) {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)

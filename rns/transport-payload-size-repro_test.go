@@ -16,13 +16,13 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// TestSharedInstanceHubToClientPayloadSizes reproduces the 2026-09-05 live
-// raspberrypi Experiment-2 finding: through the Go shared instance, small
-// hub->client link packets (20-byte keepalives, 54-byte pongs, 85-99-byte
-// slash commands) flow, while ~163-byte hub->client packets (the /who
-// response class) vanish at the shared instance — the shared instance's
-// Debug log shows "received 163 bytes from Local Client @" with no
-// "Inbound packet" line, i.e. the frame never survives Unpack.
+// TestSharedInstanceHubToClientPayloadSizes verifies that hub->client and
+// client->hub packets of every payload size survive the shared instance's
+// framing. Small packets (20-byte keepalives, 54-byte pongs, 85-99-byte slash
+// commands) flow, and so must ~163-byte packets (the /who response class). A
+// silently dropped frame shows up in the shared instance's Debug log as
+// "received N bytes from Local Client @" with no "Inbound packet" line, i.e.
+// the frame never survives Unpack.
 //
 // The rig drives every payload size through the identical send path
 // (NewPacketWithTransport + Send) the rrcd hub uses for room notices.
@@ -151,10 +151,10 @@ func TestSharedInstanceHubToClientPayloadSizes(t *testing.T) {
 		}
 	})
 
-	// Sizes mirror the live wire classes: 20-byte keepalive, 54-byte pong,
-	// 85-99-byte slash commands, and the failing ~163-byte wire class
-	// (144-byte payload + 19-byte HEADER_1 header). The payload bytes are
-	// pseudo-random like token-encrypted CBOR envelopes.
+	// Sizes mirror the wire classes: 20-byte keepalive, 54-byte pong,
+	// 85-99-byte slash commands, and the ~163-byte class (144-byte payload +
+	// 19-byte HEADER_1 header). The payload bytes are pseudo-random like
+	// token-encrypted CBOR envelopes.
 	rnd := rand.New(rand.NewSource(1))
 	sizes := []int{1, 35, 66, 80, 94, 144, 200, 247, 297}
 	for _, size := range sizes {

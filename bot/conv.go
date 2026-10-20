@@ -4,9 +4,9 @@
 // that can be found in the LICENSE file.
 
 // This file holds the tactical unit conversions: the arithmetic a person does
-// in the field with cold hands and a headlamp, when the answer decides whether
-// a stove has fuel, whether a battery can carry the radio through the night, or
-// what an altimeter setting means in the units the chart uses.
+// in the field, where the answer decides whether a stove has fuel, whether a
+// battery can carry the radio through the night, or what an altimeter setting
+// means in the units the chart uses.
 //
 // Every conversion is a factor to a single base unit per dimension, so a new
 // unit is one table entry and a dimension cannot silently mix with another.
@@ -14,9 +14,8 @@
 // just factors, and battery capacity is its own case because it is a product of
 // charge and voltage rather than a simple conversion.
 //
-// The water units are deliberately included: a gallon of water weighs
-// 8.345 pounds and a liter weighs a kilogram, which is exactly the arithmetic a
-// hiker does when deciding whether to carry the extra bottle.
+// Water is listed as a mass, because a gallon of water weighs 8.345 pounds and a
+// liter weighs a kilogram.
 
 package bot
 

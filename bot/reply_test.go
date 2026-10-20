@@ -176,10 +176,8 @@ func TestSplitNoticeTextMarksContinuations(t *testing.T) {
 
 // TestSplitNoticeTextBreaksBetweenWords asserts a long reply is cut between
 // words, not through one. Every chunk arrives at a chat client as its own line,
-// so a chunk that ends in the middle of a word reads as corruption: the live
-// "help" listing was split as "... triage, unwatc …" followed by "h, uptime,
-// ...". Grouping help by category keeps that listing inside one envelope, and
-// the splitter still has to break between words for every other long reply.
+// so a chunk that ends in the middle of a word reads as corruption; the splitter
+// therefore has to find a word boundary for every long reply.
 func TestSplitNoticeTextBreaksBetweenWords(t *testing.T) {
 	t.Parallel()
 
@@ -378,11 +376,11 @@ func TestResponderRoutesRepliesPerMode(t *testing.T) {
 	}
 }
 
-// TestResponderAnswersARoomRequestInTheRoomEvenOnACapableHub is the regression
-// test for a reply the asker never saw: a hub that advertises CAP_DIRECT_NOTICE
-// says nothing about the asker's own client, and the stock RRC client renders no
-// private notice at all, so an in-room answer is the only route the asker is
-// known to be able to read.
+// TestResponderAnswersARoomRequestInTheRoomEvenOnACapableHub asserts a room
+// request is answered in the room even when the hub advertises CAP_DIRECT_NOTICE:
+// that capability says nothing about the asker's own client, and the stock RRC
+// client renders no private notice, so an in-room answer is the only route the
+// asker is known to be able to read.
 func TestResponderAnswersARoomRequestInTheRoomEvenOnACapableHub(t *testing.T) {
 	t.Parallel()
 
@@ -559,12 +557,10 @@ func TestResponderStaleDirectNoticeIsAlsoRejected(t *testing.T) {
 	}
 }
 
-// TestResponderCooldownAnswersDistinctQuestions reproduces the operator's
-// reported transcript: eleven different help questions asked inside a couple of
-// minutes on the fleet's public hub, of which four were answered with nothing at
-// all. The cooldown exists to suppress a client that repeats a request, so a run
-// of different questions must be answered — silence there is indistinguishable
-// from a bot that is down, which is what the operator saw.
+// TestResponderCooldownAnswersDistinctQuestions asserts a run of different
+// questions inside one cooldown window is answered: the cooldown exists to
+// suppress a client that repeats a request, and silence on a new question is
+// indistinguishable from a bot that is down.
 func TestResponderCooldownAnswersDistinctQuestions(t *testing.T) {
 	t.Parallel()
 
@@ -580,8 +576,8 @@ func TestResponderCooldownAnswersDistinctQuestions(t *testing.T) {
 	})
 	r.now = func() time.Time { return now }
 
-	// Every entry is a question the operator really asked, with the number of
-	// seconds after the first one that it was asked.
+	// Each entry is a question and the number of seconds after the first one that
+	// it was asked.
 	asked := []struct {
 		at      int
 		command string
@@ -913,11 +909,10 @@ func TestResponderSplitsDirectLinesToTheForwardedEnvelope(t *testing.T) {
 	}
 }
 
-// TestResponderSplitsTheRealHelpListingDirectly pins the concrete failure that
-// motivated the forwarded-envelope model: "help" with no argument returns the
-// whole command listing as ONE long line, the live bot refused to send it as a
-// direct notice because it measured it against the smaller room shape, and the
-// asker saw nothing at all. The real registry produces the real listing here.
+// TestResponderSplitsTheRealHelpListingDirectly pins the forwarded-envelope model
+// against the real registry's listing: "help" with no argument returns the whole
+// command listing as one long line, which must be split against the direct shape
+// or it is refused and the asker sees nothing at all.
 func TestResponderSplitsTheRealHelpListingDirectly(t *testing.T) {
 	t.Parallel()
 

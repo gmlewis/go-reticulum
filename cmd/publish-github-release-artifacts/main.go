@@ -78,13 +78,13 @@ import (
 const versionFile = "rns/version.go"
 
 // scratchDirPrefix names the build scratch dir os.MkdirTemp creates under /tmp.
-// It deliberately begins with no prefix scripts/clean-test-tmp.sh sweeps: a
-// "gorns-release-" prefix sat inside that script's swept "gorns-" family, so a
-// concurrent test run's sweep deleted the artifacts out from under a publish
-// mid-flight, and because go build quietly recreates a missing output directory
-// nothing failed until gh reported a missing file. scratch_test.go enforces the
-// guarantee against the script's live prefix lists, and not_swept_prefixes
-// there names this prefix so -c keeps it that way.
+// It deliberately begins with a prefix scripts/clean-test-tmp.sh does not sweep:
+// inside that script's swept "gorns-" family, a concurrent test run's sweep
+// could delete the artifacts out from under a publish mid-flight, and because go
+// build quietly recreates a missing output directory nothing would fail until gh
+// reported a missing file. scratch_test.go enforces the guarantee against the
+// script's live prefix lists, and not_swept_prefixes there names this prefix so
+// -c keeps it that way.
 const scratchDirPrefix = "publish-release-reticulum-*"
 
 // inUseMarker is the file markScratchInUse drops inside the scratch dir. It
@@ -636,8 +636,8 @@ func verifyArtifacts(assets []string) error {
 			return fmt.Errorf(
 				"artifact %v vanished after it was built (%w); the build scratch dir "+
 					"is only deleted when this process exits, so a concurrent cleaner "+
-					"(scripts/clean-test-tmp.sh, which once swept this dir mid-publish) "+
-					"removed it. Re-run the script to rebuild and publish", path, err)
+					"(scripts/clean-test-tmp.sh) removed it. Re-run the script to "+
+					"rebuild and publish", path, err)
 		}
 	}
 	return nil
@@ -648,18 +648,16 @@ func verifyArtifacts(assets []string) error {
 // build chatter.
 //
 // The builds run concurrently, bounded by a semaphore sized to
-// runtime.NumCPU(). Each individual `go build` is invoked with -p 1 (a single
-// compiler process at a time), so at most NumCPU compiler processes are alive
-// at once — keeping CPU-bound work balanced across the available cores instead
-// of oversubscribing them (running NumCPU builds each at the default -p would
-// spawn NumCPU*NumCPU compiler jobs thrashing the scheduler). This is a real
-// win because the 90 builds are launched as separate `go build` processes that
-// the compiler cannot co-schedule on its own; a single small CLI binary's
-// package DAG is too narrow to saturate all cores by itself.
+// runtime.NumCPU(). Each `go build` is invoked with -p 1 (a single compiler
+// process at a time), so at most NumCPU compiler processes are alive at once —
+// keeping CPU-bound work balanced across the cores instead of oversubscribing
+// them. The builds are separate `go build` processes the compiler cannot
+// co-schedule on its own, and a single CLI binary's package DAG is too narrow to
+// saturate all cores by itself.
 //
 // On the first build failure the context is cancelled, in-flight builds are
-// killed, and not-yet-started jobs are skipped, so we don't keep burning cores
-// after an error.
+// killed, and not-yet-started jobs are skipped, so a failure does not keep
+// burning cores.
 func buildAll(outDir, version string, binaryNames []string, progress *os.File) ([]string, error) {
 	type job struct {
 		binaryName string
@@ -708,26 +706,16 @@ func buildAll(outDir, version string, binaryNames []string, progress *os.File) (
 	}
 
 	// Run the builds concurrently, bounded by a semaphore sized to
-	// runtime.NumCPU(). Each `go build` is passed -p 1 (a single compiler
-	// process at a time), so at most NumCPU compiler processes are alive at
-	// once — keeping CPU-bound work balanced across the available cores
-	// instead of oversubscribing them (running NumCPU builds each at the
-	// default -p would spawn NumCPU*NumCPU compiler jobs thrashing the
-	// scheduler). On a 12-core laptop this cuts a cold-cache build of the
-	// full matrix roughly in half versus the previous sequential loop.
-	//
-	// This is a real win because the builds are launched as separate
-	// `go build` processes that the Go compiler cannot co-schedule on its
-	// own: a single small CLI binary's package DAG is too narrow to saturate
-	// all cores by itself, so the sequential loop left cores idle.
+	// runtime.NumCPU(); see the doc comment for why one compiler process per
+	// core is the right shape.
 	concurrency := max(1, min(runtime.NumCPU(), len(jobs)))
 	sema := make(chan struct{}, concurrency)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// progressMu serializes our own "Building ..." log lines so concurrent
-	// goroutines don't interleave them. (go build itself is silent on success,
+	// progressMu serializes the "Building ..." log lines so concurrent
+	// goroutines do not interleave them. (go build itself is silent on success,
 	// so there is nothing else contending for progress in the common case.)
 	var progressMu sync.Mutex
 	var mu sync.Mutex

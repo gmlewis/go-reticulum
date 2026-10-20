@@ -62,9 +62,7 @@ func TestLinkReceiveIgnoresInitiatorKeepaliveEcho(t *testing.T) {
 // arrive from network interfaces with no transport id, no path, and no link
 // (Transport.py:1562-1572 forwards only PLAIN broadcast from local clients;
 // everything else in this shape is dropped). Forwarding such packets onto all
-// interfaces flooded the public mesh with dead-link keepalives after a hub
-// restart: each client's orphaned 0xFF keepalive was rebroadcast network-wide
-// instead of being dropped.
+// interfaces floods the mesh with dead-link keepalives.
 func TestBroadcastFallbackOnlyForLocalClients(t *testing.T) {
 	t.Parallel()
 
@@ -93,8 +91,8 @@ func TestBroadcastFallbackOnlyForLocalClients(t *testing.T) {
 	}
 
 	// From a spawned local client: the shared instance forwards it on the
-	// other interfaces (the established gap-fix for path-less local-client
-	// link requests must keep working).
+	// other interfaces (path-less local-client link requests must keep
+	// working).
 	ts.Inbound(build(), realSpawnedLocalClient(t))
 	if got := otherIface.sendCount; got == 0 {
 		t.Fatal("local-client-sourced packet was not broadcast to the other interfaces")

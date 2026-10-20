@@ -36,8 +36,8 @@ func TestSignalCleanupHelperProcess(t *testing.T) {
 
 // TestSignalCleanupRemovesTempDirs proves the SIGINT/SIGTERM handler removes
 // the directories a run created when that run is interrupted — the case
-// t.Cleanup and defer can never cover, and the reason interrupted runs used to
-// strand their temp dirs in /tmp.
+// t.Cleanup and defer can never cover, and would otherwise strand temp dirs in
+// /tmp.
 func TestSignalCleanupRemovesTempDirs(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "dir-from-child")
 

@@ -134,7 +134,7 @@ func TestConfigureLoggingNoWritersDiscards(t *testing.T) {
 	defer log.SetOutput(io.Discard)
 }
 
-// G16.17 ConfigureLogging must APPLY the parsed level and format: an
+// ConfigureLogging must APPLY the parsed level and format: an
 // info-level hub message is dropped at the ERROR level while an error
 // message renders through the configured format into the writer.
 func TestConfigureLoggingAppliesLevelAndFormat(t *testing.T) {
@@ -180,7 +180,7 @@ func TestConfigureLoggingAppliesLevelAndFormat(t *testing.T) {
 	}
 }
 
-// G16.17 The [logging] rns_level must reach the live RNS logger instance
+// The [logging] rns_level must reach the live RNS logger instance
 // the service runs with, not a discarded one.
 func TestRNSLoggerLevelWired(t *testing.T) {
 	// One setup re-applies its RNS level in place, so the same logger
@@ -203,7 +203,7 @@ func TestRNSLoggerLevelWired(t *testing.T) {
 	}
 }
 
-// G16.17 /reload re-runs Apply on the hub's own LogSetup, so a changed
+// /reload re-runs Apply on the hub's own LogSetup, so a changed
 // log_level in the TOML applies immediately.
 func TestReloadReconfiguresLogging(t *testing.T) {
 	env := newHubTestEnv(t)
@@ -230,9 +230,9 @@ func TestReloadReconfiguresLogging(t *testing.T) {
 }
 
 // TestRotatingFileWriterRotation verifies the optional gorrcd log file
-// rotates to <file>.1 when it reaches the RNS LogMaxSize bound, so an rrcd
-// with [log] file configured no longer grows without bound (Python rrcd's
-// FileHandler never rotates).
+// rotates to <file>.1 when it reaches the RNS LogMaxSize bound, so a hub with
+// [log] file configured stays bounded (Python rrcd's FileHandler never
+// rotates).
 func TestRotatingFileWriterRotates(t *testing.T) {
 	t.Parallel()
 	dir := testutils.TempDir(t, "rrcd-rotlog-")

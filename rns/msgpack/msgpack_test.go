@@ -317,11 +317,10 @@ func TestUnpackMalformed(t *testing.T) {
 	}
 }
 
-// TestUnpackOversizedLengthsNoPanic is a regression test for the fatal
-// out-of-memory throw that occurred when a wire-supplied array32/map32/str32/
-// bin32 length was used to drive a make() before any content was read. A
-// crafted 5-byte payload (format byte + huge uint32 length, no body) must be
-// rejected with an error rather than fatal-throwing "runtime: out of memory".
+// TestUnpackOversizedLengthsNoPanic pins that a wire-supplied
+// array32/map32/str32/bin32 length is rejected before it drives a make(). A
+// crafted 5-byte payload (format byte + huge uint32 length, no body) must
+// return an error rather than fatal-throw "runtime: out of memory".
 func TestUnpackOversizedLengthsNoPanic(t *testing.T) {
 	t.Parallel()
 	huge := []byte{0xff, 0xff, 0xff, 0xff} // 2^32-1 as big-endian uint32

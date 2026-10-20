@@ -120,9 +120,6 @@ func deliverPart(t *testing.T, r, sender *Resource, idx int, now time.Time) {
 //     carries the missing parts' map hashes and excludes the received ones).
 //  4. The remaining parts are delivered and the resource is assembled.
 //  5. Status is COMPLETE and the decrypted payload equals the original.
-//
-// This is the golden recovery test that replaces the former
-// TestResourceWatchdogJobIsNoOp pin.
 func TestWatchdogLossyLinkRecovery(t *testing.T) {
 	t.Parallel()
 

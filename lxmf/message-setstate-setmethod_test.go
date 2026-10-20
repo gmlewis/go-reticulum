@@ -17,9 +17,10 @@ import (
 // TestSetStateSetMethodSynchronizedWithSnapshot verifies that SetState and
 // SetMethod take the per-Message persist mutex, so a concurrent
 // PackedContainer/WriteToDirectory snapshot (which reads State and Method
-// under the same lock) never races with state/method mutation. This guards
-// the router's move from direct m.state/m.method assignment to the locked
-// helpers (router.go ProcessOutbound/sendMessagePacketLocked and friends).
+// under the same lock) never races with state/method mutation. The router's
+// state and method changes (ProcessOutbound, sendMessagePacketLocked and
+// friends) must go through these locked helpers rather than direct field
+// assignment.
 //
 // Run under -race: an unlocked setter trips the race detector on the
 // concurrent State/Method read in packedContainerLocked. The bounded deadline
@@ -54,16 +55,14 @@ func TestSetStateSetMethodSynchronizedWithSnapshot(t *testing.T) {
 		}
 	})
 
-	// State mutator: uses the locked helper the router now uses instead of
-	// direct field assignment.
+	// State mutator: uses the locked helper, not direct field assignment.
 	wg.Go(func() {
 		for i := 0; time.Now().Before(deadline) && !failed.Load(); i++ {
 			msg.SetState(i % 256)
 		}
 	})
 
-	// Method mutator: uses the locked helper the router now uses instead of
-	// direct field assignment.
+	// Method mutator: uses the locked helper, not direct field assignment.
 	wg.Go(func() {
 		for i := 0; time.Now().Before(deadline) && !failed.Load(); i++ {
 			msg.SetMethod(i % 8)

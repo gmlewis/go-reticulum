@@ -147,7 +147,7 @@ func main() {
 
 	log.Printf("gornode-diagnostics: sniffing serial devices for RNode radios (ignoring ~/.reticulum/config)")
 
-	// Phase 1: sniff all serial ports for RNodes.
+	// Sniff all serial ports for RNodes.
 	radios := sniffSerialPorts(*portArg, *speed)
 	reportSniff(radios)
 
@@ -185,7 +185,7 @@ func main() {
 		log.Printf("skipping unavailable RNode(s); testing the remaining %v", len(free))
 	}
 
-	// Phase 2: configure the free radios for the test channel.
+	// Configure the free radios for the test channel.
 	for _, r := range free {
 		if err := r.configure(); err != nil {
 			fmt.Fprintf(os.Stderr, "ERROR: could not configure RNode on %v: %v\n", r.port, err)
@@ -198,8 +198,8 @@ func main() {
 		os.Exit(2)
 	}
 
-	// Phase 3: announce and wait out the grace period so every fleet node
-	// starts the test in the same window.
+	// Announce and wait out the grace period so every fleet node starts the
+	// test in the same window.
 	for _, r := range testable {
 		log.Printf("about to test RNode on %v (nodeID %x) — grace %vs, test %vs, then summary report", r.port, r.nodeID, *grace, *duration)
 	}
@@ -217,13 +217,13 @@ func main() {
 		}
 	}
 
-	// Phase 4: run the fleet test. All radios on this machine run concurrently
-	// in the same window so they hear the same fleet traffic (one radio per
-	// machine is the normal case).
+	// Run the fleet test. All radios on this machine run concurrently in the
+	// same window so they hear the same fleet traffic (one radio per machine
+	// is the normal case).
 	log.Printf("=== TEST WINDOW OPEN (%vs): transmitting and acknowledging fleet packets on %v radio(s) ===", *duration, len(testable))
 	runTest(testable, *duration, *interval)
 
-	// Phase 5: wind down and report.
+	// Wind down and report.
 	for _, r := range testable {
 		_ = r.shutdown()
 	}
@@ -377,12 +377,10 @@ func sniffSerialPorts(portArg string, speed int) []*radio {
 			r.markFailed()
 			continue
 		}
-		// Discard anything buffered on the serial line from before this open —
-		// packets a previous run (or another program) left unread can sit in
-		// the host/tty or firmware queue for a long time and would otherwise
-		// be misread as fleet traffic (fleet packets are also gated on the
-		// test window opening, so this belt-and-braces flush is not load-
-		// bearing, but it keeps the probe honest).
+		// Discard anything buffered on the serial line from before this open so
+		// packets a previous run (or another program) left unread are not misread
+		// as fleet traffic. Fleet packets are also gated on the test window
+		// opening, so this is a defensive flush rather than the only guard.
 		_ = flushSerialInput(file.Fd())
 		if !probeRNode(r) {
 			r.markFailed()
@@ -870,9 +868,7 @@ func shouldAck(seq uint32) bool {
 // handleFleetPacket processes one delivered CMD_DATA payload. Called with
 // stateMu held (the parser holds it across feed). Packets delivered before
 // the test window opens are dropped: they are stale traffic left buffered by
-// a previous run or another program (in one real fleet run, a previous run's
-// final packets — sent 25 minutes earlier — surfaced this way, were counted
-// as phantom peers, and got pointlessly acknowledged).
+// a previous run or another program and must not be counted or acknowledged.
 func (r *radio) handleFleetPacket(payload []byte) {
 	if !r.windowOpen {
 		return

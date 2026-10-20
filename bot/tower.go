@@ -7,14 +7,10 @@
 // amateur repeaters, emergency relays, and marine stations an operator can reach
 // from where they are.
 //
-// The question it answers is a decision, not a lookup. A handheld with a rubber
-// antenna hears nothing, a directional antenna pointed the right way hears a
-// mast forty kilometers off, and the difference between the two is a bearing.
-// The same bearing decides which way to walk when a hiker has lost coverage, and
-// which machine to raise when the cellular network is gone but a mountain-top
-// repeater still has power. Every answer here is therefore a distance, a
-// bearing, and the details needed to use the site once it is found: the
-// frequency, the offset a repeater needs, the tone it requires, and who runs it.
+// Every answer here is a distance, a bearing, and the details needed to use the
+// site once it is found: the frequency, the offset a repeater needs, the tone it
+// requires, and who runs it. The bearing is what a directional antenna is aimed
+// with, and the distance decides whether the site is reachable at all.
 //
 // Nothing in a query touches the network. The embedded catalog is the data, the
 // geometry is closed form, and the answer is available with the binary alone —

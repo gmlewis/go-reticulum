@@ -11,8 +11,8 @@ import (
 	"time"
 )
 
-// TestLinkHandleResponseReleasesLinkLockBeforeReceiptLock is a regression guard
-// for the AB-BA deadlock that once hung TestIntegrationReleaseRoundTrip.
+// TestLinkHandleResponseReleasesLinkLockBeforeReceiptLock pins the lock order
+// between handleResponse and requestResourceConcluded.
 //
 // requestResourceConcluded (request.go) holds rr.mu and then acquires l.mu via
 // Link.removePendingRequest. handleResponse must therefore NOT hold l.mu while
@@ -20,23 +20,21 @@ import (
 // lock order and deadlock: handleResponse holds l.mu waiting on rr.mu while
 // requestResourceConcluded holds rr.mu waiting on l.mu.
 //
-// The fix moved found.MaxResponseSize() to after l.mu.Unlock() in handleResponse.
-// This test asserts that invariant directly and deterministically — no reliance
-// on lucky scheduling:
+// The test asserts that invariant directly and deterministically, without
+// relying on scheduling:
 //
 //  1. A helper goroutine holds rr.mu, so handleResponse cannot acquire it and
 //     must block there once it reaches MaxResponseSize.
 //  2. handleResponse removes the receipt from pendingRequests under l.mu
-//     before any rr.mu acquisition, so that removal proceeds regardless. We
-//     observe it (pendingRequests becomes empty) to know handleResponse has
-//     finished its l.mu critical section.
-//  3. We require l.mu to be free at that point. With the fix, handleResponse
-//     released l.mu and is blocked on rr.mu, so l.mu is free. If the fix is
-//     reverted, handleResponse is blocked on rr.mu while still holding l.mu,
-//     so l.mu stays locked, TryLock never succeeds, and the test fails.
+//     before any rr.mu acquisition, so that removal proceeds regardless. It
+//     is observable as pendingRequests becoming empty, which shows
+//     handleResponse has finished its l.mu critical section.
+//  3. l.mu must be free at that point: handleResponse released l.mu and is
+//     blocked on rr.mu. If it were blocked on rr.mu while still holding l.mu,
+//     l.mu would stay locked and TryLock could never succeed.
 //
 // All l.mu acquisition in the test uses TryLock: a blocking Lock would itself
-// deadlock against the regressed handleResponse that holds l.mu.
+// deadlock against a handleResponse that holds l.mu.
 func TestLinkHandleResponseReleasesLinkLockBeforeReceiptLock(t *testing.T) {
 	t.Parallel()
 
@@ -67,17 +65,12 @@ func TestLinkHandleResponseReleasesLinkLockBeforeReceiptLock(t *testing.T) {
 	deadline := time.Now().Add(3 * time.Second)
 
 	// Poll l.mu with TryLock only — a blocking Lock would itself deadlock when
-	// the regression holds l.mu. Success requires BOTH that we can acquire l.mu
-	// (it is free) AND that handleResponse has already removed the pending
-	// request (pendingRequests is empty). The list starts non-empty, so the
+	// handleResponse holds l.mu. Success requires BOTH acquiring l.mu (it is
+	// free) AND handleResponse having already removed the pending request
+	// (pendingRequests is empty). The list starts non-empty, so the
 	// only way to observe empty-while-l.mu-is-free is for handleResponse to have
 	// finished its l.mu critical section: it removes the entry under l.mu, then
-	// (with the fix) releases l.mu before blocking on rr.mu.
-	//
-	// Fixed: handleResponse releases l.mu and blocks on rr.mu (held by the
-	// helper), so TryLock succeeds and the list is empty -> pass.
-	// Reverted: handleResponse blocks on rr.mu while still holding l.mu, so
-	// TryLock never succeeds before the deadline -> fail.
+	// releases l.mu before blocking on rr.mu.
 	ok := false
 	for time.Now().Before(deadline) {
 		if !link.mu.TryLock() {
@@ -106,22 +99,21 @@ func TestLinkHandleResponseReleasesLinkLockBeforeReceiptLock(t *testing.T) {
 	}
 }
 
-// TestRequestResourceConcludedReadsStatusUnderResourceLock is a -race regression
-// guard for the data race between requestResourceConcluded and Resource.Request
-// (resource.go:994) found by the race detector in the same failure log.
+// TestRequestResourceConcludedReadsStatusUnderResourceLock is a -race check
+// that requestResourceConcluded reads resource status under the resource's own
+// lock.
 //
 // requestResourceConcluded is the Resource callback (spawned via
 // `go r.callback(r)` from ValidateProof/Request). It reads the resource's
 // status to decide Complete vs Failed. The resource's status field is guarded
 // by the resource's own mutex (r.mu), NOT the receipt's mutex (rr.mu). A direct
 // field read here races with Resource.Request writing status to
-// ResourceStatusAwaitingProof when the receiver demands missing parts at the
-// same moment the delivery proof arrives.
+// ResourceStatusAwaitingProof (resource.go:994) when the receiver demands
+// missing parts at the same moment the delivery proof arrives.
 //
-// The fix reads through resource.Status() (which takes r.mu). This test runs
-// the callback concurrently with a goroutine that writes resource.status under
-// r.mu, mirroring the concurrent writers. Under -race the reverted (direct
-// field) read fails; the accessor read is clean.
+// The callback must read through resource.Status() (which takes r.mu). This
+// test runs the callback concurrently with a goroutine that writes
+// resource.status under r.mu; under -race a direct field read fails.
 func TestRequestResourceConcludedReadsStatusUnderResourceLock(t *testing.T) {
 	t.Parallel()
 
@@ -156,8 +148,8 @@ func TestRequestResourceConcludedReadsStatusUnderResourceLock(t *testing.T) {
 		}
 	})
 
-	// Reader: the callback reads resource status. With the fix it goes through
-	// Status() (r.mu); a reverted direct field read races with the writer.
+	// Reader: the callback reads resource status through Status() (r.mu); a
+	// direct field read races with the writer.
 	for range 2000 {
 		rr.requestResourceConcluded(resource)
 	}

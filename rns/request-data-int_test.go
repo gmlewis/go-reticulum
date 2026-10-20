@@ -139,8 +139,7 @@ if __name__ == "__main__":
 
 // TestIntegratedFormDataPythonToGo pins Python↔Go parity for dict-typed request
 // data: the Python source of truth sends link.request(path, {..}) and the Go
-// handler must observe the decoded map, which the dispatcher previously
-// rejected as a malformed request.
+// handler must observe the decoded map.
 func TestIntegratedFormDataPythonToGo(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	testutils.SkipIfNoPythonRNS(t)

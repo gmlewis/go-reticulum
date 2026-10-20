@@ -28,7 +28,7 @@ import (
 //	latency    = next_hop_per_byte_latency(hash)   # (1/bitrate)*8
 //	return MTU * latency + DEFAULT_PER_HOP_TIMEOUT
 //
-// So the term is MTU * 8 / bitrate — one MTU-sized packet's transmission time —
+// The term is MTU * 8 / bitrate — one MTU-sized packet's transmission time —
 // not MTU / bitrate. The expected values below were captured by running that
 // real function in the Python module against a synthetic next-hop bitrate:
 //
@@ -37,11 +37,8 @@ import (
 //	bitrate=1200      -> 9.333333333333334
 //	bitrate=250       -> 22.0
 //
-// Dropping the factor of eight leaves the term 8x too small, so Go tears a link
-// down about 14s before Python does on a 250bps next hop — a "Link establishment
-// timed out" on a link Python would have established. The sibling
-// extraLinkProofTimeout in the same file already applies the factor
-// ((1/bitrate)*8*MTU).
+// Dropping the factor of eight would make the establishment timeout fire far
+// too early on a slow next hop.
 func TestFirstHopTimeoutMatchesPython(t *testing.T) {
 	t.Parallel()
 

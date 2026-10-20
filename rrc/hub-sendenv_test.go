@@ -24,9 +24,8 @@ func captureStdLog(t *testing.T) *bytes.Buffer {
 }
 
 // TestSendEnvLogsNilLinkDrop verifies sendEnv reports a dropped send when the
-// hub link is down, instead of failing silently — the silence previously read
-// as a dead composer while messages never left the client. The failure is both
-// logged and returned so a caller can surface it.
+// hub link is down rather than failing silently. The failure is both logged
+// and returned so a caller can surface it.
 func TestSendEnvLogsNilLinkDrop(t *testing.T) {
 	buf := captureStdLog(t)
 
@@ -53,8 +52,7 @@ func TestSendEnvLogsNilLinkDrop(t *testing.T) {
 //
 // The hub reports Connected while its link has gone — the race the composer's
 // connected-gate cannot see (a hub already known to be down is gated in the
-// UI, keeping the draft). Before the fix the drop was silent: the room held
-// only the local echo.
+// UI, keeping the draft), so the room must carry the failure notice.
 func TestSendMessageLinkDownRecordsNotice(t *testing.T) {
 	t.Parallel()
 

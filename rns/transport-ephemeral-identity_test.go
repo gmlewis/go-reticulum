@@ -10,8 +10,8 @@ import (
 	"testing"
 )
 
-// TestStartEphemeralTransportIdentityNonTransport asserts the Task 4b slice:
-// a non-transport instance (enable_transport=false) initializes a fresh
+// TestStartEphemeralTransportIdentityNonTransport asserts that a
+// non-transport instance (enable_transport=false) initializes a fresh
 // ephemeral transport identity for rebroadcast/transport-level operations
 // (Python Transport.py:234-237), while the persistent identity is still
 // saved to disk (stable across restarts). A transport-enabled instance uses

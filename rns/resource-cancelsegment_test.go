@@ -14,11 +14,9 @@ import (
 // multi-segment outgoing resource recursively cancels its pending next segment
 // before tearing down the current segment (Python Resource.cancel,
 // Resource.py:1087-1088: `if self.next_segment: self.next_segment.cancel()`).
-// The cascaded cancel must prevent the next segment from ever being advertised
-// — it ends up FAILED with no advertisement packet. The two resources here
-// stand in for the chain that Python's __prepare_next_segment would build
-// during a multi-segment transfer; the cancel recursion itself is what is under
-// test, independent of the (separate) segment-splitting machinery.
+// The cascaded segment ends FAILED with no advertisement packet built. The two
+// resources stand in for the chain Python's __prepare_next_segment would build;
+// the cancel recursion is under test, independent of segment splitting.
 func TestResourceCancelCascadesToNextSegment(t *testing.T) {
 	t.Parallel()
 	link := testActiveResourceLink(t)

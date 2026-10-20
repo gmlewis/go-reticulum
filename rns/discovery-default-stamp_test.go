@@ -9,8 +9,8 @@ import "testing"
 
 // TestDiscoveryDefaultStampValueIs16 verifies that the default discovery
 // stamp cost is 16 (Python InterfaceAnnouncer.DEFAULT_STAMP_VALUE,
-// Discovery.py:35), up from the prior 14. A handler constructed with a zero
-// required value must adopt 16.
+// Discovery.py:35). A handler constructed with a zero required value must
+// adopt 16.
 func TestDiscoveryDefaultStampValueIs16(t *testing.T) {
 	t.Parallel()
 	h := NewInterfaceAnnounceHandler(&Reticulum{logger: NewLogger()}, 0, func(map[string]any) {})

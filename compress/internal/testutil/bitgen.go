@@ -276,7 +276,7 @@ func (p *parser) parseOrder() (order byte) {
 	return order
 }
 
-// parseOrder parses out an repeater value.
+// parseRepeat parses out a repeater value.
 func (p *parser) parseRepeat() (n int) {
 	if len(p.in) > 0 && p.in[0] == '*' {
 		p.rd.Reset(p.in)

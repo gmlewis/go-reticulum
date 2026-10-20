@@ -14,9 +14,9 @@ import (
 
 // TestHandleStatsChunksLongBody pins that an authorized /stats reply is
 // delivered as MTU-safe NOTICE chunks. EmitNotice of the full ~624-byte
-// FormatStats body produces one oversized packet that RNS silently drops
-// (live symptom: authorized /stats does nothing). handleStats must go
-// through QueueNoticeChunks so every queued payload fits the RNS MDU.
+// FormatStats body produces one oversized packet that RNS silently drops;
+// handleStats must go through QueueNoticeChunks so every queued payload fits
+// the RNS MDU.
 func TestHandleStatsChunksLongBody(t *testing.T) {
 	t.Parallel()
 

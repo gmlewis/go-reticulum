@@ -6,9 +6,8 @@
 // Package bot is the offline survival engine shared by every Reticulum field
 // appliance in this repository.
 //
-// It began as the headless RRC chat bot gorrcbot and was promoted to a library
-// so that more than one executable can run the same intelligence in-process,
-// with no radio link and no chat room behind it:
+// It is packaged as a library so that more than one executable can run the same
+// intelligence in-process, with no radio link and no chat room behind it:
 //
 //   - Sensors: a pure-Go NMEA-0183 GNSS reader (gps.go) and electronic-compass
 //     reader (compass.go), each of which can also hold a static fix so an
@@ -58,15 +57,14 @@ import (
 	"github.com/gmlewis/go-reticulum/rrc"
 )
 
-// programName is the prefix every operator-facing log line carries. It is
-// "gorrcbot" until a caller sets it, so the bot's own history and its captured
-// transcripts are unchanged by the promotion to a library.
+// programName is the prefix every operator-facing log line carries. It defaults
+// to "gorrcbot" until a caller sets it.
 var programName = "gorrcbot"
 
 // SetProgramName changes the prefix on operator-facing log lines, so an
-// appliance built on this package reports its own name instead of the name of
-// the chat bot it grew out of. An empty or blank name is ignored. It is meant
-// to be called once, before any goroutine that logs is started.
+// appliance built on this package reports its own name. An empty or blank name
+// is ignored. It is meant to be called once, before any goroutine that logs is
+// started.
 func SetProgramName(name string) {
 	if trimmed := strings.TrimSpace(name); trimmed != "" {
 		programName = trimmed

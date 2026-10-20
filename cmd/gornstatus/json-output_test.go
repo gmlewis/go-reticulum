@@ -107,12 +107,7 @@ func TestBytesToHex(t *testing.T) {
 // TestRenderJSONPrBurstAnnounceFields verifies that the JSON output
 // (`rnstatus -j`) includes the path-request, burst, announce-rate, and
 // announces-to-internal fields that Python's ifstats dict always emits
-// (RNS/Reticulum.py:1478-1489). The Go InterfaceStat already carries these
-// (populated from the local ifstats dict, rpc.go:548-558) but the JSON struct
-// omitted them, so `gornstatus -j` was missing incoming_pr_frequency,
-// outgoing_pr_frequency, announce_rate_target/penalty/grace, burst_active,
-// burst_activated, pr_burst_active, pr_burst_activated, and
-// announces_to_internal. Golden field set captured from RNS 1.4.2.
+// (RNS/Reticulum.py:1478-1489). Golden field set captured from RNS 1.4.2.
 func TestRenderJSONPrBurstAnnounceFields(t *testing.T) {
 	t.Parallel()
 	inPr := 0.5
@@ -159,8 +154,7 @@ func TestRenderJSONPrBurstAnnounceFields(t *testing.T) {
 		t.Fatalf("interface[0] not a map")
 	}
 
-	// All the Python ifstats keys that were previously missing from the JSON
-	// output must now be present.
+	// Every Python ifstats key must be present in the JSON output.
 	for _, key := range []string{
 		"incoming_pr_frequency", "outgoing_pr_frequency",
 		"announce_rate_target", "announce_rate_penalty", "announce_rate_grace",

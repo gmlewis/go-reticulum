@@ -19,7 +19,7 @@ import (
 )
 
 // TestBlackholeUpdaterConstants asserts the BlackholeUpdater timing
-// constants equal the values captured from Python
+// constants match Python
 // RNS.Discovery.BlackholeUpdater (Discovery.py:636-639, rns 1.3.5).
 func TestBlackholeUpdaterConstants(t *testing.T) {
 	t.Parallel()

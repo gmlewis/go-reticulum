@@ -185,10 +185,9 @@ func TestIntegration_ExitCodeZero(t *testing.T) {
 	}
 }
 
-// TestIntegration_PrStatsAndBurstFlags exercises the -P/--pr-stats and
-// -B/--burst flags (plus the prx sort key) against a live UDP interface
-// instance, asserting a clean exit and that the new flags do not crash
-// the renderer.
+// TestIntegration_PrStatsAndBurstFlags exercises -P/--pr-stats,
+// -B/--burst and the prx/ptx sort keys against a live UDP interface
+// instance, requiring a clean exit.
 func TestIntegration_PrStatsAndBurstFlags(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
@@ -476,8 +475,7 @@ func TestIntegration_Discovered(t *testing.T) {
 		t.Fatalf("failed to write mock data: %v", err)
 	}
 
-	// We need a Reticulum instance to provide the config directory
-	// but gornstatus -d will create one.
+	// gornstatus -d creates a Reticulum instance from the config directory.
 	cmd := exec.Command(bin, "--config", tmpDir, "-d")
 	out, err := cmd.CombinedOutput()
 	if err != nil {

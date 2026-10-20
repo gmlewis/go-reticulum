@@ -22,7 +22,7 @@ import (
 // mesh, so a client's link to the hub can ride a multi-hop path. The client's
 // own packets (HELLO, JOIN) travel outward along that path; everything the hub
 // sends back (WELCOME, PING) must travel the other way through the same relay
-// link entries, which is the direction the incident report found dead.
+// link entries.
 
 // multihopConfig renders a per-test RNS configuration for a node on a private
 // loopback mesh: transport selects whether the node relays for others.

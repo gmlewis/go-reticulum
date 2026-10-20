@@ -18,7 +18,7 @@ import (
 // filter (shouldTransmitAnnounce) deterministically. It mirrors the fields
 // Python reads on a real interface in the RNS/Transport.py:1207-1290 elif
 // chain. The sendCount field is read only after WaitOutboundSends drains the
-// goroutine fan-out, matching the established capturingInterface pattern.
+// goroutine fan-out, matching the capturingInterface pattern.
 type announceFilterInterface struct {
 	dummyInterface
 	mode            int
@@ -67,9 +67,7 @@ func (a *announceFilterInterface) Send(data []byte) error {
 //
 // Each option is set on the interface Python reads it from: announces_from_
 // internal on the outbound interface (RNS/Transport.py:1222) and announces_to_
-// internal on the next hop (RNS/Transport.py:1237). An earlier version of this
-// table put both on the outbound interface, which made the table agree with the
-// port instead of with Python.
+// internal on the next hop (RNS/Transport.py:1237).
 func TestShouldTransmitAnnounceParity(t *testing.T) {
 	t.Parallel()
 
@@ -125,7 +123,7 @@ func TestShouldTransmitAnnounceParity(t *testing.T) {
 		{"local onto internal -> else direct hops0", interfaces.ModeInternal, interfaces.ModeFull, true, true, nil, 0, announceDirect},
 
 		// B5: outbound roaming.
-		// B5a: local destination allowed onto roaming (Task 4a).
+		// B5a: local destination allowed onto roaming.
 		{"B5a local->roaming direct", interfaces.ModeRoaming, interfaces.ModeFull, true, true, nil, 1, announceDirect},
 		// B5c/B5d: roaming/boundary next-hop onto roaming blocked.
 		{"B5c roaming->roaming block", interfaces.ModeRoaming, interfaces.ModeRoaming, false, true, nil, 1, announceBlock},
@@ -135,7 +133,7 @@ func TestShouldTransmitAnnounceParity(t *testing.T) {
 		{"B5e full->roaming direct", interfaces.ModeRoaming, interfaces.ModeFull, false, true, nil, 1, announceDirect},
 
 		// B6: outbound boundary.
-		// B6a: local destination allowed onto boundary (Task 4a).
+		// B6a: local destination allowed onto boundary.
 		{"B6a local->boundary direct", interfaces.ModeBoundary, interfaces.ModeFull, true, true, nil, 1, announceDirect},
 		// B6c: roaming next-hop onto boundary blocked.
 		{"B6c roaming->boundary block", interfaces.ModeBoundary, interfaces.ModeRoaming, false, true, nil, 1, announceBlock},
@@ -293,13 +291,8 @@ func TestProcessAnnounceTableAnnouncesFromInternalBlock(t *testing.T) {
 // end-to-end: an announce from a boundary next-hop onto an internal outbound is
 // blocked by default (B4c) and allowed when the NEXT HOP has
 // announces_to_internal=true (B4b reads the next hop's option,
-// RNS/Transport.py:1237).
-//
-// Each case gets its own transport so the next hop's option can differ, and the
-// ati=true case is the one that distinguishes the corrected rule from the old
-// one: with the option on the outbound interface the announce was allowed, and
-// with it on the next hop it is allowed for the same and only reason Python
-// allows it.
+// RNS/Transport.py:1237). Each case gets its own transport so the next hop's
+// option can differ.
 func TestProcessAnnounceTableAnnouncesToInternalAllow(t *testing.T) {
 	t.Parallel()
 
@@ -352,8 +345,8 @@ func TestProcessAnnounceTableAnnouncesToInternalAllow(t *testing.T) {
 	}
 }
 
-// TestProcessAnnounceTableLocalDestinationRoaming asserts the Task 4a slice
-// end-to-end: an announce whose destination is locally registered is rebroadcast
+// TestProcessAnnounceTableLocalDestinationRoaming asserts end-to-end that an
+// announce whose destination is locally registered is rebroadcast
 // on a roaming outbound interface (B5a local-destination allowance), while an
 // announce for an unknown destination from a boundary next-hop is blocked on
 // roaming (B5d boundary→roaming block).

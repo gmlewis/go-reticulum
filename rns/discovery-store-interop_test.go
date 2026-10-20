@@ -23,13 +23,10 @@ import (
 // RNS/Reticulum.py:249) and the file name as the bare lowercase hex of the
 // discovery hash, with no extension (RNS/Discovery.py:539-540).
 //
-// The store had drifted to <configdir>/discovery/interfaces/<hash>.data: a
-// missing "storage" segment and an invented ".data" suffix. Neither
-// implementation filters the directory when reading, so the records were still
-// mutually visible — but the re-hear stat guard (RNS/Discovery.py:543,
-// discovery.go persistDiscoveredInterface) keys on the canonical name, so with
-// two spellings a re-announced interface was written a second time instead of
-// updating the entry the other implementation was holding.
+// The exact path and name matter because the re-hear stat guard
+// (RNS/Discovery.py:543, discovery.go persistDiscoveredInterface) keys on the
+// canonical name: with a second spelling, a re-announced interface is written
+// as a new record instead of updating the one the other implementation holds.
 func TestDiscoveryStorePathAndNameMatchPython(t *testing.T) {
 	t.Parallel()
 	testutils.SkipIfNoPythonRNS(t)
@@ -40,9 +37,9 @@ func TestDiscoveryStorePathAndNameMatchPython(t *testing.T) {
 
 	hash := []byte{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99}
 
-	// What the production write path actually does: persist an entry, then find
-	// the file it created. Asserting on a path this test derived for itself would
-	// keep passing with the store in the wrong place.
+	// Persist an entry, then find the file production actually created.
+	// Asserting on a path this test derived for itself would keep passing with
+	// the store in the wrong place.
 	if err := discovery.persistDiscoveredInterface(map[string]any{
 		"name":           "Path Probe",
 		"type":           "TCPServerInterface",

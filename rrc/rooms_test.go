@@ -29,7 +29,8 @@ func newTestRoomManager(t *testing.T) *RoomManager {
 	})
 }
 
-// G4.1 membership.
+// TestMembership covers adding and removing members, the reverse room lookup,
+// and the founder state the first add creates.
 func TestMembership(t *testing.T) {
 	t.Parallel()
 	m := newTestRoomManager(t)
@@ -121,7 +122,8 @@ func TestGetRoomStats(t *testing.T) {
 	}
 }
 
-// G4.2 EnsureRoomState.
+// TestEnsureRoomState covers fresh-room defaults, founder back-filling, and
+// registry-backed state.
 func TestEnsureRoomState(t *testing.T) {
 	t.Parallel()
 	m := newTestRoomManager(t)
@@ -192,7 +194,8 @@ func TestEnsureRoomState(t *testing.T) {
 	}
 }
 
-// G4.3 room modes.
+// TestGetRoomModeString covers the IRC-style mode string for unknown and
+// configured rooms.
 func TestGetRoomModeString(t *testing.T) {
 	t.Parallel()
 	m := newTestRoomManager(t)
@@ -232,7 +235,7 @@ func TestGetRoomModeString(t *testing.T) {
 	}
 }
 
-// G4.4 permission checks.
+// TestPermissionChecks covers the op, voice, and ban checks.
 func TestPermissionChecks(t *testing.T) {
 	t.Parallel()
 	m := newTestRoomManager(t)
@@ -316,7 +319,8 @@ func TestInvites(t *testing.T) {
 	}
 }
 
-// G4.5 registry loading.
+// TestLoadRegistryFromPath covers registry loading, including the coercion
+// and error-message rules Python's loader applies.
 func TestLoadRegistryFromPath(t *testing.T) {
 	t.Parallel()
 	m := newTestRoomManager(t)
@@ -394,7 +398,7 @@ last_used_ts = 1730000000.5
 	}
 }
 
-// G4.10 registry diff.
+// TestDiffRegistrySummary covers the registry diff summary.
 func TestDiffRegistrySummary(t *testing.T) {
 	t.Parallel()
 	old := map[string]*RoomState{
@@ -432,7 +436,7 @@ func TestDiffRegistrySummary(t *testing.T) {
 	}
 }
 
-// G4.8 prune.
+// TestPruneUnusedRegisteredRooms covers the unused-room prune.
 func TestPruneUnusedRegisteredRooms(t *testing.T) {
 	t.Parallel()
 	m := newTestRoomManager(t)
@@ -469,7 +473,7 @@ func TestPruneUnusedRegisteredRooms(t *testing.T) {
 	}
 }
 
-// G4.9 merge.
+// TestMergeRegistryIntoState covers merging registry data into live state.
 func TestMergeRegistryIntoState(t *testing.T) {
 	t.Parallel()
 	m := newTestRoomManager(t)
@@ -525,7 +529,7 @@ func (m *RoomManager) registryOrderForTest() []string {
 	return append([]string{}, m.roomStateOrder...)
 }
 
-// G4.11: the Go-built registry and the Python loader must agree room by
+// The Go-built registry and the Python loader must agree room by
 // room on the same file.
 func TestRegistryInteropWithPython(t *testing.T) {
 	testutils.SkipIfNoPythonRNS(t)

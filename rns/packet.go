@@ -345,12 +345,11 @@ func (p *Packet) Unpack() error {
 	p.Flags = p.Raw[0]
 	p.Hops = int(p.Raw[1])
 
-	// Hop-count validation (RNS/Packet.py:245-248, v1.3.8): a packet whose
-	// hop count has reached PathfinderM (128) has exhausted its forwarding
-	// budget and must be dropped rather than parsed and dispatched. The
-	// transport read loop treats an Unpack error as a reason to log and
-	// continue, so rejecting here prevents forwarding of an over-hopped or
-	// hop-count-attacked packet.
+	// Hop-count validation (RNS/Packet.py:245-248): a packet whose hop count
+	// has reached PathfinderM (128) has exhausted its forwarding budget and
+	// must be dropped rather than parsed and dispatched. The transport read loop
+	// treats an Unpack error as a reason to log and continue, so rejecting here
+	// prevents forwarding of an over-hopped or hop-count-attacked packet.
 	if p.Hops >= PathfinderM {
 		return fmt.Errorf("invalid hop count %v", p.Hops)
 	}
@@ -603,7 +602,8 @@ func (pr *PacketReceipt) SetTimeout(timeout float64) {
 	pr.Timeout = timeout
 }
 
-// MarkSent updates the receipt's internal state to indicate that the packet was physically dispatched at the given time.
+// MarkSent records that the packet was physically dispatched at the given time
+// and moves the receipt to ReceiptSent.
 func (pr *PacketReceipt) MarkSent(sentAt float64) {
 	pr.mu.Lock()
 	defer pr.mu.Unlock()
@@ -653,12 +653,12 @@ const receiptTimeoutCulled = -1
 // FAILED — or CULLED when its timeout is the -1 sentinel — and its timeout
 // callback is run. It reports whether it fired.
 //
-// The `status == SENT` guard is what makes the pass idempotent, and in the Go
-// port it is load-bearing: the transport sweeps the outstanding-receipt list once
-// a second (TransportSystem.processReceipts) while the link Channel runs its own
-// pass over the same receipts (Channel.checkTimeouts), and both come through
-// here. Whichever fires first wins and the other is a no-op. Python needs only
-// the one sweeper, because its Channel has no timer thread at all — it arms the
+// The `status == SENT` guard is what makes the pass idempotent, and it is
+// load-bearing: the transport sweeps the outstanding-receipt list once a second
+// (TransportSystem.processReceipts) while the link Channel runs its own pass
+// over the same receipts (Channel.checkTimeouts), and both come through here.
+// Whichever fires first wins and the other is a no-op. Python needs only the one
+// sweeper, because its Channel has no timer thread at all — it arms the
 // receipt's timeout and callback and lets Transport.jobs fire it
 // (RNS/Channel.py:591-594, RNS/Transport.py:569-587).
 //
@@ -704,8 +704,8 @@ const (
 	PacketStatusFailed    = 0x03
 )
 
-// GetStatus returns the packet's current status. It is the Go port
-// of Python's Packet.get_status().
+// GetStatus returns the packet's current status, mirroring Python's
+// Packet.get_status().
 func (p *Packet) GetStatus() int {
 	if p == nil {
 		return PacketStatusNone
@@ -716,9 +716,8 @@ func (p *Packet) GetStatus() int {
 	return p.status
 }
 
-// CheckTimeout reports whether the packet has been sent and is
-// now past its configured timeout. It is the Go port of Python's
-// Packet.check_timeout().
+// CheckTimeout reports whether the packet has been sent and is now past its
+// configured timeout, mirroring Python's Packet.check_timeout().
 func (p *Packet) CheckTimeout() bool {
 	if p == nil {
 		return false
@@ -742,8 +741,8 @@ func (p *Packet) IsTimedOut() bool {
 	return now > p.SentAt+p.timeout
 }
 
-// Resend marks the packet for re-transmission and resets the
-// timeout clock. It is the Go port of Python's Packet.resend().
+// Resend marks the packet for re-transmission and resets the timeout clock,
+// mirroring Python's Packet.resend().
 func (p *Packet) Resend() {
 	if p == nil {
 		return

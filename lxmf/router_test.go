@@ -3,17 +3,9 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-// The tests in this file are Go behavioral unit tests. They assert real Go
-// behavior — stamp-cost handling, propagation sync state tables,
-// message-container aliasing — against hardcoded expected strings. The
-// expected values were derived from the LXMF reference behavior; they are NOT
-// captured from a live `python3` run, and these tests do not exec python3.
-// Any inline comment that mentions "Python" is reference-behavior
-// documentation (explaining why a given expected value is what it is), not a
-// claim of live cross-implementation parity. The test names use the *PerSpec,
-// *MatchesSpec, and *LegacyStyle suffixes (rather than *LikePython /
-// *MatchesPython / *PythonStyle) to reflect that the expected values come from
-// the spec rather than a live Python run.
+// These tests assert Go behavior against hardcoded expected values derived from
+// the LXMF reference; they do not run python3. Inline comments that mention
+// "Python" document the reference behavior a value comes from.
 
 package lxmf
 
@@ -6549,9 +6541,9 @@ func TestDeliveryAnnounceHandlerLogsMalformedStampCostAndStillRetriesPendingOutb
 	logs := append([]string(nil), got...)
 	logMu.Unlock()
 
-	// Python (Handlers.py, 0.9.4..1.1.0) downgraded the undecodable-stamp-cost
-	// path from LOG_ERROR to LOG_DEBUG with new wording. Assert a DEBUG record
-	// containing the new text is emitted and no ERROR record is.
+	// The undecodable-stamp-cost path logs at DEBUG (Handlers.py,
+	// 0.9.4..1.1.0). Assert a DEBUG record containing the text is emitted and
+	// no ERROR record is.
 	wantSub := "Could not decode stamp cost from announce data"
 	foundDebug := false
 	for _, msg := range logs {
@@ -7425,13 +7417,9 @@ func TestRequestMessagesPathJobResumesSyncWhenPathAppears(t *testing.T) {
 //	    self.acknowledge_sync_completion(failure_state=LXMRouter.PR_NO_PATH)
 //
 // — so PR_PATH_TIMEOUT bounds how long the job WAITS; it never discards a path
-// that has arrived. The port tested the deadline first and never re-tested after
-// the loop, so a path response landing as the last wait elapsed was thrown away
-// and the sync failed with PR_NO_PATH. That is routine here: shared-instance path
-// responses for the fleet's 4-6 hop peers — the clients' own logs are full of
-// "via Local shared instance, 5 hops" / "6 hops" — land later than the 10 s
-// deadline, which is what made syncs read "No path to node" and then succeed on a
-// manual retry.
+// that has arrived. Testing the deadline first, or skipping the post-loop
+// re-test, discards a path response that lands as the last wait elapses and
+// fails the sync with PR_NO_PATH.
 func TestRequestMessagesPathJobResumesSyncWhenPathArrivesAsTheDeadlineExpires(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
@@ -12261,8 +12249,7 @@ func TestPeerName(t *testing.T) {
 
 	// Metadata with PN_META_NAME key => name returned as utf-8 string. The map is
 	// keyed with PNMetaName itself, as an announce delivers it — msgpack decodes
-	// an integer key as an int64, and keying an int here (as this test once did)
-	// pinned the mismatch that hid every propagation node's name
+	// an integer key as an int64, so keying an int would match nothing
 	// (TestPeerNameFromDecodedMetadata pins the wire side of it).
 	peer.metadata = map[any]any{PNMetaName: []byte("Alice")}
 	if got := peer.Name(); got != "Alice" {

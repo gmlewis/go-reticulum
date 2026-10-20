@@ -107,8 +107,6 @@ func TestParseFlags(t *testing.T) {
 				t.Fatalf("parseFlags() error = %v, wantErr %v", err, tc.wantErr)
 			}
 			if err == nil {
-				// We don't compare the whole struct directly because of float precision and default values
-				// but here they are exact or we can check fields.
 				if !reflect.DeepEqual(app, tc.want) {
 					t.Fatalf("parseFlags() = %+v, want %+v", app, tc.want)
 				}

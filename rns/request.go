@@ -126,10 +126,10 @@ func (rr *RequestReceipt) SetMaxResponseSize(max int64) {
 
 // ResponseSize returns the uncompressed size of the received response, or nil
 // when no response size has been recorded yet (Python
-// RequestReceipt.response_size, None before any response data arrives). It is
-// the Go port of Python's response_size attribute (Link.py:1341,867-868):
-// set by the inline response path (handleResponse updateSizes=true) and by
-// the response-resource advertisement-accept path (Link.py:1050-1051).
+// RequestReceipt.response_size, None before any response data arrives). Mirrors
+// Python's response_size attribute (Link.py:1341,867-868): set by the inline
+// response path (handleResponse updateSizes=true) and by the response-resource
+// advertisement-accept path (Link.py:1050-1051).
 func (rr *RequestReceipt) ResponseSize() *int64 {
 	rr.mu.Lock()
 	defer rr.mu.Unlock()
@@ -143,7 +143,7 @@ func (rr *RequestReceipt) ResponseSize() *int64 {
 // ResponseTransferSize returns the accumulated on-wire transfer size of the
 // received response, or nil when no transfer size has been recorded yet
 // (Python RequestReceipt.response_transfer_size, None until the first
-// accumulation). It is the Go port of Python's response_transfer_size attribute
+// accumulation). Mirrors Python's response_transfer_size attribute
 // (Link.py:1340,869-870): accumulated by the inline response path
 // (handleResponse updateSizes=true) and the response-resource
 // advertisement-accept path (Link.py:1052-1053).
@@ -170,8 +170,8 @@ func (rr *RequestReceipt) SetResponseSizeForTest(size int64) {
 }
 
 // recordResponseSize records the response size and accumulates the transfer
-// size for the response-data (inline ContextResponse) path. It is the Go port
-// of Python handle_response's update_sizes block (Link.py:867-870):
+// size for the response-data (inline ContextResponse) path, mirroring Python
+// handle_response's update_sizes block (Link.py:867-870):
 // response_size is set (overwriting any prior value, matching the inline
 // path's unconditional assignment), and response_transfer_size is accumulated
 // (initialised from unset to 0 on first use, matching Python's
@@ -211,8 +211,8 @@ func (rr *RequestReceipt) recordResponseResourceSize(readSize, readTransferSize 
 }
 
 // ResponseRejected marks the request receipt as failed because an oversized
-// response was received, and fires the failed callback. It is the Go port of
-// Python RequestReceipt.response_rejected (Link.py:1402-1410), invoked from
+// response was received, and fires the failed callback. It mirrors Python
+// RequestReceipt.response_rejected (Link.py:1402-1410), invoked from
 // the inline response path (handleResponse) and the response-resource
 // advertisement path when the response size exceeds maxResponseSize. It is
 // terminal-guarded and idempotent — a receipt already Failed/Ready is left
@@ -317,12 +317,10 @@ func (rr *RequestReceipt) requestResourceConcluded(resource *Resource) {
 // as a resource (common when the reply exceeds the link MDU),
 // responseResourceProgress flips the status to RequestReceiving, and this loop
 // exits immediately — disarming the response timeout. The resource's own
-// watchdog then handles the rest of the transfer. Without this disarm, a
-// multi-hop resource transfer that takes longer than the fixed deadline (set
-// at request-send time) is killed mid-transfer, surfacing as "Request timed
-// out" on the furthest nodes. requestTimedOut is terminal-guarded, so a race
-// between the deadline and a last-millisecond completion resolves to exactly
-// one callback.
+// watchdog then handles the rest of the transfer, so a transfer that outlasts
+// the fixed deadline set at request-send time is not killed mid-flight.
+// requestTimedOut is terminal-guarded, so a race between the deadline and a
+// last-millisecond completion resolves to exactly one callback.
 func (rr *RequestReceipt) responseTimeoutJob(deadline time.Time) {
 	for {
 		rr.mu.Lock()
@@ -408,9 +406,9 @@ func (rr *RequestReceipt) responseResourceProgress(resource *Resource) {
 	}
 }
 
-// GetResponse returns the response data associated with this
-// receipt, or nil if no response has been received. It is the Go
-// port of Python's RequestReceipt.get_response().
+// GetResponse returns the response data associated with this receipt, or nil if
+// no response has been received. Mirrors Python's
+// RequestReceipt.get_response().
 func (rr *RequestReceipt) GetResponse() []byte {
 	if rr == nil {
 		return nil
@@ -421,9 +419,9 @@ func (rr *RequestReceipt) GetResponse() []byte {
 	return nil
 }
 
-// GetResponseTime returns the timestamp at which the response was
-// concluded, or a zero time if no response has been received. It
-// is the Go port of Python's RequestReceipt.get_response_time().
+// GetResponseTime returns the timestamp at which the response was concluded, or
+// a zero time if no response has been received. Mirrors Python's
+// RequestReceipt.get_response_time().
 func (rr *RequestReceipt) GetResponseTime() time.Time {
 	if rr == nil {
 		return time.Time{}
@@ -431,9 +429,8 @@ func (rr *RequestReceipt) GetResponseTime() time.Time {
 	return rr.ConcludedAt
 }
 
-// Concluded reports whether the request has been concluded (either
-// with a response or a timeout). It is the Go port of Python's
-// RequestReceipt.concluded().
+// Concluded reports whether the request has been concluded (either with a
+// response or a timeout), mirroring Python's RequestReceipt.concluded().
 func (rr *RequestReceipt) Concluded() bool {
 	if rr == nil {
 		return false

@@ -18,9 +18,8 @@ import (
 func (app *appT) programSetup() (*rns.Reticulum, error) {
 	startPProf(app.pprofAddr)
 	logger := app.logger
-	// Apply the -v/-q verbosity delta in every mode: service mode previously
-	// skipped it, which made -s -v -v (transport-level debug capture for the
-	// /tmp service logs) a silent no-op.
+	// Apply the -v/-q verbosity delta in every mode, including service mode,
+	// so that -s -v -v raises the file log to transport-level debug.
 	logger.SetPendingDelta(app.verbose - app.quiet)
 	if app.service {
 		logger.SetLogDest(rns.LogDestFile)
@@ -43,10 +42,8 @@ func (app *appT) programSetup() (*rns.Reticulum, error) {
 }
 
 // startPProf starts an HTTP server exposing net/http/pprof endpoints at addr
-// (e.g. "127.0.0.1:6062"). It is strictly opt-in via the -pprof-addr flag:
-// when addr is empty it is a no-op with zero overhead. It mirrors the
-// gonomadnet/gorrcd pprof endpoints so the shared instance is inspectable
-// exactly like the fleet's applications.
+// (e.g. "127.0.0.1:6062"). It is opt-in via the -pprof-addr flag: an empty
+// addr is a no-op with zero overhead.
 func startPProf(addr string) {
 	if addr == "" {
 		return

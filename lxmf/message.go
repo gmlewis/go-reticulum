@@ -63,13 +63,12 @@ type Message struct {
 	DeferStamp bool
 	// DeferPropagationStamp mirrors Python's LXMessage.defer_propagation_stamp
 	// (LXMessage.py:164): propagation-node stamp generation is deferred until
-	// the router processes the outbound queue. The Go port wires this in
-	// Router.ProcessDeferredStamps (router.go), which mirrors Python's
-	// LXMRouter.process_deferred_stamps (LXMRouter.py:2406-2498): when a
-	// propagated message still lacks PropagationStamp, the router computes the
-	// outbound propagation target cost, generates the stamp, clears this flag,
-	// repacks, and queues the message for delivery. The wiring is golden-tested
-	// by TestDeferredPropagationStamps and TestDeferPropagationStamp.
+	// the router processes the outbound queue. Router.ProcessDeferredStamps
+	// implements the deferred work (Python LXMRouter.process_deferred_stamps,
+	// LXMRouter.py:2406-2498): when a propagated message still lacks
+	// PropagationStamp, the router computes the outbound propagation target
+	// cost, generates the stamp, clears this flag, repacks, and queues the
+	// message for delivery.
 	DeferPropagationStamp bool
 	// AutoCompress controls whether a DIRECT-delivery resource is
 	// auto-compressed before transmission. It defaults to true and is
@@ -661,10 +660,8 @@ func UnpackMessageFromFile(ts rns.Transport, lxmfFile io.Reader) (*Message, erro
 		switch v := transportEncryption.(type) {
 		case nil:
 			// None: Python-written containers carry transport_encryption=None
-			// for messages that never went through a transport; the zero
-			// value applies. A strict type check here rejected the WHOLE
-			// container and stored messages fell back to mtime-only metadata
-			// (the differential explorer's no-source/failed-header finding).
+			// for messages that never went through a transport, so the zero
+			// value applies.
 		case string:
 			message.TransportEncryption = v
 		default:
@@ -1087,15 +1084,13 @@ func (m *Message) asResource() (*rns.Resource, error) {
 	}
 }
 
-// WriteToDirectory writes the message to the given directory as a msgpack
-// container file named by the message hash hex. This mirrors Python's
-// LXMessage.write_to_directory() method.
 // WriteToDirectory atomically persists the message's packed container to
-// dirPath under a per-message persist mutex, mirroring Python's
-// LXMessage.write_to_directory (LXMessage.py:674-694, v0.9.9). It writes to a
-// unique ".tmp.<pid>.<rand>" path, flushes and fsyncs, then renames the file
-// into place so a concurrent reader never observes a partial container. On
-// any error the temporary file is removed.
+// dirPath as a msgpack container file named by the message hash hex, under a
+// per-message persist mutex (Python LXMessage.write_to_directory,
+// LXMessage.py:674-694, v0.9.9). It writes to a unique ".tmp.<pid>.<rand>"
+// path, flushes and fsyncs, then renames the file into place so a concurrent
+// reader never observes a partial container. On any error the temporary file
+// is removed.
 func (m *Message) WriteToDirectory(dirPath string) (string, error) {
 	m.persistMu.Lock()
 	defer m.persistMu.Unlock()

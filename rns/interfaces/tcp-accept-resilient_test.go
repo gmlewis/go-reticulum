@@ -15,9 +15,8 @@ import (
 )
 
 // TestTCPServerAcceptLoopSurvivesTransientErrors verifies the server's accept
-// loop keeps serving after transient Accept failures instead of breaking
-// forever with running==1 — the silent "new inbound connections hang while
-// everything looks up" mode that gradually rotted fleet path tables.
+// loop keeps serving after transient Accept failures instead of exiting with
+// running still set, which would leave every new inbound connection hanging.
 //
 // The real listener keeps accepting beneath the seam; the injected accept
 // function fails twice (EMFILE-style) then delegates to the real listener, so

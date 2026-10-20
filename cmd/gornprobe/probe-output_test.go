@@ -131,12 +131,12 @@ func TestProbeLossSummary(t *testing.T) {
 	}
 }
 
-// TestProbeLossSummaryPythonParity is a LIVE cross-impl test: it execs python3 to
-// compute rnprobe.py's exact loss-summary line (`f"Sent {s}, received {r}, packet
-// loss {round((1-(r/s))*100,2)}%"`, rnprobe.py:206) for a range of (sent, received)
-// pairs and diffs them against Go's formatProbeLossSummary. Python's str(round(x,2))
-// drops trailing zeros ("100.0%", "0.0%", "50.0%", "25.0%", "10.0%") whereas a naive
-// %.2f would emit "100.00%" etc. — this test catches that divergence.
+// TestProbeLossSummaryPythonParity execs python3 to compute rnprobe.py's exact
+// loss-summary line (`f"Sent {s}, received {r}, packet loss
+// {round((1-(r/s))*100,2)}%"`, rnprobe.py:206) across a range of (sent,
+// received) pairs and diffs them against Go's formatProbeLossSummary. Python's
+// str(round(x,2)) drops trailing zeros ("100.0%", "0.0%", "50.0%", "25.0%",
+// "10.0%"), which a %.2f format would not.
 func TestProbeLossSummaryPythonParity(t *testing.T) {
 	t.Parallel()
 	testutils.SkipIfNoPythonRNS(t)

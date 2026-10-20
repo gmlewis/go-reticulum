@@ -20,13 +20,13 @@ import "testing"
 // The /list reply NOTICE handling mirrors Python RRCHub (RRC.py:910-919 and
 // RRC.py:1087-1139): ONLY the auto_list sweep's reply is silently consumed
 // (via _silent_list_pending); a user-typed /list reply is recorded as a
-// rendered notice in the room buffer. Verified live against the Python SOT:
-// a user-typed /list reply lands in hub.messages[active_room]
-// ("Registered public rooms\n...") while the auto-list reply does not.
+// rendered notice in the room buffer. On the Python SOT a user-typed /list
+// reply lands in hub.messages[active_room] ("Registered public rooms\n...")
+// while the auto-list reply does not.
 
 const listReplyBody = "Registered public rooms\ncatfacts - Cats\nchat-hispano - Chat"
 
-// TestUserListReplyRenders pins the Bug#1 parity contract: a USER-typed
+// TestUserListReplyRenders pins the user-typed /list contract: a USER-typed
 // /list (no auto-list request pending) renders the hub's reply as a notice
 // in the active room (Python RRC.py:1092-1101: silent is False, the notice
 // falls through to _record_notice) while still populating the advertised

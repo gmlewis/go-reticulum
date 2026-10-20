@@ -19,12 +19,8 @@ import (
 //
 // These are the model's acceptance vectors, reproduced from the WMM2025 test
 // values the US National Centers for Environmental Information publishes
-// alongside the coefficient table. Pinning them is what makes the port a port
-// of the World Magnetic Model rather than an approximation that happens to
-// point roughly north: a declination engine that is one degree off is a
-// directional antenna aimed one degree off, and at fourteen kilometers that is
-// a quarter of a kilometer of error before the operator has even started
-// walking.
+// alongside the coefficient table. Pinning them is what makes this a port of the
+// World Magnetic Model rather than an approximation that points roughly north.
 type wmmReferenceVector struct {
 	year  float64
 	altKm float64
@@ -86,11 +82,10 @@ func TestDeclinationMatchesTheModelTestVectors(t *testing.T) {
 	}
 }
 
-// TestDeclinationReferenceCities asserts the declination at the published
-// reference cities is what the model in force says it is, using the ranges the
-// Phase 0.6 brief pins: San Francisco strongly east, Denver mildly east, Boston
-// west, London near zero, and Tokyo west. A dipole approximation cannot pass
-// this test, which is exactly why the engine is a full spherical harmonic one.
+// TestDeclinationReferenceCities asserts the declination at published reference
+// cities: San Francisco strongly east, Denver mildly east, Boston west, London
+// near zero, and Tokyo west. A dipole approximation cannot pass this test, which
+// is why the engine is a full spherical harmonic one.
 func TestDeclinationReferenceCities(t *testing.T) {
 	t.Parallel()
 

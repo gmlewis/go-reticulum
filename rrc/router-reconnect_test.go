@@ -28,16 +28,15 @@ func directNoticeTo(src, dst []byte, text string) *cbor.Map {
 	return MakeEnvelope(int(TNotice), src, WithNick("gobot"), WithDst(dst), WithBody(text))
 }
 
-// TestADirectNoticeReachesAPeerThatReconnected is the regression test for a defect that made
-// `/msg gobot ...` work exactly once per hub run.
+// TestADirectNoticeReachesAPeerThatReconnected pins identity-based routing
+// across a reconnect: a client that reconnects gets a new link for the same
+// identity, and the hub must route a private reply to whichever link that
+// identity currently holds. If the identity index does not survive the
+// reconnect, the notice is dropped with nothing but a log line, and from the
+// outside the bot looks like it stopped answering.
 //
-// A client that reconnects gets a new link for the same identity. The hub indexes peers by
-// identity so it can route a private reply to whichever link that identity currently holds, and
-// the whole feature depends on that index surviving the reconnect. When it does not, the notice
-// is dropped with nothing but a log line, and from the outside the bot looks like it stopped
-// answering — which is what two rounds of investigation into the bot and its FIFOs assumed.
-//
-// The peer connects, leaves, and comes back on a different link before the reply is sent.
+// The peer connects, leaves, and comes back on a different link before the
+// reply is sent.
 func TestADirectNoticeReachesAPeerThatReconnected(t *testing.T) {
 	t.Parallel()
 

@@ -15,9 +15,8 @@ import (
 // startPProf starts an HTTP server exposing net/http/pprof endpoints at addr
 // (e.g. "127.0.0.1:6061"). It is strictly opt-in via the -pprof-addr flag:
 // when addr is empty it is a no-op with zero overhead (no goroutine, no
-// listener, no pprof sampling). It mirrors gonomadnet's -pprof-addr so the
-// live hub can be inspected (goroutine dumps, CPU/heap profiles) exactly like
-// the fleet's clients:
+// listener, no pprof sampling). The flag name matches gonomadnet's, so the
+// live hub is inspected with the same commands as the fleet's clients:
 //
 //	gorrcd -pprof-addr 127.0.0.1:6061
 //	curl http://127.0.0.1:6061/debug/pprof/goroutine?debug=2

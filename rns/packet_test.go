@@ -121,11 +121,11 @@ func TestPacketResendTimeout(t *testing.T) {
 }
 
 // TestPacketUnpackRejectsExcessiveHops verifies the hop-count validation in
-// Packet.Unpack (RNS/Packet.py:245-248, v1.3.8): a packet whose hops byte is
+// Packet.Unpack (RNS/Packet.py:245-248): a packet whose hops byte is
 // >= PathfinderM (128) is rejected with an error mentioning the hop count,
-// while hops at or below 127 unpack normally. The transport read loop already
-// logs and continues on Unpack error, so this guards against forwarding packets
-// with an exhausted/attacked hop count.
+// while hops at or below 127 unpack normally. The transport read loop logs and
+// continues on Unpack error, so this guards against forwarding packets with an
+// exhausted/attacked hop count.
 func TestPacketUnpackRejectsExcessiveHops(t *testing.T) {
 	t.Parallel()
 	// Minimal Header1 raw packet: [flags][hops][dsthash(16)][context] = 19 bytes.

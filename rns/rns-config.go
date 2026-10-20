@@ -404,7 +404,7 @@ func ParseConfigBool(v string) (value, ok bool) {
 
 // parseBoolLike reports whether v is a truthy INI value. It accepts the
 // ConfigObj as_bool spellings via ParseConfigBool, plus the single-letter y/n
-// abbreviations this port has always tolerated. Any other value is false.
+// abbreviations. Any other value is false.
 func parseBoolLike(v string) bool {
 	if b, ok := ParseConfigBool(v); ok {
 		return b

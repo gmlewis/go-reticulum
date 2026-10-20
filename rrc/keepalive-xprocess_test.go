@@ -17,15 +17,14 @@
 
 package rrc
 
-// TODO item 22 forensics: the live rrcd hub's own RNS watchdog ("Link closed"
-// logged from rrcd's __watchdog_job threads) tears down idle Go-client links
-// after minutes, while the Python nomadnet client's links survive. This test
-// isolates the link-layer interop: a Python RNS responder (the same role
-// rrcd's hub plays — the link RESPONDER) over loopback TCP, a raw Go initiator
-// link, then a completely silent idle window. With loopback RTT ≈ 0 both
-// sides derive keepalive=5s and stale=10s (Link.KEEPALIVE_MIN × STALE_FACTOR),
-// so 30s of silence is enough to prove or refute that the Go client's
-// keepalives feed the Python watchdog.
+// Link-layer keepalive interop: rrcd's own RNS watchdog ("Link closed" logged
+// from rrcd's __watchdog_job threads) tears down idle links after minutes
+// unless the client's keepalives keep last_inbound fresh. This test isolates
+// the link layer: a Python RNS responder (the same role rrcd's hub plays —
+// the link RESPONDER) over loopback TCP, a raw Go initiator link, then a
+// completely silent idle window. With loopback RTT ≈ 0 both sides derive
+// keepalive=5s and stale=10s (Link.KEEPALIVE_MIN × STALE_FACTOR), so 30s of
+// silence shows whether the Go client's keepalives reach the Python watchdog.
 
 import (
 	"bufio"
@@ -84,7 +83,7 @@ while True:
 `
 
 // TestIntegrationKeepalivePythonResponder proves the Go link keepalive feeds a
-// Python RNS responder through 30+ seconds of complete silence (TODO item 22).
+// Python RNS responder through 30+ seconds of complete silence.
 // On loopback both sides derive keepalive=5s / stale=10s, so a silent 30s
 // window with the Python side still ACTIVE (age < 12s) demonstrates the
 // cross-implementation keepalive works at the link layer.

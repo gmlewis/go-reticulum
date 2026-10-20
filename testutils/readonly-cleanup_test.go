@@ -16,9 +16,8 @@ import (
 //
 // Every module the toolchain downloads is left 0444 inside 0555, and a scratch
 // GOPATH a test built holds exactly that. A directory without write permission
-// cannot give up the entries inside it, so removal fails with EACCES — which is how
-// the first dependency this module ever took failed a test in a package that never
-// mentions it, in cleanup, with a message naming a file in someone else's module.
+// cannot give up the entries inside it, so removal fails with EACCES, which
+// turns an unrelated test's cleanup into a failure.
 func TestTempDirCleansUpAReadOnlyTree(t *testing.T) {
 	dir := TempDir(t, "readonly-cleanup-")
 

@@ -12,7 +12,7 @@ import (
 )
 
 // minutesOfDay renders an almanac time as minutes past the UTC midnight of the
-// day the almanac is for. An event that falls on the neighbouring UTC day is
+// day the almanac is for. An event that falls on the neighboring UTC day is
 // therefore negative or beyond a day, which is exactly what the reference
 // values record.
 func minutesOfDay(midnight, event time.Time) float64 {

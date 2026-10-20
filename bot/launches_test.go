@@ -14,8 +14,8 @@ import (
 )
 
 // launchBody is a trimmed Launch Library 2 answer with two launches, in the shape
-// the live provider sends (verified against 2.3.0: count + results[], with net,
-// status.abbrev, launch_service_provider.name and pad.name).
+// the provider's 2.3.0 API sends: count + results[], with net, status.abbrev,
+// launch_service_provider.name and pad.name.
 const launchBody = `{
   "count": 2,
   "results": [

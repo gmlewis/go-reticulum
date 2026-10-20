@@ -137,16 +137,10 @@ func TestSanitizePlaceRejectsInjection(t *testing.T) {
 	}
 }
 
-// TestSanitizePlaceRejectsNonASCII documents a deliberate restriction: the
-// allowlist is ASCII, so a place spelled with a diacritic, a Cyrillic name or a
-// CJK name is refused rather than encoded. It keeps the accepted alphabet small
-// enough to reason about, and the operator can pick a provider whose spelling is
-// ASCII.
-// TestSanitizePlaceIsAboutScriptsNotBytes asserts the rule the operator asked
-// for: a place is a human name in any script, so any script's letters, digits and
-// combining marks are accepted as given, while symbols, emoji, invisible
-// separators and the bidi overrides that could spoof the line around a place are
-// still refused.
+// TestSanitizePlaceIsAboutScriptsNotBytes asserts a place is a human name in any
+// script, so any script's letters, digits and combining marks are accepted as
+// given, while symbols, emoji, invisible separators and the bidi overrides that
+// could spoof the line around a place are still refused.
 func TestSanitizePlaceIsAboutScriptsNotBytes(t *testing.T) {
 	t.Parallel()
 
@@ -837,8 +831,7 @@ func TestWeatherAcceptsAUTF8Place(t *testing.T) {
 
 // TestHTTPFetchReadsMoreThanOneLine asserts the shared fetch does not cut a
 // provider's answer short: a JSON body is kilobytes, and a truncated body is
-// invalid JSON that the command reports as a provider failure. The regression it
-// guards against is an 8 KB fetch limit that a weather answer never noticed.
+// invalid JSON that the command reports as a provider failure.
 func TestHTTPFetchReadsMoreThanOneLine(t *testing.T) {
 	t.Parallel()
 

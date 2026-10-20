@@ -267,13 +267,12 @@ func entriesToPathInfo(entries []any) []rns.PathInfo {
 }
 
 // remotePathInterface wraps a remote-reported interface string. A remote /path
-// table response (Python RNS.Reticulum.get_path_table) already serializes the
-// interface as str(interface) — i.e. the full "Type[Name]" form (e.g.
-// "TCPInterface[peer/1.2.3.4:4242]"). rnpath.py:289 prints that string VERBATIM.
-// Embedding pathTableTestInterface would re-wrap it as "test[Type[Name]]"
-// (double-wrap), so remotePathInterface overrides HashString to return the
-// remote string unchanged, which rns.InterfaceString prefers (transport.go
-// interfaceHashString dispatches to HashString when present).
+// table response (Python RNS.Reticulum.get_path_table) serializes the interface
+// as str(interface), e.g. "TCPInterface[peer/1.2.3.4:4242]", and rnpath.py:289
+// prints that string verbatim. Embedding pathTableTestInterface would re-wrap it
+// as "test[Type[Name]]", so remotePathInterface overrides HashString to return
+// the remote string unchanged; rns.InterfaceString prefers HashString when it is
+// present.
 type remotePathInterface struct{ pathTableTestInterface }
 
 func (i remotePathInterface) HashString() string { return i.pathTableTestInterface.name }

@@ -230,10 +230,11 @@ func startGoAnnouncer(t *testing.T, dest *Destination) func() {
 }
 
 // TestIntegratedResourceHMUGoToPython transfers a payload larger than one
-// advertisement hashmap segment from the Go port to the installed Python RNS
-// reference and back: the >50 KB request exercises the Go sender's truncated
-// advertisement and the Python receiver's RESOURCE_HMU request, and the >50 KB
-// response exercises the Python sender against the Go receiver's HMU handling.
+// advertisement hashmap segment from the Go implementation to the installed
+// Python RNS reference and back: the >50 KB request exercises the Go sender's
+// truncated advertisement and the Python receiver's RESOURCE_HMU request, and
+// the >50 KB response exercises the Python sender against the Go receiver's HMU
+// handling.
 func TestIntegratedResourceHMUGoToPython(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	testutils.SkipIfNoPythonRNS(t)

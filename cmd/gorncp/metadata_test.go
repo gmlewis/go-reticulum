@@ -21,19 +21,16 @@ func TestResourceMetadataInOptions(t *testing.T) {
 
 	tmpDir := testutils.TempDir(t, tempDirPrefix)
 
-	// Create a test file
 	testFile := filepath.Join(tmpDir, "test.txt")
 	testContent := []byte("Hello, World!")
 	if err := os.WriteFile(testFile, testContent, 0o644); err != nil {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	// Create metadata
 	metadata := map[string][]byte{
 		"name": []byte("test.txt"),
 	}
 
-	// Verify metadata structure
 	if metadata["name"] == nil {
 		t.Fatal("Expected 'name' key in metadata")
 	}
@@ -42,13 +39,11 @@ func TestResourceMetadataInOptions(t *testing.T) {
 		t.Fatalf("Expected filename 'test.txt', got %q", string(metadata["name"]))
 	}
 
-	// Create ResourceOptions with metadata
 	opts := rns.ResourceOptions{
 		AutoCompress: false,
 		Metadata:     metadata,
 	}
 
-	// Verify options contain metadata
 	if opts.Metadata == nil {
 		t.Fatal("Expected Metadata in ResourceOptions")
 	}

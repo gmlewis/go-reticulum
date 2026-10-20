@@ -5,14 +5,11 @@
 
 // This file publishes the hub's own destination hash to a file the moment the hub
 // is up, so that a supervisor which has to tell a bot where to dial does not have
-// to reimplement Reticulum's naming, or scrape a log line, or ship a hub identity
-// it generated at build time.
+// to reimplement Reticulum's naming or scrape a log line.
 //
-// It exists because the one consumer that needs the value is a different program in
-// a different language: an Android appliance starts this hub and then renders the
-// bot's configuration, and the bot needs the hub's rrc.hub destination hash before
-// it starts. Deriving it requires an Identity and a TransportSystem, which only the
-// running hub has; the running hub therefore writes it down.
+// Deriving the hash requires an Identity and a TransportSystem, which only the
+// running hub has, so the running hub writes it down for the other processes that
+// need it.
 
 package main
 

@@ -86,23 +86,15 @@ func TestJobs(t *testing.T) {
 	dest, err := router.RegisterDeliveryIdentity(identity, "Test Peer", nil)
 	mustTest(t, err)
 
-	// Actually, Python stores them in seconds.
-	// active_configuration["peer_announce_interval"] = lxmd_config["lxmf"].as_int("announce_interval")*60
-
-	peerInterval := 1 // 1 minute = 60s
-	nodeInterval := 1 // 1 minute = 60s
+	// The active config stores announce intervals in seconds (the config file's
+	// value times 60), so a one-second interval is enough to exercise tick.
+	peerInterval := 1
+	nodeInterval := 1
 
 	c.ac = &activeConfig{
 		PeerAnnounceInterval: &peerInterval,
 		NodeAnnounceInterval: &nodeInterval,
 	}
-
-	// We'll mock time.time() equivalent by manually setting lastPeerAnnounce/lastNodeAnnounce
-	// But jobs() uses time.Now().
-	// To test it without waiting, we'd need to mock time.Now() or use very small intervals.
-	// Since intervals in config are in minutes (then *60 for seconds), we can't easily make them < 60s in config.
-
-	// For testing, we'll implement jobsWithTimeout that takes a tick duration
 
 	stop := make(chan struct{})
 	go func() {
@@ -110,7 +102,7 @@ func TestJobs(t *testing.T) {
 		close(stop)
 	}()
 
-	// This just verifies it runs and doesn't crash
+	// The jobs loop must keep running until stop closes rather than crash.
 	c.jobs(router, dest, stop, 10*time.Millisecond)
 }
 
@@ -377,8 +369,8 @@ func TestAuthSetup(t *testing.T) {
 		router.Allow(h)
 	}
 
-	// We can't easily check if it's applied without calling private methods or testing in lxmf package.
-	// But we can verify it doesn't crash and the methods exist.
+	// The applied auth state is private to lxmf; this pins that both calls
+	// accept the configured inputs without panicking.
 }
 
 func TestIdentityRemember(t *testing.T) {
@@ -445,12 +437,10 @@ func TestRouterConstruction(t *testing.T) {
 	})
 	mustTest(t, err)
 
+	// Propagation must stay off until EnablePropagation is called.
 	if router.PropagationEnabled() {
-		// Should not be enabled yet
 		t.Errorf("PropagationEnabled: got true, want false")
 	}
-	// Note: We can't easily check private fields of Router unless we add getters or the test is in lxmf package.
-	// But NewRouterFromConfig is in lxmf package.
 }
 
 func TestApplyTimeoutDefaults(t *testing.T) {

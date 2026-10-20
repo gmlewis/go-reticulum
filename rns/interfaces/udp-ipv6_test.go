@@ -27,12 +27,12 @@ import (
 // to bind with (see UDPInterface.start), so what it returns is a port that was
 // free for exactly that bind. It is then released, because the interfaces these
 // tests build must perform their own bind: that bind is the whole point of the
-// tests — hostPortAddr's bracketing of an IPv6 literal is the regression they
-// exist to catch — so handing the interface a socket held by the test would
-// make both pass vacuously. Releasing the probe returns the port to the
-// kernel's ephemeral allocator, where a parallel test can claim it before the
-// caller binds; callers therefore treat a lost reservation as expected and
-// retry (see bindIPv6UDPInterfaceForTest).
+// tests — hostPortAddr's bracketing of an IPv6 literal is what they exercise —
+// so handing the interface a socket held by the test would make both pass
+// vacuously. Releasing the probe returns the port to the kernel's ephemeral
+// allocator, where a parallel test can claim it before the caller binds;
+// callers therefore treat a lost reservation as expected and retry (see
+// bindIPv6UDPInterfaceForTest).
 func reserveIPv6UDPPort(t *testing.T, ip net.IP) int {
 	t.Helper()
 	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: ip, Port: 0})
@@ -58,7 +58,7 @@ func reserveIPv6UDPPort(t *testing.T, ip net.IP) int {
 // that is expected rather than a failure.
 //
 // Any other error is the interface failing to start at all, which is the
-// regression these tests exist for (":::port" from joining an IPv6 host and
+// failure these tests exist for (":::port" from joining an IPv6 host and
 // port by hand, which net.ResolveUDPAddr rejects with "too many colons in
 // address"), and fails the test at once rather than being retried away.
 func bindIPv6UDPInterfaceForTest(t *testing.T, name, listenIP, forwardIP string, forwardPort int) *UDPInterface {
@@ -86,8 +86,7 @@ func bindIPv6UDPInterfaceForTest(t *testing.T, name, listenIP, forwardIP string,
 // bare IPv6 literals can resolve both its listen coordinates and its forwarding
 // target. Python passes these as (host, port) tuples, which is inherently
 // IPv6-safe; joining them as "host:port" produces ":::PORT", which
-// net.ResolveUDPAddr rejects with "too many colons in address" — so every IPv6
-// UDP interface failed to start, while its Python counterpart worked.
+// net.ResolveUDPAddr rejects with "too many colons in address".
 func TestNewUDPInterfaceBindsIPv6Literals(t *testing.T) {
 	t.Parallel()
 

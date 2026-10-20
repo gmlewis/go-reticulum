@@ -21,21 +21,19 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
-// TestAPrivateReplyBeginningWithASlashReachesItsPeer is the regression test for the defect
-// behind `/msg gobot ...` showing nothing at all whenever the bot had no fix.
+// TestAPrivateReplyBeginningWithASlashReachesItsPeer pins the rule that a
+// NOTICE addressed to another peer is delivered as written, even when its text
+// starts with a slash.
 //
-// The hub intercepts any MSG or NOTICE whose text starts with a slash, and answers it as a
-// command for itself. That interception ran before the direct-notice dispatch and never looked
-// at K_DST, so a NOTICE naming another peer — somebody else's mail, which the hub is merely
-// carrying — was read as a command for the hub and swallowed.
-//
-// The bot's own answer to a request it cannot fulfil is exactly that shape:
+// The hub intercepts any MSG or NOTICE whose text starts with a slash and
+// answers it as a command for itself. That interception must not apply to a
+// NOTICE naming another peer — somebody else's mail, which the hub is merely
+// carrying — because a bot's answer to a request it cannot fulfil has exactly
+// that shape:
 //
 //	/whereami: no GNSS fix yet — acquiring; give a location to answer immediately (...)
 //
-// so the asker waited out its whole timeout in silence while the hub logged "Slash command" and
-// went about its business. It cost three rounds of investigation, two of which blamed a bot
-// restart and a client reconnect that had nothing to do with it.
+// and swallowing it leaves the asker without the sentence the bot wrote.
 func TestAPrivateReplyBeginningWithASlashReachesItsPeer(t *testing.T) {
 	t.Parallel()
 
@@ -77,9 +75,9 @@ func TestAPrivateReplyBeginningWithASlashReachesItsPeer(t *testing.T) {
 	}
 }
 
-// TestACommandAddressedToTheHubIsStillIntercepted is the other side of the rule, so the fix
-// cannot be "stop intercepting": a NOTICE naming the hub's own identity is a command for the
-// hub and must still be handled as one, not forwarded to anybody.
+// TestACommandAddressedToTheHubIsStillIntercepted is the other side of the
+// rule: a NOTICE naming the hub's own identity is a command for the hub and
+// must be handled as one, not forwarded to anybody.
 func TestACommandAddressedToTheHubIsStillIntercepted(t *testing.T) {
 	t.Parallel()
 

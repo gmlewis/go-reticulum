@@ -66,9 +66,8 @@ type Logger struct {
 	// The async writer decouples the sink's file I/O from the calling
 	// goroutines: log() formats and enqueues, the single writer goroutine
 	// performs the open/write/stat/rotate/close. Without it the transport's
-	// packet goroutines serialize on every sink syscall and a slow disk backs
-	// up packet delivery by tens of seconds (the observed raspberrypi
-	// pipeline stall).
+	// packet goroutines would serialize on every sink syscall, and a slow disk
+	// would back up packet delivery.
 	logCh      chan logJob
 	stopCh     chan struct{}
 	writerOnce sync.Once
@@ -89,11 +88,11 @@ func NewLogger() *Logger {
 
 // SetAlwaysOverride forces log output to the console even when another
 // destination is configured. It is latched true by the file-write failure paths
-// below when file logging breaks. Because a TUI application (gonomadnet) runs
-// with the terminal in raw mode + the alternate screen, routing that fallback to
-// stdout floods the terminal's scrollback and balloons the emulator's memory. The
-// override sink is therefore stderr, not stdout: a launcher that redirects stderr
-// to a file captures the logs without touching the live terminal.
+// below when file logging breaks. The override sink is stderr, not stdout: a TUI
+// application runs with the terminal in raw mode and the alternate screen, so
+// routing the fallback to stdout would flood the scrollback and balloon the
+// emulator's memory. A launcher that redirects stderr to a file still captures
+// the logs without touching the live terminal.
 func (s *Logger) SetAlwaysOverride(override bool) {
 	if s == nil {
 		return // for tests
@@ -134,7 +133,7 @@ func (s *Logger) GetCompactLogFmt() bool {
 }
 
 // SetLogTimestamps toggles the "[<timestamp>] " log prefix
-// (RNS.logtimestamps, RNS/__init__.py:86 / RNS/Reticulum.py:463-465, v1.3.2).
+// (RNS.logtimestamps, RNS/__init__.py:86 / RNS/Reticulum.py:463-465).
 // Defaults to true; set false to omit the prefix.
 func (s *Logger) SetLogTimestamps(enabled bool) {
 	if s == nil {
@@ -365,9 +364,8 @@ func (s *Logger) writerLoop() {
 
 // writeSink delivers one formatted line to the configured destination. It
 // runs only on the writer goroutine (or a post-close fallback), so the file
-// open/write/stat/rotate/close sequence no longer sits on the transport's
-// packet path. The rotation and latching behavior matches the original
-// synchronous logger.
+// open/write/stat/rotate/close sequence never sits on the transport's packet
+// path.
 func (s *Logger) writeSink(logString string) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
@@ -548,7 +546,7 @@ func (s *Logger) Debug(format string, args ...any) {
 	s.log(msg, LogDebug, false)
 }
 
-// Pathing logs a path-finding/routing detail message (RNS LOG_PATHING, v1.3.9).
+// Pathing logs a path-finding/routing detail message (RNS LOG_PATHING).
 func (s *Logger) Pathing(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	s.log(msg, LogPathing, false)
@@ -592,7 +590,7 @@ const (
 	// LogDebug designates low-level system details for in-depth troubleshooting.
 	LogDebug = 6
 	// LogPathing designates path-finding/routing detail logging
-	// (RNS/__init__.py LOG_PATHING, v1.3.9).
+	// (RNS/__init__.py LOG_PATHING).
 	LogPathing = 7
 	// LogExtreme designates an exhaustive level of logging, outputting almost all internal events.
 	LogExtreme = 8

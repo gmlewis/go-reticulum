@@ -10,24 +10,14 @@ import (
 	"errors"
 )
 
-// X25519PrivateKey encapsulates a standard Elliptic Curve Diffie-Hellman (ECDH) private key on the Curve25519 architecture.
-// It is designed to safely handle cryptographic key exchanges, ensuring robust and performant asymmetric encryption within the network layer.
-//
-// ASIC suitability: X25519 key agreement runs on the hot path of every
-// link establishment and every LXMF packet decrypt (the ephemeral/pubkey
-// exchange in Identity.Encrypt/Decrypt, including one trial per stored
-// ratchet). The Montgomery ladder is a fixed sequence of field operations
-// over GF(2^255-19) with no data-dependent branches, making it a textbook
-// ASIC/FPGA target: a single 256-bit multiplier plus dual 256-bit register
-// files, ~256 ladder steps at maybe 20-40k gates, usable for both X25519
-// and (via birational map) Ed25519 signing hardware.
+// X25519PrivateKey is a Curve25519 private key for ECDH key agreement, used
+// to establish ephemeral link keys.
 type X25519PrivateKey struct {
 	priv *ecdh.PrivateKey
 }
 
-// GenerateX25519PrivateKey securely provisions a new Curve25519 private key from
-// the process-wide randomness source (see SetEntropySource).
-// It returns a robustly initialized X25519PrivateKey or an error if entropy cannot be safely gathered.
+// GenerateX25519PrivateKey returns a new Curve25519 private key drawn from the
+// process-wide randomness source (see SetEntropySource).
 func GenerateX25519PrivateKey() (*X25519PrivateKey, error) {
 	seed := make([]byte, 32)
 	if _, err := RandomBytes(seed); err != nil {
@@ -36,8 +26,8 @@ func GenerateX25519PrivateKey() (*X25519PrivateKey, error) {
 	return NewX25519PrivateKeyFromBytes(seed)
 }
 
-// NewX25519PrivateKeyFromBytes deterministically reconstitutes an X25519PrivateKey from a raw 32-byte scalar seed.
-// This is essential for resuming previous identities or deserializing keys received from trusted persistent storage.
+// NewX25519PrivateKeyFromBytes builds an X25519PrivateKey from its raw 32-byte
+// scalar, as stored on disk or received from a peer.
 func NewX25519PrivateKeyFromBytes(data []byte) (*X25519PrivateKey, error) {
 	if len(data) != 32 {
 		return nil, errors.New("invalid private key length")
@@ -49,33 +39,31 @@ func NewX25519PrivateKeyFromBytes(data []byte) (*X25519PrivateKey, error) {
 	return &X25519PrivateKey{priv: priv}, nil
 }
 
-// PrivateBytes exposes the raw 32-byte scalar representation of the underlying Curve25519 private key.
-// Callers must exercise extreme caution to prevent leakage when retaining or transmitting this sensitive value.
+// PrivateBytes returns the raw 32-byte scalar of the key. The caller must keep
+// the returned slice confidential.
 func (k *X25519PrivateKey) PrivateBytes() []byte {
 	return k.priv.Bytes()
 }
 
-// PublicKey calculates and returns the corresponding X25519PublicKey derived deterministically from this private key.
-// It securely extracts the associated public material required for establishing asymmetric communication channels.
+// PublicKey returns the X25519PublicKey derived from k.
 func (k *X25519PrivateKey) PublicKey() *X25519PublicKey {
 	pub := k.priv.PublicKey()
 	return &X25519PublicKey{pub: pub}
 }
 
-// Exchange performs a secure Elliptic Curve Diffie-Hellman key agreement with the provided peer public key.
-// It derives a shared cryptographic secret that can be safely used to establish a symmetric encryption channel.
+// Exchange performs ECDH with the peer's public key and returns the shared
+// secret.
 func (k *X25519PrivateKey) Exchange(peerPublicKey *X25519PublicKey) ([]byte, error) {
 	return k.priv.ECDH(peerPublicKey.pub)
 }
 
-// X25519PublicKey encapsulates the standard Curve25519 public key material used in key agreement operations.
-// It serves as a shareable identity component for establishing secure peer-to-peer connections.
+// X25519PublicKey is the shareable half of an X25519 key pair.
 type X25519PublicKey struct {
 	pub *ecdh.PublicKey
 }
 
-// NewX25519PublicKeyFromBytes validates and constructs an X25519PublicKey from a raw 32-byte slice.
-// It strictly enforces the byte length to ensure the integrity of the key before it is used in ECDH calculations.
+// NewX25519PublicKeyFromBytes builds an X25519PublicKey from a raw 32-byte
+// slice and rejects any other length.
 func NewX25519PublicKeyFromBytes(data []byte) (*X25519PublicKey, error) {
 	if len(data) != 32 {
 		return nil, errors.New("invalid public key length")
@@ -87,8 +75,7 @@ func NewX25519PublicKeyFromBytes(data []byte) (*X25519PublicKey, error) {
 	return &X25519PublicKey{pub: pub}, nil
 }
 
-// PublicBytes yields the 32-byte encoded slice representing the public key.
-// This data can be freely broadcasted or serialized to facilitate key exchanges across the network.
+// PublicBytes returns the 32-byte encoding of the public key.
 func (k *X25519PublicKey) PublicBytes() []byte {
 	return k.pub.Bytes()
 }

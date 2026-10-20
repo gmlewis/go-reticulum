@@ -857,11 +857,11 @@ func (f *rpcFreqInterface) Status() bool      { return true }
 
 // TestRPCInterfaceStatsPopulatesFreqAndBurstFields verifies the per-interface
 // ifstats map (RNS/Reticulum.py:1453-1466) is populated from the real interface
-// fields rather than hardcoded zeros: incoming/outgoing announce + PR
-// frequencies reflect driven events, and announce_rate_*/held_announces/
-// burst_active/burst_activated/pr_burst_active/pr_burst_activated/
-// announces_to_internal are all present with Python-faithful types. It also
-// checks DecodeInterfaceStats surfaces the new fields on InterfaceStat.
+// fields rather than zeros: incoming/outgoing announce + PR frequencies reflect
+// driven events, and announce_rate_*/held_announces/burst_active/
+// burst_activated/pr_burst_active/pr_burst_activated/announces_to_internal
+// are all present with Python-faithful types. It also checks
+// DecodeInterfaceStats surfaces these fields on InterfaceStat.
 func TestRPCInterfaceStatsPopulatesFreqAndBurstFields(t *testing.T) {
 	t.Parallel()
 
@@ -957,7 +957,7 @@ func TestRPCInterfaceStatsPopulatesFreqAndBurstFields(t *testing.T) {
 		}
 	}
 
-	// DecodeInterfaceStats surfaces the new fields on InterfaceStat.
+	// DecodeInterfaceStats surfaces these fields on InterfaceStat.
 	snap := DecodeInterfaceStats(stats)
 	if len(snap.Interfaces) != 1 {
 		t.Fatalf("decoded %v interfaces, want 1", len(snap.Interfaces))
@@ -1104,8 +1104,8 @@ loglevel = 4
 			// Read, close and clear the listener under the instance mutex.
 			// rpcLoop reads r.rpcListener under that same mutex, so poking the
 			// field straight from the test goroutine races the accept loop's
-			// read (DATA RACE, 2026-09-16 full-integration CI run). Close/clear
-			// under the mutex mirrors what Reticulum.Close does.
+			// read. Close/clear under the mutex mirrors what Reticulum.Close
+			// does.
 			r1.mu.Lock()
 			listener := r1.rpcListener
 			if listener == nil {

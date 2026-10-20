@@ -20,10 +20,8 @@ import (
 // LXMF storage format under ~/.reticulum/storage/lxmf/ that both
 // implementations write. These lock in the msgpack contract — in particular
 // the bin (raw-bytes) vs str map-key distinction that Python's umsgpack
-// requires (Go writing str keys for destination_hash/transient_id/ticket made
-// Python choke, mirroring the RNS known_destinations regression). See the
-// rns/storage_interop_test.go header and the OrderedMap bin-key fix in
-// router.go's Save* functions.
+// requires: Python rejects str keys for destination_hash/transient_id/ticket,
+// so router.go's Save* functions write them as bin map keys.
 //
 // Tests run only when `python3` + RNS are importable (SkipIfNoPythonRNS).
 
@@ -178,7 +176,7 @@ func TestStorageInteropAvailableTickets(t *testing.T) {
 }
 
 // TestStorageInteropNodeStats verifies lxmf/node_stats: str literal keys, int
-// values. Both directions (regression guard — already matches Python).
+// values. Both directions.
 func TestStorageInteropNodeStats(t *testing.T) {
 	t.Parallel()
 	testutils.SkipIfNoPythonRNS(t)
@@ -211,7 +209,7 @@ func TestStorageInteropNodeStats(t *testing.T) {
 
 // TestStorageInteropPeers verifies lxmf/peers: an array of bin blobs, each a
 // per-peer dict with str keys and a bin destination_hash value. Both
-// directions (regression guard — already matches Python).
+// directions.
 func TestStorageInteropPeers(t *testing.T) {
 	t.Parallel()
 	testutils.SkipIfNoPythonRNS(t)

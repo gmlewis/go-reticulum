@@ -197,10 +197,9 @@ func (s *hubSession) observeJoin(msg *rrc.RRCMessage) {
 //
 // It does NOT join. The link callback fires before the hub has welcomed the
 // session, and a JOIN sent in that window is answered with "send HELLO first"
-// and dropped — a join sent from here can be lost for the whole session, which
-// is how the bot came up connected and silent. The join happens on the first
-// CONNECTED sync instead (see sync), and sync calls this for a link whose
-// callback was missed.
+// and dropped, so the bot would come up connected and silent. The join happens
+// on the first CONNECTED sync instead (see sync), and sync calls this for a link
+// whose callback was missed.
 func (s *hubSession) onLinkEstablished() {
 	s.mu.Lock()
 	s.welcomed = true
@@ -253,9 +252,9 @@ func (s *hubSession) supervise() {
 //
 // Only DISCONNECTED and FAILED count as a lost link. The client reports
 // CONNECTING for the whole HELLO-to-WELCOME window after the link callback
-// fired, so treating "not connected" as "link lost" discarded the JOINED
-// confirmation that window was waiting for, logged a link loss that never
-// happened, and sent the JOIN a second time.
+// fired, so "not connected" must not be treated as "link lost": doing so would
+// discard the JOINED confirmation that window is waiting for, log a link loss
+// that never happened, and send the JOIN a second time.
 func (s *hubSession) sync() {
 	status := s.conn.GetHubStatus()
 	s.noteStatus(status)

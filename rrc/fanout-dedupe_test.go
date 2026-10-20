@@ -24,8 +24,7 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
-// fanoutFixture builds a hub whose manager identity is fixed, mirroring the
-// test style of rrc_test.go.
+// fanoutFixture builds a hub whose manager identity is fixed.
 func fanoutFixture(t *testing.T) (*RRCManager, *RRCHub) {
 	t.Helper()
 	mgr := NewManager(tempDir(t), func() []byte { return []byte("ownhash") })
@@ -51,9 +50,9 @@ func fanoutCopy(src, nick, body string, mid string, ts int64) []byte {
 	return data
 }
 
-// TestRecordMessageChronological pins TODO item 1: Python RRCHub
-// _record_message APPENDS to the room buffer (RRC.py:790 buf.append(msg)), so
-// the buffer is oldest→newest and the UI renders Message 1 before Message 6.
+// TestRecordMessageChronological pins that Python RRCHub _record_message
+// APPENDS to the room buffer (RRC.py:790 buf.append(msg)), so the buffer is
+// oldest→newest and the UI renders Message 1 before Message 6.
 func TestRecordMessageChronological(t *testing.T) {
 	t.Parallel()
 	mgr, hub := fanoutFixture(t)
@@ -75,10 +74,10 @@ func TestRecordMessageChronological(t *testing.T) {
 	}
 }
 
-// TestFanoutCopiesCollapseToSingleMessage pins TODO item 4 (user-ordered
-// deviation): rrcd's per-member fanout copies — unique mids, rewritten srcs,
-// garbage nicks, identical body — render once, not once per copy. Python
-// renders every copy; the user wants gonomadnet better here.
+// TestFanoutCopiesCollapseToSingleMessage pins a deliberate divergence:
+// rrcd's per-member fanout copies — unique mids, rewritten srcs, garbage
+// nicks, identical body — render once, not once per copy. Python renders
+// every copy.
 func TestFanoutCopiesCollapseToSingleMessage(t *testing.T) {
 	t.Parallel()
 	mgr, hub := fanoutFixture(t)
@@ -107,9 +106,9 @@ func TestFanoutCopiesCollapseToSingleMessage(t *testing.T) {
 	}
 }
 
-// TestSelfEchoCollapsesWithLocalRecord pins the second half of TODO item 4:
-// after SendMessage the hub's fanout copies of our own message (unique mids,
-// possibly rewritten srcs) must not duplicate the local record.
+// TestSelfEchoCollapsesWithLocalRecord pins that after SendMessage the hub's
+// fanout copies of our own message (unique mids, possibly rewritten srcs) do
+// not duplicate the local record.
 func TestSelfEchoCollapsesWithLocalRecord(t *testing.T) {
 	t.Parallel()
 	mgr, hub := fanoutFixture(t)
@@ -165,12 +164,10 @@ func TestDifferentSendersSameBodySeparateMessages(t *testing.T) {
 	}
 }
 
-// TestNoticeFanoutCollapses pins TODO item 5: rrcd's per-member fanout of a
-// roomed notice copy per join fan out and must render once per join, not once
-// per fanout copy. (The "room …: unregistered" ack notices these copies rode
-// on are now suppressed as protocol control traffic — see
-// TestControlNoticesAreSuppressed — so a non-control roomed notice carries
-// the collapse coverage.)
+// TestNoticeFanoutCollapses pins that rrcd's per-member fanout copies of a
+// roomed notice render once per join, not once per fanout copy. Protocol
+// control notices are suppressed separately (TestControlNoticesAreSuppressed),
+// so a non-control roomed notice carries the collapse coverage.
 func TestNoticeFanoutCollapses(t *testing.T) {
 	t.Parallel()
 	mgr, hub := fanoutFixture(t)
@@ -210,9 +207,9 @@ func TestSameBodySameSenderOutsideWindowIsKept(t *testing.T) {
 }
 
 // TestLoadHistoryCollapsesFanoutCopies pins the load-time application of the
-// fanout collapse: history files written before the fix carry rrcd's
-// per-member copies (rewritten srcs, garbage nicks, identical body and ts);
-// they must collapse to one message on load.
+// fanout collapse: history files can carry rrcd's per-member copies (rewritten
+// srcs, garbage nicks, identical body and ts); they must collapse to one
+// message on load.
 func TestLoadHistoryCollapsesFanoutCopies(t *testing.T) {
 	t.Parallel()
 	mgr, hub := fanoutFixture(t)
@@ -330,8 +327,8 @@ func TestMsgWithoutNickDoesNotLearn(t *testing.T) {
 	}
 }
 
-// TestOnEstablishedStaysConnectingUntilWelcome pins TODO item 20 (Python
-// _on_established + T_WELCOME, RRC.py:415/906): the hub status is CONNECTING
+// TestOnEstablishedStaysConnectingUntilWelcome pins Python's _on_established +
+// T_WELCOME behavior (RRC.py:415/906): the hub status is CONNECTING
 // "Identified, sending HELLO" at link establishment and flips to CONNECTED
 // only when the WELCOME envelope arrives.
 func TestOnEstablishedStaysConnectingUntilWelcome(t *testing.T) {
@@ -392,13 +389,12 @@ func TestHandleWelcomeResetsReconnectAttempts(t *testing.T) {
 	}
 }
 
-// TestFanoutCollapseNickBackfill pins the user-ordered fanout behavior from
-// the 2026-09-03 12:32 full-fleet capture (the A2 symptom): the collapse
-// keeps the FIRST-arrived copy, and rrcd's per-copy rewritten source hashes
-// mean later copies can carry the sender's registry nick even when the kept
-// copy's nick is empty — the kept copy renders ONCE, WITH the sender's nick
-// (Python learns the (src, nick) pair from every fanout copy before its own
-// dedupe, RRC.py:1031-1035). Six fanout copies: first nick="", a later copy
+// TestFanoutCollapseNickBackfill pins the collapse's nick backfill: it keeps
+// the FIRST-arrived copy, and rrcd's per-copy rewritten source hashes mean
+// later copies can carry the sender's registry nick even when the kept copy's
+// nick is empty — the kept copy renders ONCE, WITH the sender's nick (Python
+// learns the (src, nick) pair from every fanout copy before its own dedupe,
+// RRC.py:1031-1035). Six fanout copies: first nick="", a later copy
 // nick="Nick N" → the kept message's nick backfills to "Nick N".
 func TestFanoutCollapseNickBackfill(t *testing.T) {
 	t.Parallel()
@@ -428,9 +424,8 @@ func TestFanoutCollapseNickBackfill(t *testing.T) {
 
 // TestSendCommandEchoSuppressed pins the relay-echo guard: SendCommand tracks
 // the sent message id AND body like SendMessage, so a hub that relays the
-// command text back as a MSG (observed live: an unregistered session's
-// "/who general" came back as a chat message 550 times) is suppressed by the
-// self-echo and fanout-collapse guards instead of being recorded as chat.
+// command text back as a MSG is suppressed by the self-echo and
+// fanout-collapse guards instead of being recorded as chat.
 func TestSendCommandEchoSuppressed(t *testing.T) {
 	t.Parallel()
 

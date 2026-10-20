@@ -265,7 +265,7 @@ func (c *clientT) applyConfig(cfg map[string]map[string]string) (*activeConfig, 
 
 // parseBool interprets an INI boolean value the way ConfigObj's as_bool does,
 // via the shared rns.ParseConfigBool helper. An unrecognized value leaves the
-// field false, matching the previous lenient behavior.
+// field false.
 func parseBool(s string) bool {
 	b, _ := rns.ParseConfigBool(s)
 	return b
@@ -328,7 +328,7 @@ func loadHashList(path string) [][]byte {
 	scanner := bufio.NewScanner(strings.NewReader(string(data)))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if len(line) == 16*2 { // RNS.Identity.TRUNCATED_HASHLENGTH//8*2 = 128//8*2 = 16*2 = 32
+		if len(line) == 16*2 { // RNS.Identity.TRUNCATED_HASHLENGTH//8*2
 			if b, err := hex.DecodeString(line); err == nil {
 				res = append(res, b)
 			}

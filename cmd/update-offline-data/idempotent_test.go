@@ -148,11 +148,10 @@ func metarAirfield(ident, typ, name, region, city, iata string, lat, lng float64
 // Tests
 // ---------------------------------------------------------------------------
 
-// TestGeneratedTablesIgnoreUpstreamRowOrder is the regression test for the
-// report that the generated tables kept changing order from one run to the next.
-// The bytes written must be a pure function of the *set* of rows upstream
-// carries, so a feed that lists the same stations in a different order must
-// regenerate byte-identical files.
+// TestGeneratedTablesIgnoreUpstreamRowOrder pins the ordering contract: the
+// bytes written must be a pure function of the *set* of rows upstream carries,
+// so a feed that lists the same stations in a different order must regenerate
+// byte-identical files.
 func TestGeneratedTablesIgnoreUpstreamRowOrder(t *testing.T) {
 	buoys := []string{
 		buoyRow("41002", "South Hatteras", 31.743, -74.955),
@@ -286,8 +285,8 @@ func TestUpstreamDuplicateRowsAreCollapsedDeterministically(t *testing.T) {
 }
 
 // TestDryRunReportsWhatChanged asserts a check says which stations changed
-// rather than only that something did: "more changes are needed" with no noun is
-// what made a live upstream snapshot look like a broken tool.
+// rather than only that something did: "more changes are needed" with no noun
+// gives an operator nothing to act on.
 func TestDryRunReportsWhatChanged(t *testing.T) {
 	before := feedSnapshot{
 		buoys: buoyFeed(
@@ -452,10 +451,10 @@ func TestWriteFileAtomic(t *testing.T) {
 }
 
 // TestGeneratedFilesCarryTheReadersAdapters asserts each generated table also
-// carries the code the rest of the package reads it through. An earlier template
-// emitted only the table, which dropped every catalogEntry method and every
-// *Catalog value and left the package unable to build — while the tool reported
-// "[UPDATED]" and moved on.
+// carries the code the rest of the package reads it through, so a template that
+// emitted only the table — dropping every catalogEntry method and every
+// *Catalog value — cannot leave the package unable to build while the tool
+// reports "[UPDATED]" and moves on.
 func TestGeneratedFilesCarryTheReadersAdapters(t *testing.T) {
 	snapshot := feedSnapshot{
 		buoys: buoyFeed(

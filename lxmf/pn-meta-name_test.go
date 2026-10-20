@@ -17,9 +17,8 @@ import (
 // The name travels in the announce's metadata map under PNMetaName, and that map
 // arrives decoded from msgpack, where an integer key comes back as an int64. A
 // lookup keyed by an untyped constant is an int in a map[any]any and matches
-// nothing: the node announced "go-nomadnet.duckdns.org" and every client still
-// listed it as its bare <hash>, and a name search in the announce stream could
-// never find it.
+// nothing, so the node's name is lost and every client lists it as its bare
+// <hash>.
 func TestPeerNameFromDecodedMetadata(t *testing.T) {
 	t.Parallel()
 

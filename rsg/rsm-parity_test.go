@@ -17,12 +17,10 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// rsmParityInputs is the shared set of signing inputs (deterministic
-// private key, notes/message, and manifest meta in Python dict insertion
-// order) used by both the live Python capture and the Go CreateWithOptions
-// call below. Ed25519 signing is deterministic, so byte-identity depends
-// entirely on the msgpack envelope key matching Python's dict insertion
-// order: hashtype, hash, meta(signer, pubkey, ...user meta...), [message].
+// rsmParityPrvHex is the deterministic signing key shared with the live Python
+// capture. Ed25519 signing is deterministic, so byte-identity depends entirely
+// on the msgpack envelope key order matching Python's dict insertion order:
+// hashtype, hash, meta(signer, pubkey, ...user meta...), [message].
 const rsmParityPrvHex = "c8699e62f1d5354063c63c3c7165b1d6f3c0dd40d51a728be403635c3bef3a6cb6d658a728a5eccc2a6b69d15787cca20260782442a3f1c408d880a507f23e80"
 
 const rsmParityNotesHex = "52656c65617365206e6f74657320666f7220312e302e300a496e697469616c2072656c656173652e"

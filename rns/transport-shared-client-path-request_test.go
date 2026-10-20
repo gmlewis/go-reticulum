@@ -13,14 +13,12 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// TestSharedInstanceClientGetsPathFromRemoteCache reproduces the field failure
-// where a shared-instance client asks for a peer's path and never gets a reply,
-// so the peer's identity keys never arrive and the conversation stays in the
-// operator's "identity keys are not known" state indefinitely.
+// TestSharedInstanceClientGetsPathFromRemoteCache verifies that a
+// shared-instance client asking for a peer's path gets a reply relayed through
+// the instance, even when the instance itself has no cached path.
 //
-// The production shape is the phone: the peer announces on its own schedule
-// (announce_interval is 360 minutes — standard, and the design expects it),
-// the peer's announce lands BEFORE the appliance's stack is (re)started, and a
+// The peer announces on its own schedule (announce_interval is 360 minutes),
+// the peer's announce can land BEFORE the client's stack is (re)started, and a
 // shared-instance client persists neither identities nor paths
 // (Identity.save_known_destinations / Transport's path table both return early
 // for a connected-to-shared-instance process). So the client starts empty and
@@ -40,7 +38,7 @@ func TestSharedInstanceClientGetsPathFromRemoteCache(t *testing.T) {
 	tsD := NewTransportSystem(logger) // the peer, which announced before the instance existed
 	tsR := NewTransportSystem(logger) // an intermediate transport node that cached that announce
 	tsS := NewTransportSystem(logger) // the shared instance, started later, so it has nothing
-	tsC := NewTransportSystem(logger) // the attached client (the phone's gonomadnet)
+	tsC := NewTransportSystem(logger) // the attached client (gonomadnet)
 
 	tsD.identity = mustTestNewIdentity(t, true)
 	tsR.identity = mustTestNewIdentity(t, true)
@@ -195,16 +193,15 @@ func waitFor(t *testing.T, d time.Duration, what string, cond func() bool) {
 }
 
 // TestSharedInstanceClientPathRequestRoundTripThroughTCPHub models the full
-// production topology of the reported failure: the phone's client, attached by
-// a local socket to the appliance's own shared instance, whose only network
-// interface is a TCPClientInterface to the fleet's hub — and the requested peer
-// reachable only over that hub. Nothing here is cached anywhere: the peer is not
-// in the client's instance, not in the hub, and the peer announced before any of
-// this existed. The request must travel client → instance → hub → peer and the
-// reply must come all the way back, because that round trip is the ONLY way a
-// shared-instance client can ever learn a sparsely-announcing peer's identity
-// (announce_interval is 360 minutes — standard, and the design depends on a
-// path request bridging that gap, not on waiting for the next announce).
+// deployment topology: a client attached by a local socket to the appliance's
+// own shared instance, whose only network interface is a TCPClientInterface to
+// the hub — and the requested peer reachable only over that hub. Nothing here
+// is cached anywhere: the peer is not in the client's instance, not in the hub,
+// and the peer announced before any of this existed. The request must travel
+// client → instance → hub → peer and the reply must come all the way back,
+// because that round trip is the ONLY way a shared-instance client can learn a
+// sparsely-announcing peer's identity (announce_interval is 360 minutes, so a
+// path request bridges that gap rather than waiting for the next announce).
 func TestSharedInstanceClientPathRequestRoundTripThroughTCPHub(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 

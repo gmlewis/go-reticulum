@@ -178,8 +178,7 @@ func (h *FilterHost) addStoreImports(imports wago.Imports) {
 	})
 }
 
-// invoke calls a named export under the host's execution budget. It is the
-// direct path the timeout tests exercise.
+// invoke calls a named export under the host's execution budget.
 func (h *FilterHost) invoke(export string, args ...wago.Value) ([]wago.Value, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()

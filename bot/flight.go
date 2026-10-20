@@ -3,10 +3,8 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-// This file holds the flight command: where one flight is, right now. It is the
-// question somebody asks about a person they love who is in the air, so the two
-// rules that shape the whole file are "never guess" and "never report a stale
-// position as a live one".
+// This file holds the flight command: where one flight is, right now. Two rules
+// shape it: never guess, and never report a stale position as a live one.
 //
 // Two keyless providers answer it, each through the same operator-supplied URL
 // template the weather and launches commands use:
@@ -24,11 +22,10 @@
 // a provider's wording is never repeated into a room.
 //
 // The two answers are cached separately on purpose. A route is static, so it is
-// cached through the shared provider cache. A live state is only useful while it
-// is current, so it is cached as the parsed state plus the moment it was fetched,
-// and the age the answer reports is the provider's own age plus how long the
-// cache held it. A cached answer that went on claiming "heard 0s ago" would be
-// exactly the lie this command exists to avoid.
+// cached through the shared provider cache. A live state is cached as the parsed
+// state plus the moment it was fetched, and the age the answer reports is the
+// provider's own age plus how long the cache held it, so a cached answer never
+// keeps claiming "heard 0s ago".
 
 package bot
 
@@ -776,11 +773,11 @@ func (c *commandContext) lookupFlightRoute(template, number string, now time.Tim
 	body, err := c.reg.fetchBounded(fetchURL, maxFlightBodyBytes)
 	if err != nil {
 		if statusCode(err) == http.StatusNotFound {
-			// Verified live: a number that is shaped like a flight number but is
-			// not published is answered with 404 and {"response":"unknown
-			// callsign"}. That is an answer about the number rather than a
-			// failure, and it is cached like any other answer, because asking
-			// again inside the lifetime would only get the same reply.
+			// A number shaped like a flight number but not published is answered
+			// with 404 and {"response":"unknown callsign"}. That is an answer about
+			// the number rather than a failure, and it is cached like any other
+			// answer, because asking again inside the lifetime would get the same
+			// reply.
 			c.reg.flightRoutes.put(fetchURL, flightRoute{}, false, now)
 			return nil, flightRouteUnknown
 		}

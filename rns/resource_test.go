@@ -286,14 +286,13 @@ func TestResourceAccessors(t *testing.T) {
 	_ = res.GetTransferSize()
 }
 
-// TestUnpackResourceAdvertisementRejectsMalformed is a regression test for two
-// panic classes in UnpackResourceAdvertisement:
-//   - a str-typed (rather than bin-typed) value for the h/r/o/q/m fields
-//     panicked on a bare v.([]byte) type assertion;
-//   - a negative or oversized part count (n) panicked makeslice / OOM-threw
+// TestUnpackResourceAdvertisementRejectsMalformed pins that
+// UnpackResourceAdvertisement rejects malformed advertisements with an error
+// instead of panicking:
+//   - a str-typed (rather than bin-typed) value for the h/r/o/q/m fields would
+//     panic on a bare v.([]byte) type assertion;
+//   - a negative or oversized part count (n) would panic makeslice or OOM-throw
 //     when a caller fed adv.N into make([]*ResourcePart, n).
-//
-// All such malformed advertisements must now be rejected with an error.
 func TestUnpackResourceAdvertisementRejectsMalformed(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

@@ -204,10 +204,10 @@ func newBareRNodeForTest(t *testing.T, conn rnodeConn, freq, bw, tx, sf, cr int,
 	return r
 }
 
-// TestRNodeLifecycleDetectConfigureValidateOnline is the Phase D state-machine
-// test: a virtual RNode responds to detect, echoes the radio configuration, and
-// the controller reaches online with the reported on-air bitrate and symbol
-// rate matching the live radio (3.12 kbps, 488 baud).
+// TestRNodeLifecycleDetectConfigureValidateOnline drives the state machine: a
+// virtual RNode responds to detect, echoes the radio configuration, and the
+// controller reaches online with the reported on-air bitrate and symbol rate
+// matching the live radio (3.12 kbps, 488 baud).
 func TestRNodeLifecycleDetectConfigureValidateOnline(t *testing.T) {
 	t.Parallel()
 	mock := newMockRNode()
@@ -369,9 +369,9 @@ func rnodeTCPResponse(cmd byte, payload []byte) [][]byte {
 	return nil
 }
 
-// TestRNodeTCPTransport brings up an RNode over a tcp:// loopback connection
-// (Phase H): a Go TCP server speaks the RNode KISS protocol and the controller
-// reaches online with the on-air bitrate matching the live serial radio.
+// TestRNodeTCPTransport brings up an RNode over a tcp:// loopback connection: a
+// Go TCP server speaks the RNode KISS protocol and the controller reaches online
+// with the on-air bitrate matching the live serial radio.
 func TestRNodeTCPTransport(t *testing.T) {
 	t.Parallel()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

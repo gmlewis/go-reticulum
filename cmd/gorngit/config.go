@@ -4,10 +4,9 @@
 // that can be found in the LICENSE file.
 
 // config.go implements the gorngit node configuration loader, mirroring
-// the [rngit], [repositories], [aliases], and [access] sections of the
-// default rngit config (RNS/Utilities/rngit/server.py
-// __default_rngit_config__ + __apply_config). Stats and pages config is
-// deferred to follow-up tasks.
+// the [rngit], [repositories], [aliases], [access], and [pages] sections of
+// the default rngit config (RNS/Utilities/rngit/server.py
+// __default_rngit_config__ + __apply_config).
 
 package main
 

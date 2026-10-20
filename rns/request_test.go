@@ -441,13 +441,10 @@ func TestLinkResponseResourceConcludedPreservesBinaryMapKeys(t *testing.T) {
 	}
 }
 
-// TestResponseResourceFailedFailsPendingReceipt covers Gap B: when a response
+// TestResponseResourceFailedFailsPendingReceipt asserts that when a response
 // resource concludes FAILED (watchdog part-timeout, exhausted retries, bad
-// proof), the pending request receipt must be moved to RequestFailed, dropped
-// from the link's pending list, and reported via failedCallback. Before the
-// fix responseResourceConcluded only handled ResourceStatusComplete, so a
-// failed response resource was silently ignored and the receipt leaked
-// (neither callback fired; the caller only resolved via its own backstop).
+// proof), the pending request receipt is moved to RequestFailed, dropped from
+// the link's pending list, and reported via failedCallback.
 func TestResponseResourceFailedFailsPendingReceipt(t *testing.T) {
 	t.Parallel()
 
@@ -488,16 +485,14 @@ func TestResponseResourceFailedFailsPendingReceipt(t *testing.T) {
 	}
 }
 
-// TestResponseTimeoutJobDisarmsOnReceivingState covers the fix for the root
-// cause of "Request timed out" on multi-hop paths: a response that arrives as
-// a resource flips the receipt to RequestReceiving as soon as the first part
-// lands. Python's __response_timeout_job (Link.py:1383-1389) runs ONLY while
-// status == DELIVERED and exits immediately when status changes to RECEIVING,
-// disarming the response timeout — the resource's own watchdog then handles
-// the rest of the transfer. The Go port previously kept ticking through
-// RequestReceiving and fired at the fixed deadline, killing in-progress
-// multi-hop resource transfers. This test verifies the corrected behavior:
-// the timeout does NOT fire from RequestReceiving state.
+// TestResponseTimeoutJobFiresFromReceivingState asserts that the response
+// timeout job disarms once the receipt leaves RequestDelivered: a response that
+// arrives as a resource flips the receipt to RequestReceiving as soon as the
+// first part lands. Python's __response_timeout_job (Link.py:1383-1389) runs
+// ONLY while status == DELIVERED and exits immediately when the status changes
+// to RECEIVING, disarming the response timeout so the resource's own watchdog
+// handles the rest of the transfer. The timeout must NOT fire from
+// RequestReceiving state.
 func TestResponseTimeoutJobFiresFromReceivingState(t *testing.T) {
 	t.Parallel()
 
@@ -509,10 +504,8 @@ func TestResponseTimeoutJobFiresFromReceivingState(t *testing.T) {
 		failed := make(chan *RequestReceipt, 1)
 		rr.failedCallback = func(got *RequestReceipt) { failed <- got }
 
-		// Deadline in the past: with the old (buggy) code the first poll
-		// iteration would fire immediately. With the fix, the loop exits
-		// immediately because status != RequestDelivered, so the failed
-		// callback must NOT fire.
+		// Deadline in the past: the loop still exits immediately because
+		// status != RequestDelivered, so the failed callback must NOT fire.
 		go rr.responseTimeoutJob(time.Now().Add(-1 * time.Second))
 
 		select {
@@ -561,10 +554,10 @@ func TestResponseTimeoutJobFiresFromDeliveredState(t *testing.T) {
 	})
 }
 
-// TestResponseTimeoutJobDisarmsOnStatusChange verifies the key fix: the
-// timeout job exits (disarms) when the status changes from RequestDelivered
-// to RequestReceiving mid-wait, matching Python's
-// while self.status == DELIVERED loop exit on status change.
+// TestResponseTimeoutJobDisarmsOnStatusChange verifies that the timeout job
+// exits (disarms) when the status changes from RequestDelivered to
+// RequestReceiving mid-wait, matching Python's while self.status == DELIVERED
+// loop exit on status change.
 func TestResponseTimeoutJobDisarmsOnStatusChange(t *testing.T) {
 	t.Parallel()
 
@@ -573,7 +566,7 @@ func TestResponseTimeoutJobDisarmsOnStatusChange(t *testing.T) {
 		failed := make(chan *RequestReceipt, 1)
 		rr.failedCallback = func(got *RequestReceipt) { failed <- got }
 
-		// Long deadline — the timeout should NOT fire before we change the status.
+		// Long deadline — the timeout should NOT fire before the status change.
 		go rr.responseTimeoutJob(time.Now().Add(10 * time.Second))
 
 		// After a short wait, flip status to RequestReceiving (simulating the
@@ -600,10 +593,10 @@ func TestResponseTimeoutJobDisarmsOnStatusChange(t *testing.T) {
 	})
 }
 
-// TestResponseReceivedDoesNotReviveFailedReceipt covers the terminal guard
-// added to responseReceived: a receipt already failed (e.g. by the timeout
-// job) must not be revived to RequestReady or double-fire the success
-// callback when a late completion races in.
+// TestResponseReceivedDoesNotReviveFailedReceipt asserts the terminal guard in
+// responseReceived: a receipt already failed (e.g. by the timeout job) must not
+// be revived to RequestReady or double-fire the success callback when a late
+// completion races in.
 func TestResponseReceivedDoesNotReviveFailedReceipt(t *testing.T) {
 	t.Parallel()
 

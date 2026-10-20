@@ -62,9 +62,8 @@ func IsConnectedToSharedInstance(iface Interface) bool {
 	return ok && lci.isConnectedToSharedInstance
 }
 
-// LocalClientInterface establishes a high-bandwidth, low-latency IPC link to a
-// local Reticulum instance. It uses Unix domain sockets or loopback TCP to
-// proxy routing requests to the broader network.
+// LocalClientInterface is the client side of an IPC link to a local Reticulum
+// shared instance, carried over a Unix domain socket or loopback TCP.
 type LocalClientInterface struct {
 	*BaseInterface
 
@@ -99,9 +98,9 @@ type LocalClientInterface struct {
 	mu             sync.RWMutex
 }
 
-// NewLocalClientInterface dials and negotiates a persistent connection to the
-// local Reticulum hub. It falls back between Unix sockets and TCP loopback as
-// needed and starts asynchronous read loops on success.
+// NewLocalClientInterface dials the local shared instance over a Unix domain
+// socket (when path is set) or loopback TCP, then starts the read loop. If the
+// dial fails it starts the reconnect loop instead.
 func NewLocalClientInterface(name string, path string, port int, handler InboundHandler) (*LocalClientInterface, error) {
 	bi := NewBaseInterface(name, ModeFull, LocalBitrate)
 	lci := &LocalClientInterface{
@@ -352,14 +351,11 @@ func (lci *LocalClientInterface) Status() bool {
 // (LocalInterface.py:137-138), which unconditionally returns False. A local
 // shared-instance socket is the high-bandwidth, low-latency link that carries
 // every announce and path response between a co-located client and the shared
-// instance. Subjecting it to the announce ingress-limit burst state machine
-// holds path-response announces in a queue released one per ~5s after a 15s
-// burst penalty (and drops them outright when the queue is full), which surfaced
-// as ~20s path-resolution delays and intermittent "no transport path" drops for
-// shared-instance clients. Local interfaces never ingress-limit announces.
-// This override applies to both initiator clients and the spawned per-connection
-// interfaces the server creates from accepted clients (both are
-// LocalClientInterface), so it covers the shared-instance side as well.
+// instance, so subjecting it to the announce ingress-limit burst state machine
+// would hold path-response announces in a queue. This override applies to both
+// initiator clients and the spawned per-connection interfaces the server
+// creates from accepted clients (both are LocalClientInterface), so it covers
+// the shared-instance side as well.
 func (lci *LocalClientInterface) ShouldIngressLimit() bool {
 	return false
 }
@@ -426,9 +422,9 @@ func (lci *LocalClientInterface) Detach() error {
 	return nil
 }
 
-// LocalServerInterface starts a high-performance IPC listener that services
-// local Reticulum client processes. It manages concurrent client sessions over
-// Unix sockets or loopback TCP.
+// LocalServerInterface is the shared-instance side of the local IPC listener.
+// It accepts connections from co-located Reticulum clients over a Unix domain
+// socket or loopback TCP and tracks each spawned client interface.
 type LocalServerInterface struct {
 	*BaseInterface
 
@@ -458,9 +454,8 @@ type LocalServerInterface struct {
 	mu      sync.Mutex
 }
 
-// NewLocalServerInterface binds an IPC listener to accept incoming connections
-// from co-located Reticulum instances. It manages socket files and port bindings
-// and launches an asynchronous accept loop.
+// NewLocalServerInterface binds the local IPC listener and starts its accept
+// loop.
 func NewLocalServerInterface(name, path string, port int, handler InboundHandler) (*LocalServerInterface, error) {
 	bi := NewBaseInterface(name, ModeFull, LocalBitrate)
 

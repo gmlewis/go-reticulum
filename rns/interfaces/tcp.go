@@ -142,10 +142,9 @@ type TCPClientInterface struct {
 
 	// onDown, if set, is invoked once when this interface transitions from
 	// up to down (its connection fails), so the transport can eagerly
-	// invalidate paths routed through it. This replaces the old flood-prone
-	// lazy invalidation where every rebroadcast/forward attempt to a down
-	// interface ran a full pathTable scan. Set by the transport when the
-	// interface is registered.
+	// invalidate paths routed through it instead of scanning the path table
+	// on every failed forward. Set by the transport when the interface is
+	// registered.
 	onDownMu sync.Mutex
 	onDown   func()
 
@@ -261,7 +260,7 @@ func (tci *TCPClientInterface) KISSFraming() bool { return tci.kissFraming }
 
 func (tci *TCPClientInterface) connect() error {
 	// hostPortAddr brackets an IPv6 literal; hand-rolling "host:port" here
-	// produced "too many colons in address" and left every IPv6 target down.
+	// would produce "too many colons in address" and leave an IPv6 target down.
 	addr := hostPortAddr(tci.targetHost, tci.targetPort)
 	log.Printf("Go TCPClientInterface %v connecting to %v", tci.name, addr)
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
@@ -500,9 +499,7 @@ func (tci *TCPClientInterface) failConn(conn net.Conn) {
 
 	if down {
 		// Notify the transport once on the up->down transition so it can
-		// eagerly invalidate paths routed through this interface. This
-		// replaces the old behavior where path invalidation happened
-		// lazily (and noisily) on every failed rebroadcast/forward Send.
+		// eagerly invalidate paths routed through this interface.
 		tci.onDownMu.Lock()
 		hook := tci.onDown
 		tci.onDownMu.Unlock()
@@ -734,9 +731,8 @@ func (tsi *TCPServerInterface) acceptLoop() {
 			// anything else is transient (EMFILE/ENFILE fd exhaustion,
 			// ECONNABORTED backlog overflow on Linux) and must not kill
 			// the accept loop permanently: Python's socketserver keeps
-			// serving per-error, while this loop previously broke forever,
-			// leaving every NEW inbound connection hanging with running=1
-			// and "all interfaces up" — gradual fleet path rot.
+			// serving per-error, and a loop that exits would leave every
+			// new inbound connection hanging with running still set.
 			if errors.Is(err, net.ErrClosed) || tsi.IsDetached() ||
 				atomic.LoadInt32(&tsi.running) != 1 {
 				return
@@ -850,23 +846,13 @@ func (tsi *TCPServerInterface) handleConnection(conn net.Conn) {
 // client, mirroring Python's accept path, which calls
 // RNS.Transport.add_interface(spawned_interface) (TCPInterface.py:648). That
 // accepted client is the interface that transmits, while the listener's own
-// process_outgoing is `pass` (TCPInterface.py:647-648). Python therefore has
-// exactly one delivery path to an accepted client, and it is the client's own.
+// process_outgoing is `pass` (TCPInterface.py:647-648).
 //
-// Go had two. This method fanned the payload out to each spawned client while
-// the transport's broadcast fallback also wrote to every registered interface,
-// each spawned client among them, so every frame sent to a hub's client
-// arrived twice: at a raw TCP socket, 20 frames read and 10 distinct, and
-// 43.9% of the operator's client's inbound packets were exact immediate
-// duplicates. Every duplicated announce doubled a hub's rebroadcast work,
-// which is what showed up as path-table churn, and then as link requests sent
-// into a hole that timed out for their whole establishment window.
-//
-// The transport still calls this for the listener, because its fan-out does
-// not know which interfaces are listeners. It must therefore succeed rather
-// than fail: the delivery has already happened, on the client's own registered
-// interface, and a non-nil error here would be read as a failed transmission
-// and would invalidate paths through a listener that was working.
+// The transport still calls this for the listener, because its fan-out does not
+// know which interfaces are listeners. It must therefore succeed rather than
+// fail: delivery has already happened on the client's own registered interface,
+// and a non-nil error here would be read as a failed transmission and would
+// invalidate paths through a listener that was working.
 func (tsi *TCPServerInterface) Send(data []byte) error {
 	return nil
 }
@@ -942,15 +928,10 @@ func (tsi *TCPServerInterface) HashString() string {
 // literal such as "::" would become ":::port" and be rejected by net with
 // "too many colons in address".
 func hostPortAddr(host string, port int) string {
-	// A host that arrives already bracketed must not be bracketed a second time. "[::]" is how
-	// the standard IPv6 notation is written and how a config file naturally writes it, and
-	// bracketing it again yields "[[::]]:port" — which net rejects with "missing port in
-	// address", a message that names neither the bracket nor the file.
-	//
-	// This is not hypothetical. A fleet hub configured with listen_ip = [::] failed to bind,
-	// gornsd logged the error once, skipped the interface, and went on reporting itself
-	// healthy; every client in the fleet was refused for three days while the operator could
-	// see the service active and the config correct.
+	// A host that arrives already bracketed must not be bracketed a second time.
+	// "[::]" is how standard IPv6 notation is written and how a config file
+	// naturally writes it, and bracketing it again yields "[[::]]:port", which net
+	// rejects with "missing port in address".
 	for strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
 		host = host[1 : len(host)-1]
 	}

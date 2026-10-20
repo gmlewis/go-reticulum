@@ -8,9 +8,8 @@
 // position finds its nearest rows, and how the argument line splits into a
 // sub-command, a filter, and a page.
 //
-// It exists because buoy, tide, and river-adjacent commands all face the same
-// problem: the identifiers the providers use are opaque, and asking a user on a
-// radio link to already know them is a dead end. Every catalog is therefore
+// The identifiers the providers use are opaque, and asking a user on a radio
+// link to already know them is a dead end. Every catalog is therefore
 // searchable by the name a person would say, filterable by the region they are
 // in, and resolvable from a position, all without a network call. The rows are
 // uniform — an identifier, a label, a region, and a point — so one matcher, one

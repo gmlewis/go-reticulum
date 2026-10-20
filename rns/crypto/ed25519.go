@@ -10,27 +10,15 @@ import (
 	"errors"
 )
 
-// Ed25519PrivateKey firmly encapsulates a standard Ed25519 private key.
-// It empowers node identities to securely sign payloads and assert non-repudiable presence within the Reticulum network topology.
-//
-// ASIC suitability: Ed25519 signing/verification underpins every announce,
-// path token, proof, and LXMF ratchet file in this implementation. The core
-// operation is fixed-base (sign) and variable-base (verify) scalar
-// multiplication over Curve25519 with SHA-512 — mathematically fixed,
-// data-independent, and memory-light (no heap allocations beyond the
-// signature). It offloads cleanly to an ASIC/FPGA as an Ed25519 verify
-// block (the same primitive class RNode-class hardware already includes),
-// driven over SPI by a small host MCU; sign can remain in software or share
-// the Montgomery/Edwards ladder hardware with X25519 (they share the same
-// curve arithmetic).
+// Ed25519PrivateKey is an Ed25519 private key. Reticulum identities use it to
+// sign announces, path requests, proofs, and LXMF payloads.
 type Ed25519PrivateKey struct {
 	priv ed25519.PrivateKey
 }
 
-// GenerateEd25519PrivateKey securely provisions a fresh, cryptographically strong Ed25519 private key.
-// It draws its seed from the process-wide randomness source (see
-// SetEntropySource), and returns an error rather than a weak key when that
-// source cannot supply entropy.
+// GenerateEd25519PrivateKey returns a new Ed25519 private key seeded from the
+// process-wide randomness source (see SetEntropySource). It returns an error
+// rather than a weak key when that source cannot supply entropy.
 func GenerateEd25519PrivateKey() (*Ed25519PrivateKey, error) {
 	seed := make([]byte, ed25519.SeedSize)
 	if _, err := RandomBytes(seed); err != nil {
@@ -39,8 +27,8 @@ func GenerateEd25519PrivateKey() (*Ed25519PrivateKey, error) {
 	return NewEd25519PrivateKeyFromBytes(seed)
 }
 
-// NewEd25519PrivateKeyFromBytes reconstructs a valid Ed25519PrivateKey specifically from its raw 32-byte seed.
-// This allows deterministic resumption of a cryptographic identity from persistent, trusted storage mediums.
+// NewEd25519PrivateKeyFromBytes builds an Ed25519PrivateKey from its raw
+// 32-byte seed, as stored on disk or received in an announce.
 func NewEd25519PrivateKeyFromBytes(data []byte) (*Ed25519PrivateKey, error) {
 	if len(data) != 32 {
 		return nil, errors.New("invalid private key length")
@@ -49,33 +37,31 @@ func NewEd25519PrivateKeyFromBytes(data []byte) (*Ed25519PrivateKey, error) {
 	return &Ed25519PrivateKey{priv: priv}, nil
 }
 
-// PrivateBytes extracts the raw 32-byte scalar seed underlying the Ed25519 private key.
-// Callers must guarantee strict confidentiality of this slice, as its disclosure would compromise the identity entirely.
+// PrivateBytes returns the raw 32-byte seed of the key. The caller must keep
+// the returned slice confidential.
 func (k *Ed25519PrivateKey) PrivateBytes() []byte {
 	return k.priv.Seed()
 }
 
-// PublicKey deterministically computes and returns the Ed25519PublicKey mathematically bound to this private key.
-// It safely extracts the verifiable component required for remote peers to validate signatures originating from this identity.
+// PublicKey returns the Ed25519PublicKey belonging to k.
 func (k *Ed25519PrivateKey) PublicKey() *Ed25519PublicKey {
 	pub := k.priv.Public().(ed25519.PublicKey)
 	return &Ed25519PublicKey{pub: pub}
 }
 
-// Sign processes an arbitrary message payload and returns a deterministic cryptographic signature bound to this private key.
-// It leverages the Ed25519 algorithm to guarantee authenticity and non-repudiation of the supplied message.
+// Sign returns the Ed25519 signature of message.
 func (k *Ed25519PrivateKey) Sign(message []byte) []byte {
 	return ed25519.Sign(k.priv, message)
 }
 
-// Ed25519PublicKey encapsulates the shareable public material of an Ed25519 key pair.
-// It serves as a public identity mechanism that other network participants can utilize to rigorously verify signed announcements and messages.
+// Ed25519PublicKey is the shareable half of an Ed25519 key pair, used to verify
+// signatures made by the matching private key.
 type Ed25519PublicKey struct {
 	pub ed25519.PublicKey
 }
 
-// NewEd25519PublicKeyFromBytes securely imports and structures an Ed25519PublicKey from a raw 32-byte slice.
-// It enforces rigid bounds checking to guarantee the integrity of the public key material before deployment in signature validation routines.
+// NewEd25519PublicKeyFromBytes builds an Ed25519PublicKey from a raw 32-byte
+// slice and rejects any other length.
 func NewEd25519PublicKeyFromBytes(data []byte) (*Ed25519PublicKey, error) {
 	if len(data) != 32 {
 		return nil, errors.New("invalid public key length")
@@ -83,14 +69,14 @@ func NewEd25519PublicKeyFromBytes(data []byte) (*Ed25519PublicKey, error) {
 	return &Ed25519PublicKey{pub: ed25519.PublicKey(data)}, nil
 }
 
-// PublicBytes yields the standard 32-byte slice representation of the public key.
-// This slice is suitable for broadcasting or inclusion within routing tables to propagate identity awareness.
+// PublicBytes returns the 32-byte encoding of the public key, as sent in
+// announces and destination hashes.
 func (k *Ed25519PublicKey) PublicBytes() []byte {
 	return []byte(k.pub)
 }
 
-// Verify interrogates a given cryptographic signature against the provided message payload using this public key.
-// It returns a boolean indicating absolute validity, strictly rejecting any tampered or mathematically inconsistent signatures.
+// Verify reports whether signature is a valid Ed25519 signature of message
+// under this public key.
 func (k *Ed25519PublicKey) Verify(signature, message []byte) bool {
 	return ed25519.Verify(k.pub, message, signature)
 }

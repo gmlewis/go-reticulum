@@ -7,12 +7,9 @@
 // offshore weather buoy, decoded from the compact fixed-column feed the
 // National Data Buoy Center publishes.
 //
-// Swell period is the number that matters offshore. A six-foot sea at five
-// seconds is chop a small boat can push through; the same six feet at sixteen
-// seconds is groundswell that has crossed an ocean, carries its energy deep,
-// and breaks on a bar without warning. The command therefore reports the
-// period alongside the height and names the difference in words, because the
-// height alone is the number that gets people into trouble.
+// The command reports the swell period alongside the wave height and names what
+// the period means, because the same height is chop at five seconds and
+// groundswell at sixteen.
 //
 // The feed is a few kilobytes of whitespace-delimited columns with "MM" for a
 // missing sensor. The parser reads the header to learn the column order rather

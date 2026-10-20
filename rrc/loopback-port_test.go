@@ -18,9 +18,8 @@ import (
 // A port taken by listening on 127.0.0.1:0 and closing it is free again at once,
 // so a suite that allocates dozens of them in parallel can be handed the same
 // number twice, and the rig that binds it second dies with "address already in
-// use". That is what CI reported from TestFleetTwoInstancesDeliverWelcome, on a
-// runner whose allocator happened to repeat itself. The allocator is the only
-// thing that can rule it out, because the kernel's own choice is random.
+// use". Only the allocator can rule that out, because the kernel's own choice
+// is random.
 func TestLoopbackPortsAreNeverHandedOutTwice(t *testing.T) {
 	t.Parallel()
 

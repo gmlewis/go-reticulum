@@ -129,7 +129,7 @@ func (env *Envelope) Unpack(factories map[uint16]func() Message) error {
 	return nil
 }
 
-// Channel provides a robust, reliable, and sequenced delivery mechanism for discrete messages over a Link.
+// Channel provides sequenced, reliable delivery of discrete messages over a Link.
 type Channel struct {
 	logger Logger
 	outlet ChannelOutlet
@@ -264,21 +264,20 @@ func (c *Channel) checkTimeouts() {
 	}
 	c.mu.RUnlock()
 
-	// CheckTimeout is the same guarded transition the transport's own receipt
-	// sweep applies (TransportSystem.processReceipts), so a receipt this channel
-	// is waiting on is retired exactly once no matter which pass reaches it
-	// first. Python has only the transport's pass — its Channel has no timer
-	// thread; it arms the receipt and lets Transport.jobs fire it
-	// (RNS/Channel.py:591-594). The Go port keeps this second pass as the
-	// channel's retry heartbeat, which is why the transition has to be
-	// idempotent. The receipt's retry window is re-armed by the resend path
-	// (outlet.Resend -> Outbound -> MarkSent, plus SetTimeout below), not here.
+	// CheckTimeout applies the same guarded transition as the transport's own
+	// receipt sweep (TransportSystem.processReceipts), so a receipt is retired
+	// exactly once whichever pass reaches it first. Python has no channel
+	// timer: it arms the receipt and lets Transport.jobs fire it
+	// (RNS/Channel.py:591-594). The Go port keeps this pass as the channel's
+	// retry heartbeat, so the transition must stay idempotent. The retry
+	// window is re-armed by the resend path (outlet.Resend -> Outbound ->
+	// MarkSent, plus SetTimeout below), not here.
 	for _, event := range events {
 		event.receipt.CheckTimeout(now)
 	}
 }
 
-// Shutdown halts the channel's background processes and securely clears all pending transmission and reception queues.
+// Shutdown halts the channel's background processes and clears all pending transmission and reception queues.
 func (c *Channel) Shutdown() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -341,7 +340,7 @@ func (c *Channel) removeMessageHandlerByID(handlerID uint64) {
 	}
 }
 
-// Send serializes the provided Message, wraps it in an Envelope, and securely transmits it over the underlying outlet.
+// Send serializes the provided Message, wraps it in an Envelope, and transmits it over the underlying outlet.
 //
 // It mirrors Python Channel.send (Channel.py:495-525): the sendLock
 // serializes senders; under mu it reserves the next sequence, packs the

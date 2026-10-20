@@ -285,8 +285,7 @@ func (rt *runtimeT) runInitiatorProtocolFlow(channel channelSession, opts option
 		case err := <-session.errCh:
 			return 1, session, err
 		case exitCode := <-session.doneCh:
-			// Even if we got an exit code, a fatal error might have arrived
-			// simultaneously and should be prioritized.
+			// A fatal error that arrived alongside the exit code takes priority.
 			select {
 			case err := <-session.errCh:
 				return 1, session, err

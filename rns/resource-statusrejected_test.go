@@ -14,12 +14,11 @@ import (
 // TestResourceStatusRejectedValue asserts that the Go
 // ResourceStatusRejected constant equals Python's live Resource.REJECTED
 // (Resource.py:152) for wire-format parity, and that the related status
-// constants (None, Corrupt, Complete, Assembling) match Python too. The
-// previous Go value (0x00) collided with ResourceStatusNone, so this also
-// asserts the two are distinct and that Rejected sits above Corrupt as a
+// constants (None, Corrupt, Complete, Assembling) match Python too. It also
+// asserts that Rejected is distinct from None and sits above Corrupt as a
 // terminal state — preserving the status ordering that gate comparisons
 // (status < COMPLETE, status < ASSEMBLING) rely on. The expected values are
-// captured live from `import RNS` rather than hardcoded.
+// read live from `import RNS` rather than hardcoded.
 func TestResourceStatusRejectedValue(t *testing.T) {
 	t.Parallel()
 	testutils.SkipIfNoPythonRNS(t)

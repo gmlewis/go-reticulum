@@ -3,10 +3,8 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-// This file forwards the geodesy engine to package geo; see olc.go in this
-// package for why the implementation moved. It also re-exposes the small angle
-// and coordinate-formatting helpers that other files in this package call, so
-// none of the bot's own code had to change when the engine moved.
+// This file forwards the geodesy engine to package geo and re-exposes the small
+// angle and coordinate-formatting helpers that other files in this package call.
 //
 // It is also where a location becomes a position the bot can use: parseLocation
 // supplies the one thing the engine cannot supply for itself, which is where the
@@ -153,7 +151,7 @@ func FormatBearing(bearing float64) string { return geo.FormatBearing(bearing) }
 func FormatLatLng(p LatLng) string { return geo.FormatLatLng(p) }
 
 // The unexported helpers below are used by other files in this package. They
-// forward to the engine so the moved code stays the single implementation.
+// forward to the engine so the engine stays the single implementation.
 
 // radians converts degrees to radians.
 func radians(deg float64) float64 { return geo.Radians(deg) }

@@ -59,11 +59,9 @@ func Parse(src string) (*Doc, error) {
 			i++
 		default:
 			flushPending()
-			// TOML allows multi-line arrays and inline tables. The
-			// historical parser was line-oriented and rejected
-			// `key = [` on the next line's `]` with "unterminated
-			// array" (gorrcd crash-loop on a valid trusted_identities
-			// list). Consume continuation lines until brackets balance.
+			// TOML allows multi-line arrays and inline tables, so consume
+			// continuation lines until the brackets opened on the assignment
+			// balance.
 			joined, last := joinContinuedValueLines(lines, i)
 			kv, err := parseKeyValLine(joined)
 			if err != nil {

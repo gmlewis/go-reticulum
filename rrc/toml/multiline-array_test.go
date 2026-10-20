@@ -58,8 +58,8 @@ func TestParseSingleLineArrayStillWorks(t *testing.T) {
 	}
 }
 
-// TestParseMultiLineArrayTrailingComma is valid TOML (the comma may sit on
-// the next line); the old single-line-only parser rejected it as garbage.
+// TestParseMultiLineArrayTrailingComma pins that a trailing comma may sit on
+// the next line, which is valid TOML.
 func TestParseMultiLineArrayTrailingComma(t *testing.T) {
 	t.Parallel()
 	doc, err := Parse("arr = [1, 2\n, 3]\n")

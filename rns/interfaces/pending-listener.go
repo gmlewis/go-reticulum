@@ -18,9 +18,7 @@ import (
 // instead of closing it and hoping the port can be rebound later: in between,
 // a parallel test's listener bind or outgoing dial can claim the just-closed
 // ephemeral port, which silently misclassifies the instance role
-// (shared/standalone/connected) or fails a server bind — the
-// TestRPCAuthAndGetEndpoints "expected shared instance" CI flake of
-// 2026-09-04.
+// (shared/standalone/connected) or fails a server bind.
 //
 // A bind site consults PopPendingTCPListener before net.Listen and adopts the
 // held listener when one is registered for its port. The registry is only
@@ -31,8 +29,8 @@ import (
 //
 // While held, a probe listener sheds inbound connections (accept and
 // immediately close) so a dial to a reserved-but-unbound port fails fast
-// (EOF/reset) instead of hanging on a silently held socket — dialers that
-// previously saw connection-refused must keep getting a prompt error.
+// (EOF/reset) instead of hanging on a silently held socket, preserving the
+// prompt connection-refused error dialers expect.
 //
 // Keying by port is unambiguous: while a probe listener is held open, the
 // kernel cannot hand the same port to another test's probe or dial, so no two

@@ -69,10 +69,9 @@ func TestConfigTemplateRenderGolden(t *testing.T) {
 	// The templates name this port's own program where Python names its own.
 	// That is the one deliberate difference, so it is normalized away before the
 	// byte comparison; both sides are first checked to still carry their own
-	// spelling, so a change on either side is something to hear about rather
-	// than quietly absorb. The advertised hub_name is the same divergence
-	// spelled differently: Python defaults it to "rrc", and the Go hub
-	// advertises gorrcd so clients render this port beside the version.
+	// spelling so a change on either side fails here. The advertised hub_name is
+	// the same divergence spelled differently: Python defaults it to "rrc", and
+	// the Go hub advertises gorrcd so clients render this port beside the version.
 	const pythonHubName = "hub_name = \"rrc\"\n"
 	const gorrcdHubName = "hub_name = \"gorrcd\"\n"
 	if strings.Count(gotCfg, pythonHubName) != 1 {
@@ -167,10 +166,10 @@ func TestTemplatesRoundTripThroughTOML(t *testing.T) {
 	}
 }
 
-// G16.21 The first-run path quoting must escape embedded quotes the way
-// Python's repr does: a path containing both quote characters stays
-// single-quoted with the embedded single quotes escaped, so the
-// generated TOML parses. Golden: python3 -c "print(repr('/a\'b\"c'))".
+// The first-run path quoting must escape embedded quotes the way Python's repr
+// does: a path containing both quote characters stays single-quoted with the
+// embedded single quotes escaped, so the generated TOML parses. Golden:
+// python3 -c "print(repr('/a\'b\"c'))".
 func TestPythonReprStringBothQuotes(t *testing.T) {
 	t.Parallel()
 
@@ -208,12 +207,12 @@ func TestConfigTemplateAdvertisesGorrcd(t *testing.T) {
 	}
 }
 
-// G16.24 The end-to-end first-run flow must create the FULL default
-// rrcd.toml (every field, every comment) through the real file-writing
-// path: the written file byte-equals the rendered template, the mode is
-// 0o644 with no extra chmod, the identity and rooms files land at 0o600,
-// the first-run message renders, and an existing rrcd.toml — even a
-// one-byte junk file — is left untouched (Python's skip-if-exists).
+// The end-to-end first-run flow must create the FULL default rrcd.toml (every
+// field, every comment) through the real file-writing path: the written file
+// byte-equals the rendered template, the mode is 0o644 with no extra chmod, the
+// identity and rooms files land at 0o600, the first-run message renders, and an
+// existing rrcd.toml — even a one-byte junk file — is left untouched (Python's
+// skip-if-exists).
 func TestFirstRunCreatesFullDefaultConfig(t *testing.T) {
 	// t.Setenv forbids parallel execution.
 	home := testutils.TempDir(t, "gorrcd-firstrun-")
@@ -303,8 +302,8 @@ func TestFirstRunCreatesFullDefaultConfig(t *testing.T) {
 		t.Errorf("first-run message = %q", message)
 	}
 
-	// The skip-if-exists quirk: a pre-existing rrcd.toml — even one byte
-	// of junk — is left untouched and the config is never rewritten.
+	// A pre-existing rrcd.toml — even one byte of junk — is left untouched and
+	// the config is never rewritten.
 	home2 := testutils.TempDir(t, "gorrcd-firstrun2-")
 	t.Setenv("RRCD_HOME", home2)
 	configPath2 := rrc.DefaultConfigPath()

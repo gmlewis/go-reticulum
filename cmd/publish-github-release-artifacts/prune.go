@@ -16,13 +16,10 @@
 // Release-asset retention for publish-github-release-artifacts.
 //
 // Every publish uploads the full platform matrix (roughly 168 binaries, about
-// 1.7 GB), and nothing in the publish path ever removed an older upload. One
-// release a day therefore added ~1.7 GB per day forever, and the account
-// carried over 100 GB of old binaries that no consumer downloads (the whole
-// history had a few thousand downloads, against 13,000 stored assets).
-// GitHub documents no cap on total release size, but its Acceptable Use Policy
-// reserves the right to throttle file hosting for accounts that place undue
-// strain on the infrastructure, so unbounded growth is a real risk.
+// 1.7 GB), so the assets of old releases would otherwise accumulate without
+// bound. GitHub documents no cap on total release size, but its Acceptable Use
+// Policy reserves the right to throttle file hosting for accounts that place
+// undue strain on the infrastructure, so unbounded growth is a real risk.
 //
 // pruneReleaseAssets deletes the ASSETS of every release older than the newest
 // --keep-releases releases that still have assets. It never deletes a release,
@@ -32,10 +29,7 @@
 // binaries go away.
 //
 // Every asset of a pruned release is deleted, whatever its name: the retention
-// window is the whole policy. An earlier version selected assets by matching
-// their names against the pattern this publisher generates and kept everything
-// else, which contradicted the contract above and quietly retained the ESP32-C5
-// firmware this tool builds and documents in its own release notes.
+// window is the whole policy.
 package main
 
 import (
@@ -67,10 +61,9 @@ const defaultKeepReleases = 3
 // We pace just under the primary limit (75/minute, 4500/hour) so deletions flow
 // steadily rather than bursting and then parking when the hourly budget runs
 // out, and so the token keeps enough budget for anything else it does in the
-// same hour. The one-time cleanup of ~11,600 assets therefore takes about
-// 2.5 hours; in steady state a publish retires only about 168 assets, roughly
-// two minutes. waitForRateLimit is the backstop for when other activity has
-// already spent part of the hourly budget.
+// same hour. A steady-state publish retires about 168 assets, roughly two
+// minutes. waitForRateLimit is the backstop for when other activity has already
+// spent part of the hourly budget.
 const deletesPerMinute = 75
 
 // rateLimitCheckEvery is how many deletions happen between checks of the
@@ -94,9 +87,9 @@ const deleteAttempts = 5
 const progressEvery = 500
 
 // errAssetGone reports that an asset was already deleted (or its release was
-// removed). That is a success for our purposes: a prune run that was
-// interrupted, or that is racing another run, can simply be re-run, because
-// the plan is recomputed from live state on every run.
+// removed). That counts as success: an interrupted prune, or one racing another
+// run, can simply be re-run, because the plan is recomputed from live state on
+// every run.
 var errAssetGone = errors.New("asset already deleted")
 
 // asset is one uploaded file attached to a GitHub release.
@@ -130,9 +123,9 @@ func (r publishedRelease) totalBytes() int64 {
 //
 // Drafts are included so the prune can REPORT them (an unpublished draft keeps
 // its assets, and silently retaining a gigabyte would look like a bug), but
-// they are never pruned. Note that the releases list endpoint returns every
-// asset of each release (verified against all 13,400 assets in this repo), so
-// a single paginated call is enough and no per-release request is needed.
+// they are never pruned. The releases list endpoint returns every asset of each
+// release, so a single paginated call is enough and no per-release request is
+// needed.
 const releasesWithAssetsQuery = `.[] | .tag_name as $t | .created_at as $c | ` +
 	`(.draft | tostring) as $d | .assets[] | ` +
 	`[$t, $c, $d, (.id | tostring), (.size | tostring), .name] | @tsv`

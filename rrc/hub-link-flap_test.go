@@ -183,10 +183,9 @@ func (r *hubFlapRig) waitWelcomed(timeout time.Duration) bool {
 	return false
 }
 
-// TestHubLinkWelcomeDeliveredAndSurvivesPingLoop reproduces the live RRC hub
-// symptoms: the hub queues a WELCOME the client never receives (so the client
-// re-HELLOs and re-joins), and the hub's ping loop then tears the healthy link
-// down on its ping timeout.
+// TestHubLinkWelcomeDeliveredAndSurvivesPingLoop asserts the hub delivers its
+// WELCOME exactly once and that its ping loop leaves the healthy link alone:
+// no re-HELLO, no ping timeout, and no link close.
 func TestHubLinkWelcomeDeliveredAndSurvivesPingLoop(t *testing.T) {
 	t.Parallel()
 	const (
@@ -226,9 +225,9 @@ func TestHubLinkWelcomeDeliveredAndSurvivesPingLoop(t *testing.T) {
 	t.Logf("hub log:\n%v", logs)
 }
 
-// TestHubLinkAsyncConnectProducesWelcome is an exploratory probe of the
-// production connect path: the hub announces, the client learns the path and
-// recalls the identity, then connects through the async connect worker.
+// TestHubLinkAsyncConnectProducesWelcome covers the production connect path:
+// the hub announces, the client learns the path and recalls the identity, then
+// connects through the async connect worker and must receive the WELCOME.
 func TestHubLinkAsyncConnectProducesWelcome(t *testing.T) {
 	t.Parallel()
 	rig := newHubFlapRig(t, 0.15, 0.45)

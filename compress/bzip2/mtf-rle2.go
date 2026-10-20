@@ -8,7 +8,7 @@ import "github.com/gmlewis/go-reticulum/compress/internal/errors"
 
 // moveToFront implements both the MTF and RLE stages of bzip2 at the same time.
 // Any runs of zeros in the encoded output will be replaced by a sequence of
-// RUNA and RUNB symbols are encode the length of the run.
+// RUNA and RUNB symbols that encode the length of the run.
 //
 // The RLE encoding used can actually be encoded to and decoded from using
 // normal two's complement arithmetic. The methodology for doing so is below.

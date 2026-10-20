@@ -1053,17 +1053,10 @@ func TestIntegrationDeleteRepo(t *testing.T) {
 // release fetch — which is a pure read). Re-sending an identical request
 // produces an identical server result, so a retry is always safe for these.
 //
-// Why this exists: RNS resource transfers over a fast localhost link (RTT
-// ~2ms) under heavy parallel -race test load can occasionally fail. The
-// resource watchdog's part-timeouts are RTT-proportional (the receiver's
-// first grace is ResourceRetryGraceTime = 0.25s), and under -race + 8-package
-// parallelism goroutine scheduling latency and UDP socket-buffer pressure can
-// blow past those timeouts and exhaust retries, cancelling the transfer. The
-// Python rngit client (client.py send_request) aborts on a single such
-// failure, so the production gorngit client mirrors that and does NOT retry
-// (preserving behavioural parity). This helper adds retry purely at the test
-// layer so the integration test is rock-solid under load without diverging
-// from the Python client's production behaviour.
+// The production client does not retry, matching the Python rngit client
+// (client.py send_request), which aborts on a single failure; this helper adds
+// retry at the test layer only so the integration test tolerates resource
+// transfers that time out under heavy parallel -race load.
 //
 // On a transient failure ("request failed or timed out" / "request timed
 // out") the link is still alive, so the retry reuses it. On a link-death
@@ -1257,11 +1250,9 @@ func TestIntegrationReleaseRoundTrip(t *testing.T) {
 			t.Fatalf("pack artifact %v: %v", art.name, err)
 		}
 		// Artifact upload is idempotent (the server overwrites the artifact
-		// file), so a transient RNS resource-transfer failure under heavy
-		// -race load can be safely retried. manifest.rsm is the largest
-		// artifact and exceeds the link MDU, so it is transferred as a
-		// streamed Resource — the path most exposed to watchdog/UDP-pressure
-		// flakes under load.
+		// file), so a transient resource-transfer failure can be retried.
+		// manifest.rsm is the largest artifact and exceeds the link MDU, so it
+		// arrives as a streamed Resource.
 		resp, err := sendRequestRetry(t, client, logger, pathRelease, packed, fetchPushTimeout, 4)
 		if err != nil {
 			t.Fatalf("artifact %v request: %v", art.name, err)
@@ -1383,8 +1374,8 @@ func TestIntegrationReleaseRoundTrip(t *testing.T) {
 		t.Fatalf("pack fetch manifest: %v", err)
 	}
 	// Fetch is a read (idempotent), and the manifest.rsm response exceeds the
-	// link MDU so it returns as a streamed Resource — retry on transient
-	// resource-transfer failure under heavy -race load.
+	// link MDU so it arrives as a streamed Resource; retry on transient
+	// transfer failure.
 	resp, err = sendRequestRetry(t, client, logger, pathRelease, packed, fetchPushTimeout, 4)
 	if err != nil {
 		t.Fatalf("fetch manifest request: %v", err)

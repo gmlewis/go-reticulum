@@ -42,16 +42,14 @@ func TestInterfaceHashPrefersHashString(t *testing.T) {
 		t.Fatalf("interfaceHash with HashString = %x, want full_hash(%q) = %x", got, iface.hashStr, want)
 	}
 
-	// And it must NOT equal the old Type[Name] default for this interface.
+	// And it must NOT equal the Type[Name] default for this interface.
 	oldDefault := FullHash([]byte("capture[g00n Cloud Dallas]"))
 	if bytes.Equal(got, oldDefault) {
 		t.Fatalf("interfaceHash fell back to Type[Name] default %x; expected HashString to take precedence", got)
 	}
 
-	// The known Python-stored hash for the user's retibooks path (proven).
-	// Verified LIVE against Python's RNS.Identity.full_hash(str(self)) rather
-	// than asserted as a bare literal — this is the dispatch that lets Go
-	// resolve interfaces in a Python-written destination_table.
+	// Verify against Python's RNS.Identity.full_hash(str(self)) rather than a
+	// hand-typed constant.
 	testutils.SkipIfNoPythonRNS(t)
 	wantHex := pythonFullHashHex(t, iface.hashStr)
 	if h := bytesToHex(got); h != wantHex {

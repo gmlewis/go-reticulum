@@ -67,7 +67,6 @@ func TestIntegrationCBORGoToPython(t *testing.T) {
 		t.Skip("Python cbor2 not available, skipping CBOR parity test")
 	}
 
-	// testutils.TempDir now self-registers cleanup via t.Cleanup.
 	tmpDir := testutils.TempDir(t, "nomadnet-cbor-parity")
 
 	// Create a Go envelope
@@ -123,7 +122,6 @@ func TestIntegrationRRCGoToPythonCBORRoundTrip(t *testing.T) {
 		t.Skip("Python cbor2 not available, skipping CBOR round-trip test")
 	}
 
-	// testutils.TempDir now self-registers cleanup via t.Cleanup.
 	tmpDir := testutils.TempDir(t, "nomadnet-cbor-roundtrip")
 
 	// Go encodes
@@ -173,7 +171,6 @@ print("OK")
 		t.Fatalf("Go DecodeEnvelope failed: %v", err)
 	}
 
-	// Debug: log all keys and their types
 	for k, v := range decoded {
 		t.Logf("key=%v (%T) val=%v (%T)", k, k, v, v)
 	}
@@ -224,11 +221,10 @@ print("OK")
 func TestIntegrationProtocolConstantsMatch(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	// Verify Go protocol constants match the FRESH Python values by execing the
-	// real nomadnet.RRC reference. This ensures the Go and Python implementations
-	// use the same wire format, with the expected values derived live on every
-	// run rather than from a hardcoded literal. SKIPs (not fails) when the Python
-	// nomadnet reference is not importable.
+	// Verify the Go protocol constants against the real nomadnet.RRC
+	// reference, with the expected values derived live on every run rather
+	// than from a hardcoded literal. SKIPs (not fails) when the Python
+	// reference is not importable.
 	skipIfNoPythonNomadnet(t)
 
 	const script = `

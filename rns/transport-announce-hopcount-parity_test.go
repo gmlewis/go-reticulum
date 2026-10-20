@@ -18,13 +18,9 @@ import (
 // raw[1] = announce_hops. So a 0-hop announce on the wire becomes hops=1
 // after inbound++, and the rebroadcast carries raw[1]=1.
 //
-// The Go port previously set raw[1] = packet.Hops + 1 (double-incrementing),
-// causing every rebroadcast to carry one extra hop. This compounds across
-// multi-hop paths: N actual hops show as 2N-1 in Go vs N in Python.
-//
 // This test injects a valid announce with wire hops=0 on a mock interface
-// and asserts the queued announceTable entry's PacketRaw[1] == 1 (matching
-// Python), not 2 (the pre-fix Go behavior).
+// and asserts the queued announceTable entry's PacketRaw[1] == 1, matching
+// Python's single increment.
 func TestAnnounceRebroadcastHopCountParity(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)
@@ -61,7 +57,6 @@ func TestAnnounceRebroadcastHopCountParity(t *testing.T) {
 	}
 
 	// Python: announce_hops = packet.hops = 1, raw[1] = 1.
-	// Go pre-fix: raw[1] = packet.Hops + 1 = 2 (BUG).
 	if len(entry.PacketRaw) < 2 {
 		t.Fatalf("PacketRaw too short: %v", entry.PacketRaw)
 	}
@@ -74,8 +69,8 @@ func TestAnnounceRebroadcastHopCountParity(t *testing.T) {
 }
 
 // TestAnnounceRebroadcastHopCountParityMultiHop verifies the hop count for a
-// 2-hop announce (wire hops=1, inbound++ makes it 2). Python queues a
-// rebroadcast with raw[1]=2; Go pre-fix queued raw[1]=3.
+// 2-hop announce (wire hops=1, inbound++ makes it 2): the queued rebroadcast
+// must carry raw[1]=2, matching Python.
 func TestAnnounceRebroadcastHopCountParityMultiHop(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)
@@ -118,15 +113,12 @@ func TestAnnounceRebroadcastHopCountParityMultiHop(t *testing.T) {
 }
 
 // TestCachedPathResponseHopCountParity verifies that a cached path response
-// carries the cached path's hop count in raw[1] (matching Python
-// Transport.py:3049 where packet.hops = path_table[IDX_PT_HOPS]), not
-// cached_hops+1 (the pre-fix Go behavior at transport.go:3053).
+// carries the cached path's hop count in raw[1], matching Python
+// Transport.py:3049 where packet.hops = path_table[IDX_PT_HOPS].
 //
 // When a node answers a path request from its cached path table, Python
 // sets packet.hops = cached_hops and sends it. The requestor receives it,
-// increments by 1 in inbound, and stores cached_hops+1. Go pre-fix set
-// raw[1] = cached_hops+1, so the requestor stored cached_hops+2 — one
-// extra hop inflated per cached path response.
+// increments by 1 in inbound, and stores cached_hops+1.
 func TestCachedPathResponseHopCountParity(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)
@@ -209,7 +201,6 @@ func TestCachedPathResponseHopCountParity(t *testing.T) {
 	}
 
 	// Python: packet.hops = cached_hops = 4, raw[1] = 4.
-	// Go pre-fix: raw[1] = cached_hops + 1 = 5 (BUG).
 	gotHops := int(sentRaw[1])
 	wantHops := 4 // cachedPath.Hops = 4, matching Python's packet.hops = path_table[IDX_PT_HOPS]
 	if gotHops != wantHops {

@@ -43,7 +43,7 @@ func blackholeListEntriesFromMap(m map[any]any) []blackholeListEntry {
 	return out
 }
 
-// blackholeFetch is the real /list retrieval used by EnableBlackholeUpdater.
+// blackholeFetch is the /list retrieval used by EnableBlackholeUpdater.
 // It mirrors the fetch half of Discovery.BlackholeUpdater
 // (Discovery.py:683-712): derive the rnstransport.info.blackhole
 // destination hash from the source identity hash, await a path, recall the
@@ -128,7 +128,7 @@ func (ts *TransportSystem) blackholeFetch(sourceIdentityHash []byte) ([]blackhol
 	return blackholeListEntriesFromMap(m), nil
 }
 
-// BlackholeUpdater timing constants, captured from Python
+// BlackholeUpdater timing constants, mirroring Python
 // RNS.Discovery.BlackholeUpdater (Discovery.py:636-639, rns 1.3.5). These
 // govern the fetch/update loop and must match Python exactly so that
 // per-source update cadence is identical.
@@ -142,9 +142,8 @@ const (
 	// BlackholeUpdateInterval is the minimum interval between fetches of any
 	// single source (Python UPDATE_INTERVAL = 1*60*60).
 	BlackholeUpdateInterval = 1 * 60 * 60 * time.Second
-	// BlackholeSourceTimeout is the link-establishment timeout for a fetch
-	// (Python SOURCE_TIMEOUT = 25). Declared for parity; the value is used by
-	// the real fetch implementation wired in EnableBlackholeUpdater.
+	// BlackholeSourceTimeout is the link-establishment and request timeout for
+	// a fetch (Python SOURCE_TIMEOUT = 25).
 	BlackholeSourceTimeout = 25 * time.Second
 )
 

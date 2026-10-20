@@ -573,8 +573,7 @@ func TestStartAnnouncements(t *testing.T) {
 // TestResolveRemoteIdentityReportsPathNotFound verifies the initiator's
 // remote-identity resolution reports "Path not found" — matching rnsh's
 // RemoteExecutionError("Path not found") in initiator.py:_initiate_link —
-// when the destination is unreachable, instead of the previous misleading
-// "could not resolve remote identity" message.
+// when the destination is unreachable.
 func TestResolveRemoteIdentityReportsPathNotFound(t *testing.T) {
 	t.Parallel()
 	configDir := testutils.TempDir(t, "gornsh-resolve-id-")

@@ -15,11 +15,10 @@ import (
 )
 
 // The reference sentences below carry the checksum the NMEA XOR rule really
-// produces. The specification's own example sentences are frequently quoted
-// with a stale checksum — the two the Phase 0 brief quotes compute to *62 and
-// *43, not to the *76 and *42 they were written with — so the positive cases
-// use the corrected sentences and the brief's literal text is asserted to be
-// rejected, which is exactly what a byte-for-byte validator must do.
+// produces. Example sentences quoted in the wild are frequently published with a
+// stale checksum, so the positive cases use the corrected sentences and the
+// stale ones are asserted to be rejected, which is exactly what a byte-for-byte
+// validator must do.
 const (
 	testRMCSentence = "$GNRMC,204533.00,A,3745.31926,N,12227.16314,W,0.02,142.3,160926,,,A*62"
 	testGGASentence = "$GNGGA,204533.00,3745.31926,N,12227.16314,W,1,09,0.8,142.4,M,-31.2,M,,*43"
@@ -156,7 +155,7 @@ func TestGPSWithoutAnAltitudeSaysSo(t *testing.T) {
 
 // TestGPSRejectsStaleChecksums is the negative half of the checksum contract: a
 // sentence whose final two characters do not match the XOR of its body is
-// rejected, including the two the Phase 0 brief quotes.
+// rejected.
 func TestGPSRejectsStaleChecksums(t *testing.T) {
 	t.Parallel()
 

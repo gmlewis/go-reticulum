@@ -172,13 +172,11 @@ func TestIdentityProveExplicit(t *testing.T) {
 	}
 }
 
-// TestValidateAnnounceShortDataWithRacket is a regression test for a panic
-// where the minimum-length guard in ValidateAnnounce did not account for the
-// 32-byte ratchet key present when ContextFlag is set. A packet whose Data
-// was long enough to pass the base check (>=148 bytes) but too short to hold
-// the ratchet+signature (>=180 bytes) sliced out of range at the signature
-// read and crashed the inbound path. Such malformed packets must be rejected
-// gracefully (return false) rather than panicking.
+// TestValidateAnnounceShortDataWithRacket pins that the minimum-length guard in
+// ValidateAnnounce accounts for the 32-byte ratchet key present when
+// ContextFlag is set. A packet whose Data passes the base check (>=148 bytes)
+// but is too short to hold the ratchet+signature (>=180 bytes) must be
+// rejected (return false) rather than sliced out of range and panicking.
 func TestValidateAnnounceShortDataWithRatchet(t *testing.T) {
 	t.Parallel()
 

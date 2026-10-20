@@ -15,27 +15,20 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// TestSharedInstanceClientLinkOverSharedInstance reproduces the production
-// outage where a process connected to a shared Reticulum instance (a local
-// client such as ping-nomadnet-node, lxmd, or rncp) could not establish a link
-// to a remote node reachable through the shared instance.
-//
-// Root cause: the client loaded the shared instance's destination_table from
-// disk, whose entries referenced network interfaces the client does not own
-// (Interface=nil), so Outbound's transport-forward branch declined to inject
-// the link request into transport and instead broadcast a Header1 LR that the
-// shared instance dropped. Compounding this, the shared instance never
-// forwarded the announces it received to its co-located clients, so the client
-// had no source of usable path entries (Interface=its local link,
-// NextHop=the shared instance's transport identity).
+// TestSharedInstanceClientLinkOverSharedInstance verifies that a process
+// connected to a shared Reticulum instance (a local client such as
+// ping-nomadnet-node, lxmd, or rncp) can establish a link to a remote node
+// reachable through the shared instance.
 //
 // This test stands up the full topology with real interfaces: a remote node R
 // linked to the shared instance S over a PipeInterface (the network), and a
 // client C connected to S over a real TCP LocalServerInterface/
 // LocalClientInterface pair (the IPC path used in production). R announces, S
 // forwards the announce to C, C learns the path, and C establishes a link to
-// R's destination through S. Without the fix the link establishment times out:
-// the client either never gets a usable path entry, or its LR is dropped.
+// R's destination through S. The client's path entry must carry Interface = its
+// local client link and NextHop = the shared instance's transport identity;
+// Outbound's transport-forward branch requires a non-nil Interface and would
+// otherwise fall through to a Header1 broadcast the shared instance drops.
 func TestSharedInstanceClientLinkOverSharedInstance(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
@@ -94,7 +87,7 @@ func TestSharedInstanceClientLinkOverSharedInstance(t *testing.T) {
 	// acceptLoop has accepted the connection, spawned the per-connection
 	// interface, and launched its read loop. Announcing before that point
 	// races forwardAnnounceToLocalClients (it would see zero spawned clients
-	// and the client would never learn the path) — the original flake.
+	// and the client would never learn the path).
 	// OnClientConnected fires only after the spawned interface is registered
 	// and its read loop has started, so waiting on it makes the subsequent
 	// announce deterministic. The channel is buffered so a connect that
@@ -164,9 +157,9 @@ func TestSharedInstanceClientLinkOverSharedInstance(t *testing.T) {
 
 	// The client's path entry must be usable: Interface set to its local link
 	// and NextHop = the shared instance's transport identity. An Interface of
-	// nil is exactly the regression: Outbound's transport-forward branch
-	// requires a non-nil Interface, else it falls through to a Header1
-	// broadcast the shared instance drops.
+	// nil is the failure mode: Outbound's transport-forward branch requires a
+	// non-nil Interface, else it falls through to a Header1 broadcast the
+	// shared instance drops.
 	tsC.mu.Lock()
 	entry, ok := tsC.pathTable[string(destR.Hash)]
 	tsC.mu.Unlock()

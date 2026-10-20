@@ -8,15 +8,15 @@
 // own GNSS receiver and magnetometer can feed the Go Reticulum Buddy and the
 // Nomad Network client without either side reimplementing the format.
 //
-// # Why this program exists
+// # Rationale
 //
 // Android hands a program Java objects, not bytes: a Location, a float array
-// from SensorManager. The consumer of a position on this side is a strict
-// NMEA-0183 parser that already exists and is already tested — the one behind
-// every position-dependent bot command. Writing the emitter in Go, in the very
-// package that owns the parser, makes the parser the oracle: the round-trip
-// property "parse(emit(fix)) equals fix" is a Go test, and the Android side
-// stays a thin, boring adapter from platform objects to JSON.
+// from SensorManager. The consumer of a position is a strict NMEA-0183 parser
+// that already exists and is already tested — the one behind every
+// position-dependent bot command. Writing the emitter in Go, in the package
+// that owns the parser, makes the parser the oracle: the round-trip property
+// "parse(emit(fix)) equals fix" is a Go test, and the Android side stays a
+// thin adapter from platform objects to JSON.
 //
 // # Input
 //
@@ -32,34 +32,28 @@
 //
 //	{"t":"2026-10-08T15:53:40.223Z","heading":47.5,"frame":"magnetic"}
 //
-// # Design decisions worth stating
+// # Semantics
 //
 // A heading is a magnetic heading until it is corrected, and Android's rotation
 // vector is referenced to magnetic north, so an absent "frame" means magnetic.
 // A sample in a magnetic frame produces the magnetic sentence and a sample in a
 // true frame produces the true one; the two are never emitted for the same
 // reading, because a true heading written from a magnetic one is off by the
-// local variation — up to twenty degrees — and is exactly the kind of
-// confidently wrong answer this pipeline exists to avoid.
+// local variation.
 //
-// The sample's accuracy rides the wire in the NMEA position-error sentence, which
-// is the one sentence the format defines for an error in meters. Pitch and roll do
-// not: no heading sentence carries tilt, and inventing one would make the stream
-// unreadable to a standard consumer, so they stay in the producing app's own UI and
-// its own sample log. The ill-conditioned case is signalled the one way a reader
-// must honour: the producer withholds the heading field, and no heading sentence is
-// emitted for that sample.
+// The sample's accuracy rides the wire in the NMEA position-error sentence, the
+// one sentence the format defines for an error in meters. Pitch and roll do not:
+// no heading sentence carries tilt, so they stay in the producing app's own UI
+// and sample log. An ill-conditioned heading is signalled the one way a reader
+// must honour: the producer withholds the heading field, and no heading sentence
+// is emitted for that sample.
 //
-// A malformed line is dropped in silence. A noisy stream is normal — a sensor
-// service restarts, a phone call arrives, a buffer is half flushed — and the
-// useful signal is the next good sample, not a log entry about the last bad one.
-// The periodic count on stderr is the only place a bad line is visible at all, and
-// it counts the two cases apart: "dropped" is a line this program could not read,
-// while "withheld" is a well-formed sample whose producer reported that it had
-// nothing to report. Only the first is a failure; the second is the producer
-// declining to state a number it does not believe, which is what the Android
-// appliance does when its heading reference axis is ill-conditioned. Keeping them
-// in one counter would make a deliberate silence look like lost data.
+// A malformed line is dropped in silence; a noisy stream is normal, and the
+// useful signal is the next good sample. The periodic count on stderr is the
+// only place a bad line is visible, and it counts two cases apart: "dropped" is
+// a line this program could not read, while "withheld" is a well-formed sample
+// whose producer reported that it had nothing to report. Keeping them in one
+// counter would make a deliberate silence look like lost data.
 //
 // # Output
 //

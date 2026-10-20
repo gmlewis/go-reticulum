@@ -19,9 +19,9 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// G12.1 parseFlags mirrors the Python argparse flag set: the path
-// defaults are RRCD_HOME-aware, every Python flag exists, unset optional
-// flags stay nil, and unknown flags error.
+// parseFlags mirrors the Python argparse flag set: the path defaults are
+// RRCD_HOME-aware, every Python flag exists, unset optional flags stay nil, and
+// unknown flags error.
 func TestParseFlags(t *testing.T) {
 	t.Parallel()
 
@@ -126,8 +126,8 @@ func TestParseFlags(t *testing.T) {
 	}
 }
 
-// G12.2 ensureFirstRunFiles creates the missing state files and reports
-// them; an existing set is left untouched.
+// ensureFirstRunFiles creates the missing state files and reports them; an
+// existing set is left untouched.
 func TestEnsureFirstRunFiles(t *testing.T) {
 	t.Parallel()
 
@@ -165,10 +165,10 @@ func TestEnsureFirstRunFiles(t *testing.T) {
 	}
 }
 
-// G12.4 The usage text matches the live Python argparse help after
-// normalizing the go-prefix self-reference and stripping the Go-only
-// --version flag (Python rrcd's argparse has no --version; the Go daemon
-// adds it as the repo-standard version flag).
+// The usage text matches the live Python argparse help after normalizing the
+// go-prefix self-reference and stripping the Go-only --version flag (Python
+// rrcd's argparse has no --version; the Go daemon adds it as the repo-standard
+// version flag).
 func TestHelpParity(t *testing.T) {
 	t.Parallel()
 
@@ -184,11 +184,11 @@ func TestHelpParity(t *testing.T) {
 	}
 }
 
-// G16.22 The --version flag is a documented, accepted divergence from the
-// Python CLI: gorrcd answers with a version line and exit 0 where the
-// Python argparse rejects the flag, and the help text carries the two
-// extra --version lines that stripVersionFlag removes before the parity
-// comparison. The usage continuation indent matches argparse's render.
+// The --version flag is a documented, accepted divergence from the Python CLI:
+// gorrcd answers with a version line and exit 0 where the Python argparse rejects
+// the flag, and the help text carries the two extra --version lines that
+// stripVersionFlag removes before the parity comparison. The usage continuation
+// indent matches argparse's render.
 func TestHelpVersionDivergence(t *testing.T) {
 	t.Parallel()
 
@@ -283,9 +283,9 @@ func capturePythonHelp(rrcdRepo string) (string, error) {
 	return "", lastErr
 }
 
-// G12.3 buildConfig applies the precedence chain: CLI > TOML > defaults;
-// the path seeds are overridden by the TOML keys, config_path and
-// dest_name never come from TOML, and the log overrides pass through.
+// buildConfig applies the precedence chain: CLI > TOML > defaults; the path
+// seeds are overridden by the TOML keys, config_path and dest_name never come
+// from TOML, and the log overrides pass through.
 func TestBuildConfigPrecedence(t *testing.T) {
 	t.Parallel()
 
@@ -426,9 +426,9 @@ func TestVersionFlag(t *testing.T) {
 	}
 }
 
-// G16.19 The numeric flag parsers must reject argparse-invalid values:
-// Python's float()/int() raise for trailing garbage and hex input while
-// accepting underscores between digits.
+// The numeric flag parsers must reject argparse-invalid values: Python's
+// float()/int() raise for trailing garbage and hex input while accepting
+// underscores between digits.
 func TestParseFlagsArgparseInvalidValues(t *testing.T) {
 	t.Parallel()
 

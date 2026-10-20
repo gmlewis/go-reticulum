@@ -23,15 +23,14 @@ import (
 	"time"
 )
 
-// blockingDial hands a dial that parks until the test releases it, which is how the window
-// between "the reader decided to reconnect" and "the connection is published" is held open
-// rather than raced for.
+// blockingDial hands a dial that parks until the test releases it, holding open
+// the window between "the reader decided to reconnect" and "the connection is
+// published" rather than racing for it.
 //
-// It hands back a REAL connection — one end of a net.Pipe whose other end nobody ever writes to
-// — because that is what makes the difference visible. A dial that fails is cleaned up by the
-// ordinary error path either way; a dial that SUCCEEDS is the one that gets published, and a
-// published connection that Close has already stopped looking at is the one the reader blocks
-// on forever.
+// It returns a real connection (one end of a net.Pipe whose other end nobody
+// writes to) so the difference is visible: a failed dial is cleaned up by the
+// ordinary error path, but a dial that succeeds is published, and a published
+// connection Close has stopped looking at is one the reader can block on.
 type blockingDial struct {
 	entered chan struct{}
 	release chan struct{}
@@ -40,13 +39,10 @@ type blockingDial struct {
 
 func newBlockingDial(conn net.Conn) *blockingDial {
 	return &blockingDial{
-		// Buffered, because the signal must survive being sent before it is waited
-		// for. The dial parks below whatever happens, so the reader reaching it first
-		// is not a lost handshake — but on an unbuffered channel the send would fall
-		// through to the default arm and be dropped, and the test would then wait out
-		// its whole bound and report a reader that never reached the dial. That is a
-		// scheduling race in the test, not in the code it is guarding, and it is what
-		// made this test fail only under load.
+		// Buffered, so the signal survives being sent before it is waited for.
+		// The dial parks below either way, but on an unbuffered channel a send
+		// that fell through to the default arm would be dropped and the test
+		// would wait out its bound and report a reader that never dialled.
 		entered: make(chan struct{}, 1),
 		release: make(chan struct{}),
 		conn:    conn,
@@ -63,21 +59,15 @@ func (d *blockingDial) dial(network, address string) (net.Conn, error) {
 	return d.conn, nil
 }
 
-// TestClosingWhileADialIsInFlightDoesNotStrandTheReader is the regression test for a race that
-// hung a package for its whole timeout while passing when run alone.
-//
-// Read dials a replacement connection whenever its stream ends, and it never used to ask whether
-// the socket had been closed meanwhile. So a read that slipped past the backoff an instant
-// before Close landed would dial a connection *after* Close had run its once-only body, publish
-// it, and then block on it forever — because Close had already fired and would never close it.
-// The scan goroutine never exited, and the Close that waits for it never returned.
-//
-// The dial is held open here, so the close provably lands inside it rather than probably.
+// TestClosingWhileADialIsInFlightDoesNotStrandTheReader asserts that a dial in
+// flight when Close lands is refused rather than published, and that both the
+// reader and Close return. The dial is held open, so the close provably lands
+// inside it rather than probably.
 func TestClosingWhileADialIsInFlightDoesNotStrandTheReader(t *testing.T) {
 	t.Parallel()
 
 	// One end is handed to the reader; the other is held here and never written to, so the
-	// read on it blocks until something closes it. Only the fix closes it.
+	// read on it blocks until something closes it. Nothing but Close does.
 	held, handed := net.Pipe()
 	t.Cleanup(func() { _ = held.Close() })
 

@@ -14,10 +14,10 @@ import (
 	"github.com/gmlewis/go-reticulum/rrc/cbor"
 )
 
-// G16.3 The WELCOME limits map carries the raw config values: a TOML
-// float like max_nick_bytes = 32.9 rides the wire as a CBOR float the way
-// Python's queue_welcome puts the config fields into the map uncoerced
-// (the client int()s them at RRC.py:897). Golden captured from python
+// The WELCOME limits map carries the raw config values: a TOML float like
+// max_nick_bytes = 32.9 rides the wire as a CBOR float the way Python's
+// queue_welcome puts the config fields into the map uncoerced (the client
+// int()s them at RRC.py:897). Golden derived from Python
 // cbor2.dumps({0: 32.9, 1: 64, 2: 350.5, 3: 32, 4: 240}).
 func TestQueueWelcomeLimitsRawValues(t *testing.T) {
 	t.Parallel()
@@ -88,7 +88,7 @@ func TestQueueWelcomeLimitsRawValues(t *testing.T) {
 	}
 }
 
-// G16.9 NOTICE chunking must split on a bare \r the way Python's
+// NOTICE chunking must split on a bare \r the way Python's
 // str.splitlines() does ("a\rb" → ['a', 'b']), while the \r\n pair stays
 // one break and the remaining break characters keep working.
 func TestQueueNoticeChunksCarriageReturn(t *testing.T) {
@@ -156,7 +156,7 @@ func equalStrings(a, b []string) bool {
 	return true
 }
 
-// G16.4 The WELCOME carries the version of the code that welcomed the client:
+// The WELCOME carries the version of the code that welcomed the client:
 // the body's BWelcomeVer slot is rns.VERSION, which both the hub's WELCOME and
 // the `gorrcd --version` probe are compiled from. This in-package check pins
 // that source of truth deterministically, with no built artifact involved, and
@@ -209,14 +209,13 @@ func TestQueueWelcomeVersionMatchesRNSVersion(t *testing.T) {
 	}
 }
 
-// TestQueueWelcomeFitsFleetMTU pins the WELCOME/MTU failure mode rrcd
-// documents (README.md:74-88): a hub whose WELCOME does not fit the link MTU
-// refuses to welcome the peer, and the client then times out waiting for a
-// WELCOME. Two properties keep the fleet's hub inside the MTU: the greeting is
-// NOT part of the WELCOME (it travels after it as chunked NOTICE messages via
-// the post-send callbacks), and include_joined_member_list only affects
-// JOINED/PARTED fanouts, never the WELCOME body (rrcd/router.py:504-640,
-// session.py:153; Go router.go:463, session.go:225).
+// TestQueueWelcomeFitsFleetMTU pins the WELCOME/MTU failure mode: a hub whose
+// WELCOME does not fit the link MTU refuses to welcome the peer, and the
+// client then times out waiting for a WELCOME. Two properties keep the fleet's
+// hub inside the MTU: the greeting is NOT part of the WELCOME (it travels
+// after it as chunked NOTICE messages via the post-send callbacks), and
+// include_joined_member_list only affects JOINED/PARTED fanouts, never the
+// WELCOME body (rrcd/router.py:504-640, session.py:153).
 func TestQueueWelcomeFitsFleetMTU(t *testing.T) {
 	t.Parallel()
 

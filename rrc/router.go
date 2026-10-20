@@ -606,24 +606,20 @@ func (r *Router) handlePart(link *rns.Link, sess *Session, peerHash []byte, env 
 		r.hooks.FmtHash(peerHash), nickRepr(r.hooks.Sessions().NickOf(link)), nr, r.hooks.FmtLinkID(link))
 }
 
-// isForeignDirectNotice reports whether a message is a NOTICE addressed to some peer other
-// than the hub itself.
+// isForeignDirectNotice reports whether a message is a NOTICE addressed to some
+// peer other than the hub itself.
 //
-// Such a message is not addressed to the hub at all. The hub is carrying it from one client to
-// another, and must not read it as a command for itself — which is what the slash-command
-// interception above did, for any NOTICE whose text happened to start with a slash.
+// Such a message is not addressed to the hub at all: the hub is carrying it
+// from one client to another, so it must not read it as a command for itself.
+// A bot's answer to a request it cannot fulfil can legitimately start with a
+// slash, and treating it as a hub command swallows it before the addressee
+// sees it.
 //
-// The bot's own answer to a request it cannot fulfil is exactly that shape:
-//
-//	/whereami: no GNSS fix yet — acquiring; give a location to answer immediately (...)
-//
-// so asking a bot for a position while it has no fix produced nothing at all at the far end.
-// The hub logged "Slash command" and the asker waited out its full timeout in silence. The
-// private-command extension below makes this distinction for itself by requiring the
-// destination to be the hub's own identity; this gives the interception above it the same rule.
-//
-// A hub with no identity of its own cannot tell whom the notice names, so it keeps the old
-// behaviour rather than guessing.
+// The private-command extension below makes this distinction for itself by
+// requiring the destination to be the hub's own identity; this gives the
+// interception above it the same rule. A hub with no identity of its own
+// cannot tell whom the notice names, so it treats every notice as a command
+// rather than guessing.
 func isForeignDirectNotice(env *cbor.Map, msgType int64, idHash []byte) bool {
 	if msgType != TNotice || len(idHash) == 0 {
 		return false

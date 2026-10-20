@@ -816,7 +816,7 @@ func TestLXMFEnabledWithNoSenderSaysSo(t *testing.T) {
 }
 
 // TestDefaultConfigTemplateCarriesTheLXMFKeys asserts the generated config.toml
-// documents the three new keys with their defaults, since that file is the only
+// documents the three LXMF keys with their defaults, since that file is the only
 // documentation an operator sees before anything connects.
 func TestDefaultConfigTemplateCarriesTheLXMFKeys(t *testing.T) {
 	t.Parallel()

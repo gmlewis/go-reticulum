@@ -16,16 +16,11 @@ import (
 // resource moves the sender from ADVERTISED to TRANSFERRING and restarts the
 // retry budget.
 //
-// Leaving the sender in ADVERTISED is not cosmetic. The watchdog's ADVERTISED
+// Leaving the sender in ADVERTISED is not cosmetic: the watchdog's ADVERTISED
 // branch re-sends the advertisement on its own timer, and a receiver that sees
-// the same advertisement again accepts it *again* — Python's Link.receive has no
-// per-resource-hash dedup (Link.py:1048) — so one transfer becomes several. Each
-// copy requests parts independently, every delivered part triggers a request on
-// every copy, and the node answers each of them: the request/part traffic
-// multiplies instead of converging, the link saturates, and the transfer never
-// completes. That is the shape observed live fetching a page from a two-hop
-// node: up to five registered resources for one hash, tens of thousands of
-// deliveries of the same packets, and progress stuck short of the whole.
+// the same advertisement again accepts it *again* (Python's Link.receive has no
+// per-resource-hash dedup, Link.py:1048), so one transfer becomes several that
+// each request parts independently and multiply the traffic.
 func TestResourceRequestStopsReAdvertise(t *testing.T) {
 	t.Parallel()
 
@@ -58,8 +53,8 @@ func TestResourceRequestStopsReAdvertise(t *testing.T) {
 	}
 
 	// With the status moved off ADVERTISED, the watchdog must no longer take
-	// the advertisement-resend branch: an expired advSent deadline that used to
-	// emit a re-advertisement is now a no-op for this resource.
+	// the advertisement-resend branch: an expired advSent deadline produces no
+	// re-advertisement for this resource.
 	r.advSent = time.Now().Add(-time.Hour)
 	before := ct.sentCount()
 	sleep, cont := r.watchdogStep(time.Now())

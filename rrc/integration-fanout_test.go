@@ -15,12 +15,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-// Integration tests for the RRC Channels fixes from the full-fleet A/B
-// re-deploy diff (the 2026-09-03 12:32 TODO section), driven through a REAL
-// Python RRC hub (testdata/mini_hub.py) over a loopback TCP RNS transport -
-// no tmux sessions, no live fleet. The mini hub's fanout/MOTD test hooks
-// replay the rrcd 0.3.2 per-member fanout burst and the global MOTD notice
-// the Python source-of-truth rode on (RRC.py:1031-1035, 1128-1136).
+// Integration tests for the RRC Channels fanout and MOTD behavior, driven
+// through a REAL Python RRC hub (testdata/mini_hub.py) over a loopback TCP RNS
+// transport - no tmux sessions, no live fleet. The mini hub's fanout/MOTD test
+// hooks replay the rrcd 0.3.2 per-member fanout burst and the global MOTD
+// notice the Python source-of-truth rode on (RRC.py:1031-1035, 1128-1136).
 
 package rrc
 
@@ -141,15 +140,14 @@ func waitMsgs(t *testing.T, hub *RRCHub, room string, want func([]*RRCMessage) b
 }
 
 // TestIntegrationFanoutBurst replays the rrcd 0.3.2 per-member fanout burst
-// through the wire (the 2026-09-03 12:32 A2 capture): the client sends the
-// mini hub's FANOUT trigger, the hub fans out six per-member copies with
-// per-copy rewritten source hashes - copy 0 carrying NO nick, copies 1-5
-// carrying registry nicks, all sharing the sender's stale envelope
-// timestamp (RRC.py:1031-1035: Python learns (src, nick) from EVERY copy
-// before its own dedupe). Asserts: the burst collapses to ONE recorded
-// message, the kept copy's nick backfills from a nicked copy, the recorded
-// timestamp is the ARRIVAL time (not the stale envelope ts), and the
-// nicked copies are all learned in the room's member set.
+// through the wire: the client sends the mini hub's FANOUT trigger, the hub
+// fans out six per-member copies with per-copy rewritten source hashes - copy
+// 0 carrying NO nick, copies 1-5 carrying registry nicks, all sharing the
+// sender's stale envelope timestamp (RRC.py:1031-1035: Python learns (src,
+// nick) from EVERY copy before its own dedupe). Asserts: the burst collapses
+// to ONE recorded message, the kept copy's nick backfills from a nicked copy,
+// the recorded timestamp is the ARRIVAL time (not the stale envelope ts), and
+// the nicked copies are all learned in the room's member set.
 func TestIntegrationFanoutBurst(t *testing.T) {
 	t.Parallel()
 	hub, _, cleanup := startIntegrationHub(t)
@@ -185,8 +183,7 @@ func TestIntegrationFanoutBurst(t *testing.T) {
 		t.Fatal("kept fanout copy not found")
 	}
 	// The collapse keeps the FIRST-arrived copy (copy 0, no nick) and the
-	// later nicked copies backfill its empty nick (the A2 capture symptom:
-	// the kept copy rendered the bare <hash>).
+	// later nicked copies backfill its empty nick.
 	if kept.Nick != "HubNick1" {
 		t.Errorf("kept copy nick = %q, want %q (backfilled from a nicked copy)", kept.Nick, "HubNick1")
 	}

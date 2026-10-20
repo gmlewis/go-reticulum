@@ -166,9 +166,9 @@ func sanitizePlace(raw string) (string, error) {
 
 // validateProviderTemplate reports why a provider URL template cannot be used, or
 // nil when it can, given the tokens the caller will substitute. With no tokens it
-// checks the single-place command's placeholder, so a template for the weather
-// command is validated by the same rule it always was. The message is
-// operator-facing: it is logged at startup and never posted into a room.
+// checks the single-place command's placeholder, so a weather template is
+// validated by the same rule as any other. The message is operator-facing: it is
+// logged at startup and never posted into a room.
 func validateProviderTemplate(template string, tokens ...string) error {
 	trimmed := strings.TrimSpace(template)
 	if trimmed == "" {

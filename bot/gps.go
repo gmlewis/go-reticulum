@@ -540,13 +540,13 @@ func parseNMEADate(text string) (time.Time, bool) {
 //
 // A configured source is opened read-only and scanned in the background: a GNSS
 // receiver is a character device that emits sentences forever, so it is read the
-// same way a file is, and Phase 0 relies on the operating system's own
-// configuration of the port's line speed. The source may also be a tcp:// or
-// unix:// endpoint, which is how a sensor held by another application — an
-// Android appliance with its own receiver — feeds this one; see sensor.go. A
-// configured static fix is held as the whole answer, which is what a headless node
-// and a rehearsing operator use, and it is used only when no live source is
-// configured at all: a live source is the only source.
+// same way a file is, and the port's line speed is left to the operating
+// system's own configuration. The source may also be a tcp:// or unix://
+// endpoint, which is how a sensor held by another application — an Android
+// appliance with its own receiver — feeds this one; see sensor.go. A configured
+// static fix is held as the whole answer, which is what a headless node and a
+// rehearsing operator use, and it is used only when no live source is configured
+// at all: a live source is the only source.
 //
 // The caller owns the returned reader and must Close it: Close stops the scan
 // goroutine and releases the device, so no read is left running past a

@@ -253,12 +253,10 @@ func TestProcessHeldAnnounces(t *testing.T) {
 // instance interface never holds announces, mirroring Python's
 // LocalClientInterface.should_ingress_limit (LocalInterface.py:137-138), which
 // unconditionally returns False. The local socket carries every announce and
-// path response between a co-located client and the shared instance;
-// ingress-limiting it held path-response announces (released one per ~5s after
-// a 15s burst penalty, or dropped when the hold queue was full), surfacing as
-// ~20s path-resolution delays and intermittent "no transport path" drops for
-// shared-instance clients. The override must be honored through Interface
-// dynamic dispatch, the way Transport.shouldHoldAnnounce calls it.
+// path response between a co-located client and the shared instance, so
+// ingress-limiting it would delay path resolution. The override must be
+// honored through Interface dynamic dispatch, the way
+// Transport.shouldHoldAnnounce calls it.
 func TestLocalClientInterfaceNeverIngressLimits(t *testing.T) {
 	lci := &LocalClientInterface{
 		BaseInterface: NewBaseInterface("local-test", ModeFull, LocalBitrate),

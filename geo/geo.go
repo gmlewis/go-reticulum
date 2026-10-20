@@ -19,7 +19,7 @@
 //
 // Package geo is the pure-Go geodesy engine shared by the field tools and by
 // any other consumer that needs offline location handling — notably the
-// “ `L “ Micron extension in gonomadnet. Nothing here touches the network,
+// Micron `L` extension in gonomadnet. Nothing here touches the network,
 // the filesystem, or the Reticulum stack: it is closed-form arithmetic over a
 // spherical Earth plus the published Open Location Code, Maidenhead, and
 // GCJ-02 specifications, so a client on a 1 kbps link can resolve a position
@@ -602,8 +602,7 @@ func validateLatLng(p LatLng) (LatLng, error) {
 }
 
 // ParseDistance parses a distance a human typed, such as "3.5km", "2 mi",
-// "1500m", "1.2nm", "500ft", or "300yd". A bare number is meters, which is the
-// unit every other value in the bot's answers is computed in.
+// "1500m", "1.2nm", "500ft", or "300yd". A bare number is meters.
 func ParseDistance(text string) (float64, error) {
 	trimmed := strings.ToLower(strings.TrimSpace(text))
 	if trimmed == "" {
@@ -620,8 +619,6 @@ func ParseDistance(text string) (float64, error) {
 	}
 	unit := strings.TrimSpace(trimmed[split:])
 	if unit == "" {
-		// A bare number is meters, the unit every other value in the bot's
-		// answers is computed in.
 		unit = "m"
 	}
 	factor, ok := distanceUnits[unit]
@@ -745,7 +742,7 @@ func hemisphereLetter(value float64, positive, negative string) string {
 }
 
 // FormatLatLng renders a coordinate pair as signed decimal degrees, the
-// machine-readable form the bot uses when a coordinate must round-trip exactly.
+// machine-readable form used when a coordinate must round-trip exactly.
 func FormatLatLng(p LatLng) string {
 	return fmt.Sprintf("%.6f, %.6f", p.Lat, p.Lng)
 }
@@ -765,9 +762,8 @@ func normalizeDegrees(value float64) float64 {
 	return value
 }
 
-// The exported wrappers below expose the small angle and coordinate-formatting
-// helpers that were unexported when this engine lived inside the bot package.
-// The bot keeps forwarding to them so its own callers are unchanged.
+// The exported wrappers below expose the angle and coordinate-formatting
+// helpers for callers that need them directly.
 
 // Radians converts degrees to radians.
 func Radians(deg float64) float64 { return radians(deg) }

@@ -15,7 +15,7 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// H1 — the differential harness for the transport tables.
+// The differential harness for the transport tables.
 //
 // The framing-fuzz harness compares the parser and the packet filter. This one
 // goes further: the same frames are driven through a full inbound pass on both

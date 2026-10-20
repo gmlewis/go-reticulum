@@ -13,19 +13,12 @@ import (
 	"testing"
 )
 
-// TestTCPClientInterfaceHashMatchesPython locks in the cross-implementation
-// parity bug that made gonomadnet unable to use a Python-written
-// destination_table: Go's interface hash must equal Python's
-// Interface.get_hash, which is full_hash(str(self)). For a TCP client that is
-// "TCPInterface[name/target_host:target_port]" — NOT "TCPInterface[name]" —
-// so a destination_table written by Python nomadnet (storing the former hash
-// in field [6]) could not have its receiving interface resolved by Go's
-// findInterfaceByHash, leaving PathEntry.Interface nil.
-//
-// The proven case is the user's "g00n Cloud Dallas" path to the retibooks
-// node: the on-disk destination_table stores iface hash
-// e7e198b4aa347e50c20d1f51520d64e03ebb141b965f168d57e73be2d3b73ef5, which is
-// full_hash("TCPInterface[g00n Cloud Dallas/dfw.us.g00n.cloud:6969]").
+// TestTCPClientInterfaceHashMatchesPython verifies that Go's interface hash
+// equals Python's Interface.get_hash, which is full_hash(str(self)). For a TCP
+// client that is "TCPInterface[name/target_host:target_port]" — NOT
+// "TCPInterface[name]" — so a destination_table written by Python nomadnet
+// (which stores the former hash in field [6]) has its receiving interface
+// resolved by Go's findInterfaceByHash.
 func TestTCPClientInterfaceHashMatchesPython(t *testing.T) {
 	t.Parallel()
 	tci := &TCPClientInterface{
@@ -42,7 +35,8 @@ func TestTCPClientInterfaceHashMatchesPython(t *testing.T) {
 		t.Fatalf("Type = %q, want TCPInterface", got)
 	}
 
-	// The hash stored in the user's Python-written destination_table.
+	// The iface hash a Python-written destination_table stores for this
+	// interface.
 	wantHash := "e7e198b4aa347e50c20d1f51520d64e03ebb141b965f168d57e73be2d3b73ef5"
 	sum := sha256.Sum256([]byte(tci.HashString()))
 	if got := hex.EncodeToString(sum[:]); got != wantHash {

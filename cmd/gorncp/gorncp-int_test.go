@@ -27,9 +27,8 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// gorncpBinaryPath is the binary built once by TestMain. Building here instead
-// of at every call site keeps ~20 `go run .`/`go build` invocations (each with
-// a full compile) off the per-test wall clock.
+// gorncpBinaryPath is the binary built once by TestMain, so the suite pays for
+// a full compile once instead of at every call site.
 var gorncpBinaryPath string
 
 func TestMain(m *testing.M) {
@@ -435,12 +434,11 @@ share_instance = No
 	sOut, sExit := runPythonExit(t, clientConfigDir, "-i", clientIdentity, "-w", "30", testFile, destHash, "-v")
 	t.Logf("Python sender output (exit=%v):\n%v", sExit, sOut)
 
-	// The sender must reach COMPLETE — i.e. exit 0 with "Transfer complete".
-	// A non-zero exit (e.g. "The transfer failed") means the Go listener did
-	// not return the resource conclude proof the sender's validate_proof
-	// expects (Resource.py:787-792), so the sender never learns the transfer
-	// succeeded. This guards the receiver-side hash/proof fixes against
-	// regressions: the file may still arrive while the sender reports failure.
+	// The sender must reach COMPLETE — exit 0 with "Transfer complete". A
+	// non-zero exit (e.g. "The transfer failed") means the Go listener did not
+	// return the resource conclude proof the sender's validate_proof expects
+	// (Resource.py:787-792), so the sender never learns the transfer succeeded;
+	// the file may still arrive while the sender reports failure.
 	if sExit != 0 {
 		t.Errorf("Python sender exited %v, want 0 (transfer did not conclude cleanly from the sender's view)", sExit)
 	}
@@ -650,8 +648,8 @@ func TestFetchPathLookupTimeout(t *testing.T) {
 		t.Fatalf("WriteFile config: %v", err)
 	}
 
-	// TestMain already built the binary; the old per-test `go build` (with a
-	// HOME-redirected build env) was redundant with the run-time HOME override.
+	// TestMain already built the binary; only the run-time HOME needs
+	// overriding.
 	binaryPath := gorncpBinaryPath
 
 	destHash := strings.Repeat("f", (rns.TruncatedHashLength/8)*2)
@@ -703,8 +701,8 @@ func TestFetchLinkEstablishmentTimeout(t *testing.T) {
 	seedTS.Remember([]byte("seed-packet"), seedDest.Hash, seedID.GetPublicKey(), nil)
 	seedTS.SaveKnownDestinations(filepath.Join(configDir, "storage"))
 
-	// TestMain already built the binary; the old per-test `go build` (with a
-	// HOME-redirected build env) was redundant with the run-time HOME override.
+	// TestMain already built the binary; only the run-time HOME needs
+	// overriding.
 	binaryPath := gorncpBinaryPath
 
 	identityPath := filepath.Join(tmpDir, "identity")
@@ -802,8 +800,8 @@ enable_transport = Yes
 	_ = mustCreateIdentity(t, clientConfigDir, "client")
 	clientIdentityPath := filepath.Join(clientConfigDir, "identities", "client")
 
-	// TestMain already built the binary; the old per-test `go build` (with a
-	// HOME-redirected build env) was redundant with the run-time HOME override.
+	// TestMain already built the binary; only the run-time HOME needs
+	// overriding.
 	binaryPath := gorncpBinaryPath
 
 	cmd := exec.Command(binaryPath, "-config", clientConfigDir, "-i", clientIdentityPath, "-q", "-f", listenerDest.HexHash, "testfile.txt")

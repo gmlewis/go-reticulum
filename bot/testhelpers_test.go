@@ -7,10 +7,8 @@ package bot
 
 import "math"
 
-// closeWithin reports whether got is within tolerance of want. The geodesy
-// engine's own tests moved to package geo with the implementation, and many
-// tests in this package compare floating-point results, so the helper lives
-// here as well.
+// closeWithin reports whether got is within tolerance of want. Many tests in
+// this package compare floating-point results.
 func closeWithin(got, want, tolerance float64) bool {
 	return math.Abs(got-want) <= tolerance
 }

@@ -7,9 +7,8 @@
 
 package main
 
-// Slow integration-only tests that were previously in the unit test suite.
-// These tests are kept here because they test real-time protocol timing
-// that requires multi-second waits even with injected durations.
+// Slow integration-only tests live here: they exercise real-time protocol
+// timing that needs multi-second waits even with injected durations.
 
 import (
 	"testing"

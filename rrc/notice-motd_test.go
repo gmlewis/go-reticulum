@@ -23,11 +23,9 @@ import (
 // (RRC.py:817-839) via the T_NOTICE branch (RRC.py:1128-1138): a ROOMLESS
 // notice sets the hub's MOTD (RRC.py:1128-1131) and is then attributed to
 // the manager's ACTIVE room, appended to that room's buffer with
-// Kind="notice" — rrcd's global "󰙎 Welcome to the RaspPi Local Hub!" MOTD
-// notice renders IN the #test room on the Python SOT (2026-09-03 12:32
-// full-fleet capture, mac row 24) while the Go nodes only showed the
-// unregistered notice. Roomed notices route through the same
-// _record_notice call (RRC.py:1138) unchanged.
+// Kind="notice" — rrcd's global MOTD greeting renders IN the active room on
+// the Python SOT. Roomed notices route through the same _record_notice call
+// (RRC.py:1138) unchanged.
 func TestRoomlessNoticeJoinsActiveRoom(t *testing.T) {
 	t.Parallel()
 

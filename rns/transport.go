@@ -292,11 +292,9 @@ type TransportSystem struct {
 	// knownDestDirty is set by Remember when a destination is added/updated.
 	// The maintenance loop flushes it to disk at most every
 	// pathTablePersistInterval (and Stop does a final flush), coalescing a
-	// burst of announces into a single serialize+write instead of one per
-	// announce. Under an announce storm the per-announce SaveKnownDestinations
-	// previously repacked+rewrote the entire known_destinations file for every
-	// announce — the dominant allocation churn source on a long-running node
-	// (64% of 30s allocation once the table grew). Guarded by ts.mu.
+	// burst of announces into a single serialize+write instead of repacking
+	// and rewriting the entire known_destinations file per announce.
+	// Guarded by ts.mu.
 	knownDestDirty bool
 
 	// remoteStatusHandlerFn and remotePathHandlerFn are the registered
@@ -689,10 +687,10 @@ const reconnectAnnounceMinInterval = 60 * time.Minute
 
 // reannounceDue reports whether an onConnect re-announce may proceed for the
 // interface identified by key, recording it when allowed. Rate limiting is per
-// interface: a single shared timestamp previously let the first connecting
-// client suppress every sibling's boot-time re-announce for
-// reconnectAnnounceMinInterval, silently dropping Local TCP Hub coverage
-// until the next periodic announce hours later.
+// interface: a single shared timestamp would let the first connecting client
+// suppress every sibling's boot-time re-announce for
+// reconnectAnnounceMinInterval, silently dropping Local TCP Hub coverage until
+// the next periodic announce hours later.
 func (ts *TransportSystem) reannounceDue(key string, now time.Time) bool {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
@@ -720,8 +718,8 @@ func (ts *TransportSystem) stampIfaceDown(key string, now time.Time) {
 // reconnectAnnounceAllowed reports whether iface's reconnect warrants a
 // corrective re-announce. Only genuine outages (the interface held no
 // connection for at least reconnectAnnounceMinDown) qualify: the very first
-// connect of an interface (no down record) always announces, so the v0.53
-// boot-race compensation for slow dials is preserved.
+// connect of an interface (no down record) always announces, which is the
+// boot-race compensation for slow dials.
 func (ts *TransportSystem) reconnectAnnounceAllowed(iface interfaces.Interface, now time.Time) bool {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
@@ -1651,8 +1649,8 @@ func (ts *TransportSystem) isLocalClientInterface(iface interfaces.Interface) bo
 	// Python Transport.is_local_client_interface (Transport.py:3155-3164):
 	// only the shared instance's spawned per-connection local clients count.
 	// A client process's own dialer interface to the shared instance is NOT a
-	// local client interface (Python's from_local_client is false there);
-	// the previous name-based sniffing conflated the two planes.
+	// local client interface (Python's from_local_client is false there), so
+	// the test must be structural rather than name-based.
 	return interfaces.IsSpawnedLocalClient(iface)
 }
 
@@ -1924,11 +1922,9 @@ func (ts *TransportSystem) maintenance() {
 			// Run the persist off the maintenance goroutine with a
 			// single-flight latch: snapshotting + encoding + writing the
 			// whole path/destination table to disk can take hundreds of
-			// milliseconds to seconds on ARM flash storage (Jetson/Pi), and
-			// running it inline stalled every other maintenance ticker
-			// (announce re-broadcasts included) for the duration — visible
-			// in CPU profiles as constant maintenance load on fleet nodes
-			// under public-relay firehose traffic.
+			// milliseconds to seconds on ARM flash storage, and running it
+			// inline would stall every other maintenance ticker (announce
+			// re-broadcasts included) for the duration.
 			if ts.pathPersistInFlight.CompareAndSwap(false, true) {
 				go func() {
 					defer func() {
@@ -2123,12 +2119,10 @@ func interfaceHash(iface interfaces.Interface) []byte {
 //	elif interface.mode == MODE_ROAMING:      expires = now + ROAMING_PATH_TIME
 //	else:                                    expires = now + PATHFINDER_E
 //
-// The Go port previously used a fixed 1-week expiry for all interface modes,
-// which caused Access-Point and Roaming paths to persist far longer than
-// Python intended — up to 168× longer for Roaming paths. A stale path to a
-// mobile/ephemeral peer that has moved away would remain in the table long
-// after the peer was unreachable, causing "No path to destination known"
-// when the path existed but was unusable.
+// A single fixed expiry for all interface modes would keep Access-Point and
+// Roaming paths far longer than Python intends (up to 168x longer for Roaming
+// paths): a stale path to a mobile/ephemeral peer that has moved away would
+// remain in the table long after the peer was unreachable.
 func pathExpiryForInterface(iface interfaces.Interface) time.Duration {
 	if iface == nil {
 		return pathfinderE
@@ -2511,9 +2505,9 @@ func (ts *TransportSystem) loadPathTableLocked() {
 		fields, ok := rawEntry.([]any)
 		// Python's destination_table layout is an 8-field array:
 		//   [destHash, timestamp, next_hop, hops, expires, blobs, iface_hash, packet_hash]
-		// (Transport.py:3390). No back-compat with the old Go 7/8-field layout —
-		// entries that do not match are skipped, matching Python dropping
-		// unresolvable entries. Paths are re-learned from announces.
+		// (Transport.py:3390). Entries that do not match are skipped, matching
+		// Python dropping unresolvable entries; paths are re-learned from
+		// announces.
 		if !ok || len(fields) < 8 {
 			continue
 		}
@@ -2536,10 +2530,9 @@ func (ts *TransportSystem) loadPathTableLocked() {
 				if b, bOk := rb.([]byte); bOk {
 					// Self-heal poisoned persisted state: blobs whose
 					// embedded timebase is not a plausible unix timestamp
-					// were written by pre-fix binaries that misparsed
-					// truncated announces, and would block every future
-					// path replacement. Drop them here so the periodic
-					// persist writes the cleaned entry back to disk.
+					// would block every future path replacement. Drop them
+					// here so the periodic persist writes the cleaned entry
+					// back to disk.
 					if len(b) >= 10 && !plausibleAnnounceTimebase(randomBlobTimebase(b), time.Now()) {
 						droppedBlobs++
 						continue
@@ -2729,12 +2722,9 @@ func announceEmissionFromPacket(packet *Packet) uint64 {
 // its big-endian uint40 at bytes [5:10], the same field
 // announceEmissionFromPacket reads. Mirrors Python
 // Transport.timebase_from_random_blobs (RNS/Transport.py:3276-3281, v1.4.1),
-// with one Go-side hardening: blobs whose timebase is not a plausible unix
-// timestamp are skipped. Python never stores such blobs (it remembers only
-// post-validation announces), but pre-fix Go binaries persisted them, and a
-// single garbage timebase would otherwise block every future path
-// replacement for the destination — the self-healing neutralizes that poison
-// at the point of use.
+// with one hardening: blobs whose timebase is not a plausible unix timestamp
+// are skipped, since a single garbage timebase persisted to disk would
+// otherwise block every future path replacement for the destination.
 func timebaseFromRandomBlobs(blobs [][]byte) uint64 {
 	var timebase uint64
 	for _, b := range blobs {
@@ -2899,8 +2889,7 @@ func (ts *TransportSystem) sendRebroadcast(iface interfaces.Interface, raw []byt
 	// A failed write never removes path-table entries: Python's Transport
 	// mutates path_table only on disk load, the age-based cull, a timestamp
 	// refresh, an announce add/update, expire_path and blackholed identities.
-	// Purging on a failed write left a node with 0 paths out of 8707 during the
-	// 2026-10-12 hub outage, so entries are left to the age-based cull and to
+	// Entries are therefore left to the age-based cull and to the
 	// vanish-with-interface handling in cullExpiredPaths.
 	wasUp := iface.Status()
 	if err := iface.Send(raw); err != nil {
@@ -2984,8 +2973,8 @@ func (ts *TransportSystem) sendControlFrame(iface interfaces.Interface, raw []by
 // cannot block the caller.
 //
 // Both the transport maintenance loop and each interface readLoop fan out
-// across multiple outbound interfaces. Doing those sends sequentially meant
-// a single half-open TCP peer stalled every other outbound write (and, on a
+// across multiple outbound interfaces. Doing those sends sequentially would
+// let a single half-open TCP peer stall every other outbound write (and, on a
 // readLoop, every subsequent inbound packet) for the whole write-deadline
 // window. Go gives us a goroutine per send for free; a stalled peer should
 // only ever stall its own goroutine, never the loop that dispatched it.
@@ -3316,9 +3305,8 @@ func (ts *TransportSystem) cullPathRequests(now time.Time) {
 	// local-client fan-out (handleAnnounce gates on
 	// Context != ContextPathResponse), so forgetting a record while its requester
 	// is still connected means the reply is silently dropped and the client never
-	// learns the peer. On the fleet's multi-hop LoRa links a relayed round trip
-	// routinely outlives any fixed bound, while on a LAN it is sub-millisecond —
-	// which is why a timer fails only on the slow paths.
+	// learns the peer. A relayed round trip over multi-hop links can outlive any
+	// fixed bound, even though it is sub-millisecond on a LAN.
 	for destinationHash, requesters := range ts.pendingPathRequests {
 		alive := false
 		for _, requester := range requesters {
@@ -3614,7 +3602,7 @@ func (ts *TransportSystem) forwardPathResponseToRequesters(packet *Packet, sourc
 	// destination_hash`), stamps its link request with the DESTINATION hash as
 	// the transport ID, and every intermediate transport node silently drops
 	// the packet because the stamped ID matches no node — links through
-	// multi-hop paths never establish (fleet-wide rrcd link churn, TODO 22).
+	// multi-hop paths never establish.
 	// reframeAnnounceForTransport performs exactly that Header2 re-frame.
 	for _, job := range jobs {
 		ts.outboundWG.Go(func() {
@@ -3635,8 +3623,8 @@ func (ts *TransportSystem) forwardPathResponseToRequesters(packet *Packet, sourc
 // path. An interface that is merely down keeps its paths (Python
 // TCPInterface.py:452-453 removes an interface only when it is not the
 // initiator), so a configured TCP client survives an outage with its path
-// table intact. Purging on a failed write instead left this port with an empty
-// path table for hours after a hub outage.
+// table intact. Purging on a failed write would empty the path table during a
+// hub outage.
 //
 // Python tests membership in Transport.interfaces because it registers every
 // spawned interface (LocalInterface.py:460,476). This port keeps spawned
@@ -3784,19 +3772,15 @@ func (ts *TransportSystem) cullStaleTransportTables(now time.Time) {
 			} else if !pathRequestThrottle {
 				// The remaining arrival at a dead link request: it went out along
 				// a path of more than one hop and was never answered. Python's
-				// four conditions (Transport.py:709-757) do not cover this case,
-				// and it is the one the operator hit on 2026-10-10 — a link
-				// request over a 2-hop path got no answer for its full 18 s
-				// establishment window while a fresh client fetched the same
-				// page over a 2-hop path in 529 ms and validated a link over a
-				// 4-hop path in 43 ms. The hop count was never the problem: the
-				// next hop could no longer deliver, nothing invalidated the
-				// path, and the only way to find out was to time out.
+				// four conditions (Transport.py:709-757) do not cover this case.
+				// The hop count is not the problem: the next hop can no longer
+				// deliver and nothing invalidates the path, so the only way to
+				// find out is to time out the establishment window.
 				//
-				// Leaving it unhandled meant the path stayed in the table
-				// marked responsive, so the retry picked the same dead next hop
-				// and paid the whole window again. Marking it unresponsive is
-				// what lets a later announce take over the entry (the
+				// Leaving it unhandled keeps the path in the table marked
+				// responsive, so the retry picks the same dead next hop and pays
+				// the whole window again. Marking it unresponsive is what lets a
+				// later announce take over the entry (the
 				// unresponsive-replacement path above), and requesting the path
 				// starts that lookup now rather than at the next announce.
 				ts.logger.Pathing("Trying to rediscover path for %x since an attempted link over a %v-hop path was never established", entry.DestinationHash, pathEntry.Hops)
@@ -3976,10 +3960,9 @@ func (ts *TransportSystem) handlePathRequest(data []byte, packet *Packet) bool {
 	// Reticulum implements as
 	//   "elif (transport_enabled or is_from_local_client) and
 	//    (destination_hash in Transport.path_table)"
-	// go-reticulum previously only answered for local destinations and
-	// otherwise relied on a full round-trip to the remote node, which times
-	// out for sparsely-announcing destinations (e.g. a nomadnet node
-	// announcing every 60 minutes requested by a freshly-started client).
+	// Without it the requestor waits on a full round-trip to the remote node,
+	// which times out for sparsely-announcing destinations (e.g. a nomadnet
+	// node announcing every 60 minutes requested by a freshly-started client).
 	var cachedPath *PathEntry
 	if localDest == nil && !ts.connectedToSharedInstance {
 		cachedPath = ts.pathTable[string(targetHash)]
@@ -5358,10 +5341,10 @@ func (ts *TransportSystem) SaveKnownDestinations(storagePath string) {
 	// Snapshot a deep copy of the map before packing so a concurrent
 	// RetainDestinationData/Remember does not mutate the slice we serialize
 	// — Python's Identity.known_destinations.copy() (RNS/Identity.py:197).
-	// The previous code copied only the keys (copyBytes) but shared the
-	// value slices ([]any), so a concurrent RetainDestinationData writing
-	// data[4] under ts.mu raced with msgpack.Pack reading the same element
-	// outside the lock. Deep-copy each value slice to eliminate the race.
+	// Copying only the keys would share the value slices ([]any), so a
+	// concurrent RetainDestinationData writing data[4] under ts.mu would race
+	// with msgpack.Pack reading the same element outside the lock. Deep-copy
+	// each value slice to eliminate the race.
 	ordered := make(msgpack.OrderedMap, 0, len(ts.knownDestinations))
 	for k, v := range ts.knownDestinations {
 		vc := make([]any, len(v))
@@ -5451,12 +5434,11 @@ func removeBestEffort(path string, logger *Logger) {
 
 // SaveKnownDestinationsWithRecombine first merges any known-destinations
 // entries currently on disk that are NOT in the in-memory table, then
-// atomically persists the merged table via SaveKnownDestinations. This is the
-// historical recombine=True behavior of Python Identity.save_known_destinations
-// (RNS/Identity.py, pre-b408699e "Periodically clean known destinations"):
-// load the disk file, and for each disk entry whose hash is missing from
-// memory, copy it in. The merge is "memory wins" — a disk entry already
-// present in knownDestinations is never overwritten. The current Python port
+// atomically persists the merged table via SaveKnownDestinations. It mirrors
+// Python's recombine=True variant of Identity.save_known_destinations
+// (RNS/Identity.py): load the disk file, and for each disk entry whose hash is
+// missing from memory, copy it in. The merge is "memory wins" — a disk entry
+// already present in knownDestinations is never overwritten. Current Python
 // deprecates and ignores the recombine argument; this method preserves the
 // merge semantics for callers that want a disk-backed save.
 func (ts *TransportSystem) SaveKnownDestinationsWithRecombine(storagePath string) {
@@ -6228,10 +6210,8 @@ func (ts *TransportSystem) inbound(raw []byte, iface interfaces.Interface, tc in
 	// the responder's 0xFE keepalive reply carries identical bytes every
 	// time, so its packet hash is constant, and deduping it drops every reply
 	// after the first. The initiator's last-inbound clock then stalls and its
-	// watchdog tears the idle link down after stale_time — the rrcd link
-	// churn (TODO item 22: links died after minutes of silence, logged from
-	// rrcd's __watchdog_job, because the 0xFE replies never reached the Go
-	// client).
+	// watchdog tears the idle link down after stale_time, so the link dies
+	// after minutes of silence for want of the 0xFE replies.
 	// The linkTable lookup below must happen under ts.mu: Inbound runs on
 	// every interface read loop, and the forwarding path (transport.go) and
 	// the stale-table janitor mutate linkTable concurrently — an unlocked
@@ -6624,9 +6604,8 @@ func (ts *TransportSystem) processInboundPacket(packet *Packet) {
 						// A burst of relayed packets drains onto a dead
 						// outbound interface the moment it goes down, so this
 						// failure is reported once per down transition and
-						// never per packet: the 2026-09-13 Beleth TCP outage
-						// logged 2278 of these lines in 0.3 s, which tripped
-						// journald's rate limiter and hid the incident's own
+						// never per packet: per-packet reporting can trip a
+						// log rate limiter and hide the incident's own
 						// diagnostics. The paths over that interface are kept
 						// (Python parity): a dead peer costs the packets it can
 						// no longer carry, not the node's knowledge of the
@@ -6847,13 +6826,11 @@ func (ts *TransportSystem) forwardAnnounceToLocalClients(packet *Packet, receive
 	// interface is the per-client one rather than the listener, so the ordinary
 	// rebroadcast does not reach the server's other clients.
 	//
-	// A TCP server was missing here until 2026-10-16, which meant two clients of
-	// one TCP hub — the shape the whole fleet runs, and the only shape the two
-	// Android appliances have, since AutoInterface is dead on Android — never
-	// heard each other's announces at all. They learned paths to peers the hub had
-	// heard on its other interfaces, but never to each other: no name, no app-data,
-	// no identity, and nothing but a propagation-node sync could get a message
-	// across. See TestTCPServerForwardsAnnounceToItsOtherClients.
+	// Both kinds of server must be covered: two clients of one TCP hub must hear
+	// each other's announces, since they have no other path between them. The
+	// hub's other interfaces carry the rest of the network, but without this
+	// fan-out the clients learn nothing of each other — no name, no app-data,
+	// and no identity. See TestTCPServerForwardsAnnounceToItsOtherClients.
 	//
 	// We release the transport lock before sending: a stalled co-located client
 	// must not block the readLoop that received the announce.
@@ -7140,16 +7117,15 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 		//   and packet.context != RNS.Packet.PATH_RESPONSE
 		// (Transport.py:1948). A standalone node with enable_transport=False
 		// has transport_enabled=False and is_from_local_client=False, so it
-		// must NOT rebroadcast. The Go port previously gated on
-		// !connectedToSharedInstance instead, which caused standalone
-		// non-transport nodes to rebroadcast announces using an ephemeral
-		// transport identity. Other nodes receiving these rebroadcasts
-		// learned paths pointing to the ephemeral identity — paths that could
-		// never be used because the non-transport node does not forward
-		// transport-id-addressed packets (Inbound's transport-handling block
-		// is gated on ts.Enabled()). This was a root cause of "No path to
-		// destination known": the node knew the destination (from the announce
-		// handler) but the learned path pointed to a non-functional ephemeral
+		// must NOT rebroadcast. Gating on !connectedToSharedInstance instead
+		// would let standalone non-transport nodes rebroadcast announces using
+		// an ephemeral transport identity. Other nodes receiving those
+		// rebroadcasts learn paths pointing to the ephemeral identity — paths
+		// that can never be used because the non-transport node does not
+		// forward transport-id-addressed packets (Inbound's transport-handling
+		// block is gated on ts.Enabled()). The result is "No path to
+		// destination known": the node knows the destination (from the announce
+		// handler) but the learned path points to a non-functional ephemeral
 		// next-hop. ts.enabled is read directly (the lock is already held
 		// here); isLocalClientInterface does not acquire ts.mu.
 		//
@@ -7215,9 +7191,9 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 				// Python (Transport.py:1927,632): announce_hops = packet.hops
 				// (the already-incremented value from inbound), and the rebroadcast
 				// packet carries raw[1] = announce_hops. Using packet.Hops + 1
-				// here double-incremented the hop count, inflating it by 1 at every
+				// would double-increment the hop count, inflating it by 1 at every
 				// rebroadcast hop and compounding across multi-hop paths (N actual
-				// hops showed as 2N-1 instead of N).
+				// hops would show as 2N-1 instead of N).
 				hops := packet.Hops
 				if len(raw) > 1 {
 					raw[1] = byte(hops)
@@ -7333,10 +7309,10 @@ func (ts *TransportSystem) shouldHoldAnnounce(packet *Packet, iface interfaces.I
 	// Mirrors Python Transport.py:1701-1706, which bypasses the ingress-limit
 	// hold for announces whose destination this node ORIGINATED a path request
 	// for (Transport.path_requests) OR is currently relaying one for
-	// (Transport.discovery_path_requests). Go previously bypassed only the
-	// relayed table (pendingPathRequests), so a path-response announce for a
-	// destination the node itself requested could still be held on an
-	// ingress-limiting interface.
+	// (Transport.discovery_path_requests). Bypassing only the relayed table
+	// (pendingPathRequests) would let a path-response announce for a
+	// destination the node itself requested be held on an ingress-limiting
+	// interface.
 	if known || pending || originated {
 		return false
 	}
@@ -7566,13 +7542,13 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 		// The reason is that a Reticulum frame carries exactly ONE transport id,
 		// the immediate next hop. A HEADER_2 packet already carries the transport
 		// header of the hop it was addressed to, so prepending this node's next
-		// hop put TWO transport ids in one frame; the next hop then read the
-		// second id as the destination hash, found no route for it and dropped
-		// the packet. A co-located client's link requests (how an appliance
+		// hop would put TWO transport ids in one frame; the next hop would then
+		// read the second id as the destination hash, find no route for it and
+		// drop the packet. A co-located client's link requests (how an appliance
 		// messages a peer two hops away) and every packet of a multi-hop link
-		// travel this way, so unicast died two hops out while announces — which
-		// never enter this branch — kept flowing, and messages fell back to the
-		// propagation node, arriving hours later or not at all.
+		// travel this way, so unicast would die two hops out while announces —
+		// which never enter this branch — kept flowing, and messages would fall
+		// back to the propagation node.
 		if packet.HeaderType == Header2 {
 			return nil
 		}
@@ -7618,8 +7594,9 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 
 		if err := pathEntry.Interface.Send(raw); err != nil {
 			// Log only: Python's Transport transmits and forgets, leaving the
-			// path in place for the age-based cull. Removing it here made one
-			// failed write cost the whole route until something re-announced.
+			// path in place for the age-based cull. Removing it here would make
+			// one failed write cost the whole route until something
+			// re-announced.
 			ts.logger.Error("Could not transmit on %v: %v", pathEntry.Interface.Name(), err)
 		}
 		ts.recordOutboundPR(packet, pathEntry.Interface)
@@ -7730,7 +7707,7 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 		// Nothing left this node: Python's Transport.outbound returns False, and
 		// Packet.send logs "No interfaces could process the outbound packet" at
 		// debug level, leaves sent False and arms no receipt (Packet.py:299-303).
-		// Reporting success here instead made a packet that never went anywhere
+		// Reporting success here would make a packet that never went anywhere
 		// look delivered, which is the difference between "the peer is
 		// unreachable" and "we transmitted and it did not answer".
 		ts.logger.Debug("No interfaces could process the outbound packet")
@@ -8107,8 +8084,8 @@ func (ts *TransportSystem) SaveTunnelTable(storagePath string) error {
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		return err
 	}
-	// For now, write an empty marker file; full tunnel table persistence
-	// is wired in a later task.
+	// TODO: serialize the tunnel table; this currently writes an empty marker
+	// file.
 	path := tunnelTableFile(storagePath)
 	return os.WriteFile(path, []byte("{}"), 0o644)
 }
@@ -8116,10 +8093,9 @@ func (ts *TransportSystem) SaveTunnelTable(storagePath string) error {
 // HandleTunnel registers an interface as a synthesized tunnel endpoint
 // (Python Transport.handle_tunnel, Transport.py:2171-2178). For a new
 // tunnel_id it creates the entry [tunnel_id, interface, paths{}, expires];
-// for an existing one it restores the interface and expiry. Unlike the old
-// int-based stub, it does NOT re-register the interface in
-// Transport.interfaces — Python's handle_tunnel never does that; the
-// receiving interface is already registered.
+// for an existing one it restores the interface and expiry. It does NOT
+// re-register the interface in Transport.interfaces — Python's handle_tunnel
+// never does that; the receiving interface is already registered.
 func (ts *TransportSystem) HandleTunnel(tunnelID []byte, iface interfaces.Interface) error {
 	if iface == nil {
 		return errors.New("nil interface")
@@ -8762,10 +8738,10 @@ func (ts *TransportSystem) SetLocalHopsDeltaEnabled(enabled bool) {
 	ts.localHopsDeltaEnabled = enabled
 	// Draw (or clear) the delta here as well as at Start. The config layer applies
 	// [reticulum] local_hops_delta from applyConfig, which runs AFTER Start has already
-	// drawn, so drawing only in Start left the disguise inert: the flag was on, the
-	// delta stayed 0, and shouldApplyDelta — which requires a non-zero delta — never
-	// fired. Python draws once at start because it reads the option there; a setter that
-	// can be called later has to draw when it turns the option on.
+	// drawn, so drawing only in Start would leave the disguise inert: the flag on, the
+	// delta 0, and shouldApplyDelta — which requires a non-zero delta — never firing.
+	// Python draws once at start because it reads the option there; a setter that can
+	// be called later has to draw when it turns the option on.
 	ts.drawLocalHopsDelta()
 }
 

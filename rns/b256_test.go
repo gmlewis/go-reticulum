@@ -25,7 +25,6 @@ func TestB256RepGolden(t *testing.T) {
 		{"zero", []byte{0x00}, "a"},
 		{"ff", []byte{0xff}, "𐐏"},
 	}
-	// range(16) -> "abcdefghijklmnop"
 	var rb []byte
 	for i := range 16 {
 		rb = append(rb, byte(i))

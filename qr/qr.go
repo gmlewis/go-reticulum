@@ -29,8 +29,7 @@ const (
 // Encode returns an encoding of text at the given error correction level.
 func Encode(text string, level Level) (*Code, error) {
 	// Pick data encoding, smallest first.
-	// We could split the string and use different encodings
-	// but that seems like overkill for now.
+	// Splitting the string across several encodings is not supported.
 	var enc coding.Encoding
 	switch {
 	case coding.Num(text).Check() == nil:

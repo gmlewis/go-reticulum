@@ -39,7 +39,7 @@ print(discovery_token.hex())
 `
 
 // pythonMockReticulumSetup stubs RNS.Reticulum.get_instance() for the
-// parity echo scripts. Upstream Interface.__init__ now resolves the
+// parity echo scripts. Upstream Interface.__init__ resolves the
 // ingress/egress-control defaults via RNS.Reticulum.get_instance()._default_*(),
 // which requires a running RNS.Reticulum instance. Constructing a real one
 // would spawn transport/shared-instance threads and sockets that interfere
@@ -93,9 +93,7 @@ func TestAutoInterfaceDiscoveryPacketParity(t *testing.T) {
 			}
 			pyHex := strings.TrimSpace(string(pyOut))
 
-			// Calculate Go's token
-			// Logic from rns/interfaces/auto.go: peerAnnounce
-			// token := sha256.Sum256(append(append([]byte{}, ai.groupID...), []byte(localIP.String())...))
+			// Calculate Go's token with the same formula as peerAnnounce.
 			groupID := []byte("reticulum")
 			ip := net.ParseIP(addr)
 			if ip == nil {
@@ -190,9 +188,7 @@ func startPythonEchoOnReservedUDPPort(t *testing.T, scriptPath, pythonPath, labe
 // killed and reaped at test end.
 //
 // Readiness comes from the script's own listening marker rather than a fixed
-// "wait for Python to start" sleep: the tests used to sleep 1s (1.5s for the
-// Local echo) whether or not Python was up, and reported a failed start much
-// later as a connect timeout.
+// "wait for Python to start" sleep.
 func tryStartPythonEcho(t *testing.T, scriptPath, pythonPath, label string, args ...string) bool {
 	t.Helper()
 	cmd := exec.Command("python3", append([]string{scriptPath}, args...)...)

@@ -70,9 +70,7 @@ func (r *Reticulum) startRPCListener() error {
 // the operative one. A process that does not own the transport replaces its
 // operative identity with an ephemeral one of its own (Transport.py:234-237), so
 // a client that keyed off that value would present a key the instance never
-// published and every RPC would come back "unauthorized" — which is what every
-// attached client saw: interface stats, path tables and the rest of the RPC
-// surface were unreachable from the very clients they exist for.
+// published and every RPC would come back "unauthorized".
 func (r *Reticulum) ensureRPCKey() {
 	r.mu.Lock()
 	defer r.mu.Unlock()

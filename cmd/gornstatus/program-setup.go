@@ -250,9 +250,10 @@ func programSetup(p programSetupParams) int {
 		p.mustExit = false
 	} else {
 		ts := rns.NewTransportSystem(logger)
-		// Discovery logic in Python rnstatus.py creates InterfaceDiscovery with discover_interfaces=False
-		// which means it only reads from storage and doesn't start new interface scanning.
-		// In our Go port, NewReticulum handles the configuration.
+		// Python's rnstatus.py creates InterfaceDiscovery with
+		// discover_interfaces=False, so discovery only reads from storage and
+		// never starts new interface scanning. NewReticulum handles the
+		// configuration here.
 		r, err := rns.NewReticulumWithLogger(ts, p.configDir, logger)
 		if err != nil {
 			_, _ = fmt.Fprintf(w, "No shared RNS instance available to get status from: %v\n", err)

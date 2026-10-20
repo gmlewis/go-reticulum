@@ -19,13 +19,13 @@ import (
 	"testing"
 )
 
-// The join/part event parity with the Python capture (47-mac-mini): join and
-// leave events render as "<nick> joined" / "<nick> left" (with the
-// 12-hex hash-prefix fallback for unknown nicks), a self-join records
-// "You joined #<room>" unless the join was silent (Python T_JOINED
-// RRC.py:956-975), and a self-part records nothing (Python T_PARTED
-// RRC.py:1012-1015). The events are recorded through the room-message
-// pipeline as Kind "system" so the TUI renders them and F8 join/leave
+// Join/part event parity with Python: join and leave events render as
+// "<nick> joined" / "<nick> left" (with the 12-hex hash-prefix fallback for
+// unknown nicks), a self-join records "You joined #<room>" unless the join
+// was silent (Python T_JOINED RRC.py:956-975), and a self-part records
+// nothing (Python T_PARTED RRC.py:1012-1015). The events are recorded through
+// the room-message pipeline as Kind "system" so the TUI renders them and the
+// F8 join/leave collapse applies.
 
 // joinpartFixture builds a hub with a known member nick table and no
 // pending joins/parts.

@@ -38,8 +38,7 @@ func TestRegisterDeliveryIdentityEnablesRatchets(t *testing.T) {
 		t.Fatalf("delivery destination ratchet file was not created: %v", err)
 	}
 
-	// The destination must now be rotatable: previously this failed with
-	// "ratchets are not enabled" because the router never enabled them.
+	// The destination must be rotatable once its identity is registered.
 	if err := destination.RotateRatchets(); err != nil {
 		t.Fatalf("RotateRatchets after registration: %v", err)
 	}

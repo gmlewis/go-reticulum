@@ -61,24 +61,19 @@ func readFramesUntilQuiet(t *testing.T, conn net.Conn, window time.Duration) [][
 	return frames
 }
 
-// TestTCPClientReceivesOneCopyOfEachFrame is the defect behind the intermittent
-// link timeouts: a TCP server's client received every frame the transport sent
-// TWICE, so all inbound traffic at every client of a TCP hub was duplicated.
+// TestTCPClientReceivesOneCopyOfEachFrame verifies that a TCP server's client
+// receives every frame the transport sends exactly ONCE, so inbound traffic at
+// any client of a TCP hub is never duplicated.
 //
 // Reticulum has exactly one delivery path to a server-accepted client, and
 // Python states which one it is. In Python the spawned client is registered
 // with the transport (TCPInterface.py:648, RNS.Transport.add_interface) and is
 // the interface that transmits, while the listening TCPServerInterface's own
 // process_outgoing is `pass` (TCPInterface.py:647-648) — so a packet reaches a
-// client once. Go did both: the server fanned out to its spawned clients in
-// Send AND each spawned client was registered with the transport, whose
-// broadcast fallback writes to every registered interface. The client
-// therefore read two identical frames per send.
-//
-// Measured on the fleet before this test existed: 43.9% of the operator's
-// client's inbound packets were exact immediate duplicates, 23.2% for a fresh
-// Go client with its own transport, and 50% at a raw TCP socket — 20 frames
-// read, 10 distinct.
+// client once. Doing both — the server fanning out to its spawned clients in
+// Send AND each spawned client being registered with the transport, whose
+// broadcast fallback writes to every registered interface — makes the client
+// read two identical frames per send.
 func TestTCPClientReceivesOneCopyOfEachFrame(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(testSilentLogger())

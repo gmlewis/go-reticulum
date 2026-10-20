@@ -69,10 +69,10 @@ func startSingleClientServer(t *testing.T) (*interfaces.TCPServerInterface, *int
 //
 // Parity: Python removes dead remote-client interfaces from
 // Transport.interfaces via Transport.remove_interface when the socket closes
-// (RNS/Interfaces/TCPInterface.py:450-453). The Go port previously left both
-// the parent's spawn list and ts.interfaces untouched forever, so hubs kept
-// erroring "interface … is not running" against zombie clients on every
-// announce fan-out and partially dropped rebroadcasts to live peers.
+// (RNS/Interfaces/TCPInterface.py:450-453). Leaving the parent's spawn list and
+// ts.interfaces untouched leaves zombie clients that hubs keep erroring
+// "interface … is not running" against on every announce fan-out, partially
+// dropping rebroadcasts to live peers.
 func TestServerPruneUnregistersFromTransport(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(testSilentLogger())

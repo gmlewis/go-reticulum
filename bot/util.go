@@ -154,8 +154,6 @@ func hexToBytes(s string) ([]byte, error) {
 // "private from <nick>" — and only the destination survives the round trip to
 // disk, because the pinned flag is never persisted. Every marker therefore has
 // to be checked before a row is copied into an answer the whole room can read.
-// Observed live: a private "/msg gorrcbot msg <nick> <text>" line was
-// republished into the room by search, catchup, and seen.
 func privateRow(row *rrc.RRCMessage) bool {
 	return row == nil || row.Pinned || row.Direct || len(row.Dst) > 0
 }

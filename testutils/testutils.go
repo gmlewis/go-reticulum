@@ -105,10 +105,9 @@ func cleanTempDir(dir string) error {
 	// The Go module cache leaves everything it downloads read-only — 0555
 	// directories holding 0444 files — and a scratch GOPATH that a test built is
 	// exactly that. A read-only directory cannot give up the entries inside it, so
-	// the tree is made writable before it is removed. Without this a test whose
+	// the tree is made writable before it is removed. Without this, a test whose
 	// module graph has any requirement at all fails in cleanup rather than in what
-	// it was testing, which is how the first dependency this module took broke a
-	// test that never mentions it.
+	// it was testing.
 	makeTreeWritable(dir)
 	err := removeAllWithRetry(dir)
 	if err == nil {
@@ -145,13 +144,10 @@ func removeAllWithRetry(path string) error {
 			return nil
 		}
 		if errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM) {
-			// "permission denied" from unlinkat is a directory that will not give up
-			// the entries inside it, which is what this whole helper is about: the Go
-			// module cache a scratch GOPATH pulled in is 0555 directories holding 0444
-			// files. Making the tree writable IS the fix, so the retry is immediate —
-			// there is nothing to wait for. Seen once in CI as
-			// "os.RemoveAll: unlinkat /tmp/gornodeconf-trustkey-…/go/pkg/mod/golang.org/x/sys@v0.47.0/plan9/mkall.sh: permission denied",
-			// which failed a test that had already passed its assertions.
+			// "permission denied" from unlinkat means a directory will not give up
+			// the entries inside it: the Go module cache a scratch GOPATH pulled in
+			// is 0555 directories holding 0444 files. Making the tree writable is
+			// the fix, so the retry is immediate; there is nothing to wait for.
 			makeTreeWritable(path)
 			continue
 		}

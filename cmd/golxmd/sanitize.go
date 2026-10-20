@@ -10,37 +10,32 @@ import (
 	"unicode"
 )
 
-// sanitizeName mirrors lxmd.py's sanitize_name used to clean peer display
+// sanitizeName mirrors lxmd.py's sanitize_name, which cleans peer display
 // names before printing them in the --peers listing.
 //
-// The Python implementation applies unicodedata.normalize('NFKC', name)
-// first. The Go standard library has no equivalent compatibility
-// normalization, so that step is intentionally skipped here. This is
-// acceptable for the parity coverage (ASCII names plus the strip,
-// control, private-use, and whitespace cases); NFKC only affects
-// compatibility-equivalence folding of legacy width/CJK compatibility
-// characters, none of which appear in the parity suite.
+// Python applies unicodedata.normalize('NFKC', name) first. The Go standard
+// library has no compatibility normalization, so that step is skipped here;
+// NFKC only folds legacy width/CJK compatibility characters, which peer names
+// do not normally carry.
 //
-// The remaining behavior matches Python faithfully:
+// The remaining behavior matches Python:
 //
 //   - A category filter keeps runes whose Unicode general category has a
 //     prefix of L (letters, including modifier letters Lm), N (numbers),
-//     or P (punctuation). Space separators (Zs, Zl, Zp) are converted to a
-//     single ASCII space. Everything else (control characters Cf/Cc/Cn,
-//     marks Mn/Me, symbols, etc.) is dropped. Python additionally keeps
-//     spacing-combining marks (Mc); the Go stdlib does not expose Mc
-//     directly, and unicode.IsMark covers Mn+Mc+Me, so marks are dropped
-//     here entirely. Mc is rare in peer names and does not appear in the
-//     parity tests.
+//     or P (punctuation). Space separators (Zs, Zl, Zp) become a single
+//     ASCII space. Everything else (control characters Cf/Cc/Cn, marks,
+//     symbols, etc.) is dropped. Python also keeps spacing combining marks
+//     (Mc); the Go stdlib exposes only unicode.IsMark (Mn+Mc+Me), so marks
+//     are dropped here entirely. Mc is rare in peer names.
 //   - Three strip ranges (emoji/pictograph blocks, control/bidi/zero-width
 //     characters, and surrogates/private-use/CJK-compat) are removed as a
 //     safety net. Most of those runes are already dropped by the category
-//     filter, but the ranges are applied explicitly for parity.
+//     filter, but the ranges are applied explicitly for fidelity.
 //   - Runs of whitespace are collapsed to a single ASCII space and the
 //     result is trimmed.
 //
-// Truncation to 45 runes (with an ellipsis) is performed by the caller,
-// matching Python's `if len(nn) > 45: nn = f"{nn[:45]}..."`.
+// The caller truncates to 45 runes with an ellipsis, matching Python's
+// `if len(nn) > 45: nn = f"{nn[:45]}..."`.
 func sanitizeName(name string) string {
 	if name == "" {
 		return ""

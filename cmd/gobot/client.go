@@ -126,8 +126,8 @@ func waitForJoin(ctx context.Context, conn hubConn, room string, ownHash []byte)
 }
 
 // sendRequest asks the hub to deliver one private command to the bot. The
-// command is the exact "/msg <nick> <text>" line a human would type, so the
-// hub's own target resolution decides where it goes.
+// command is the exact "/dnotice <target> <text>" line a human would type, so
+// the hub's own target resolution decides where it goes.
 func sendRequest(conn hubConn, opts *options) error {
 	line := "/dnotice " + opts.target + " " + opts.message
 	err := conn.SendPrivateCommand(line)

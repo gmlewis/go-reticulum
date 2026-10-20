@@ -123,7 +123,6 @@ with open(resource_out, "wb") as f:
 // OfferResponse(True) resource-transfer branch produce byte-identical offer
 // and resource bytes to the real Python LXMPeer state machine driven over
 // the same controlled propagation entries, stamp costs, and size limits.
-// This is the 24.B.12 capstone of the outbound peer-sync subsystem.
 func TestIntegrationOutboundPeerSyncGoToPython(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
