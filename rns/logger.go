@@ -56,6 +56,18 @@ type Logger struct {
 	filePath string
 	compact  bool
 	override bool
+	// consoleFallback lets a failed file sink fall back to the console, which
+	// is Python RNS's behaviour. A terminal UI turns it off: the console is the
+	// screen it is drawing on.
+	consoleFallback bool
+	// sinkErr receives every file-sink failure and, with a nil error, one
+	// notice when the sink works again.
+	sinkErr func(op string, err error)
+	// sinkFailing remembers the failure state so the recovery is reported once.
+	sinkFailing atomic.Bool
+	// rotationBroken stops retrying a rotation that cannot succeed, so a full
+	// log file does not fail on every subsequent line.
+	rotationBroken atomic.Bool
 	// timestamps gates the "[<timestamp>] " log prefix (RNS.logtimestamps,
 	// RNS/__init__.py:86). Defaults to true; when false the prefix is omitted.
 	timestamps bool
@@ -80,9 +92,10 @@ type Logger struct {
 // NewLogger creates a logger with the default notice level and stdout output.
 func NewLogger() *Logger {
 	return &Logger{
-		level:      LogNotice,
-		dest:       LogStdout,
-		timestamps: true,
+		level:           LogNotice,
+		dest:            LogStdout,
+		timestamps:      true,
+		consoleFallback: true,
 	}
 }
 
@@ -256,6 +269,68 @@ func (s *Logger) GetLogCallback() func(string) {
 	return s.call
 }
 
+// Log sink operations reported through SetSinkErrorFunc.
+const (
+	LogSinkOpening  = "opening"
+	LogSinkWriting  = "writing"
+	LogSinkClosing  = "closing"
+	LogSinkRotating = "rotating"
+)
+
+// SetConsoleFallback controls where a failed file sink sends the line that
+// failed and every line after it.
+//
+// Enabled (the default) reproduces Python RNS (RNS/__init__.py log()): the
+// first failure latches the console override, announces the switch, and all
+// later lines go to the standard logger. Disabled, nothing is ever written to
+// the console: the failed line is dropped, SetSinkErrorFunc reports the
+// failure, and the next line retries the file, so a transient failure heals by
+// itself. A terminal UI must disable it, because the console is the screen it
+// is drawing on.
+func (s *Logger) SetConsoleFallback(enabled bool) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.consoleFallback = enabled
+}
+
+// GetConsoleFallback reports whether a failed file sink may fall back to the
+// console.
+func (s *Logger) GetConsoleFallback() bool {
+	if s == nil {
+		return false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.consoleFallback
+}
+
+// SetSinkErrorFunc registers the callback that reports file-sink health:
+// every failed operation (op is one of the LogSink* constants) and, once the
+// sink works again, a call with a nil error.
+//
+// The callback runs on the logger's writer goroutine, so it must not block and
+// must not log through this logger. A terminal UI marshals the report onto its
+// event loop and shuts down from there. A nil function disables reporting.
+func (s *Logger) SetSinkErrorFunc(f func(op string, err error)) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sinkErr = f
+}
+
+// IsClosed reports whether Close has stopped the writer.
+func (s *Logger) IsClosed() bool {
+	if s == nil {
+		return true
+	}
+	return s.closed.Load()
+}
+
 // log constructs, formats, and safely submits a distinct log message to the
 // configured system destination. The caller never waits on sink I/O: the
 // formatted line is enqueued for the async writer goroutine.
@@ -379,59 +454,136 @@ func (s *Logger) writeSink(logString string) {
 	dest := s.GetLogDest()
 	filePath := s.GetLogFilePath()
 
-	if dest == LogStdout {
+	switch {
+	case dest == LogStdout:
 		// Explicitly configured for the console (e.g. daemon -console mode
 		// with no TUI). Honor stdout as the user requested.
 		fmt.Println(logString)
-	} else if s.GetAlwaysOverride() {
+	case s.GetAlwaysOverride():
 		// File logging was requested but a prior open/write/close/rotate
 		// failed and latched the override. Route to stderr — NOT stdout —
 		// so a TUI app running in raw mode + the alternate screen never has
 		// its terminal scrollback flooded (which balloons emulator memory).
 		// A launcher that redirects stderr to a file still captures these.
 		log.Print(logString)
-	} else if dest == LogDestFile && filePath != "" {
-		f, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-		if err != nil {
-			s.SetAlwaysOverride(true)
-			log.Printf("[%v] [Critical] Exception occurred while writing log message to log file: %v\n", critTS, err)
-			log.Printf("[%v] [Critical] Dumping future log events to console!\n", critTS)
-			log.Print(logString)
-			return
-		}
-		defer func() {
-			if closeErr := f.Close(); closeErr != nil {
-				s.SetAlwaysOverride(true)
-				log.Printf("[%v] [Critical] Exception occurred while closing log file: %v\n", critTS, closeErr)
-			}
-		}()
-
-		if _, err := f.WriteString(logString + "\n"); err != nil {
-			s.SetAlwaysOverride(true)
-			log.Printf("[%v] [Critical] Exception occurred while writing log message to log file: %v\n", critTS, err)
-			log.Printf("[%v] [Critical] Dumping future log events to console!\n", critTS)
-			log.Print(logString)
-			return
-		}
-
-		fi, err := f.Stat()
-		if err == nil && fi.Size() > LogMaxSize {
-			prevFile := filePath + ".1"
-			if _, err := os.Stat(prevFile); err == nil {
-				if rmErr := os.Remove(prevFile); rmErr != nil {
-					s.SetAlwaysOverride(true)
-					log.Printf("[%v] [Critical] Exception occurred while rotating log file: %v\n", critTS, rmErr)
-				}
-			}
-			if renameErr := os.Rename(filePath, prevFile); renameErr != nil {
-				s.SetAlwaysOverride(true)
-				log.Printf("[%v] [Critical] Exception occurred while rotating log file: %v\n", critTS, renameErr)
-			}
-		}
-	} else if dest == LogCallback {
+	case dest == LogDestFile && filePath != "":
+		s.writeFileSink(filePath, logString, critTS)
+	case dest == LogCallback:
 		if callback := s.GetLogCallback(); callback != nil {
 			callback(logString)
 		}
+	}
+}
+
+// writeFileSink appends one line and rotates the file afterwards.
+//
+// The handle is closed before the rotation, which is what Python's
+// `with open(...)` does and what Windows requires: MoveFileEx needs DELETE
+// access to the source, and a handle opened without FILE_SHARE_DELETE blocks
+// the rename even when the renaming process owns it.
+func (s *Logger) writeFileSink(filePath, logString, critTS string) {
+	f, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		s.sinkFailed(LogSinkOpening, critTS, logString, err, true)
+		return
+	}
+	_, writeErr := f.WriteString(logString + "\n")
+	closeErr := f.Close()
+	switch {
+	case writeErr != nil:
+		s.sinkFailed(LogSinkWriting, critTS, logString, writeErr, true)
+		return
+	case closeErr != nil:
+		s.sinkFailed(LogSinkClosing, critTS, "", closeErr, false)
+		return
+	}
+	s.sinkRecovered()
+	s.rotateIfNeeded(filePath, critTS)
+}
+
+// rotateIfNeeded renames a full log file to <path>.1.
+func (s *Logger) rotateIfNeeded(filePath, critTS string) {
+	if s.rotationBroken.Load() {
+		return
+	}
+	fi, err := os.Stat(filePath)
+	if err != nil || fi.Size() <= LogMaxSize {
+		return
+	}
+	if err := rotateLogFile(filePath); err != nil {
+		// A rotation cannot be retried on every later line: whatever holds the
+		// file would fail each one. Logging continues into the same file, which
+		// keeps growing, and the failure is reported once.
+		s.rotationBroken.Store(true)
+		s.sinkFailed(LogSinkRotating, critTS, "", err, false)
+	}
+}
+
+// rotateLogFile moves path to path.1, replacing an existing previous file.
+func rotateLogFile(path string) error {
+	prevFile := path + ".1"
+	if _, err := os.Stat(prevFile); err == nil {
+		if err := os.Remove(prevFile); err != nil {
+			return err
+		}
+	}
+	return os.Rename(path, prevFile)
+}
+
+// sinkFailed reports a failed file-sink operation.
+//
+// With the console fallback enabled it reproduces Python RNS: latch the
+// override, announce the switch once, and keep the line. With it disabled
+// nothing reaches the console; the failure is reported through the sink-error
+// callback and the line is dropped, and the next line retries the file.
+func (s *Logger) sinkFailed(op, critTS, logString string, err error, dumpedLine bool) {
+	s.reportSinkError(op, err)
+	if !s.GetConsoleFallback() {
+		return
+	}
+	s.SetAlwaysOverride(true)
+	log.Printf("[%v] [Critical] Exception occurred while %v log file: %v",
+		critTS, sinkFailureText(op), err)
+	if dumpedLine {
+		log.Printf("[%v] [Critical] Dumping future log events to console!", critTS)
+		log.Print(logString)
+	}
+}
+
+// sinkFailureText names the operation in the Python log message.
+func sinkFailureText(op string) string {
+	switch op {
+	case LogSinkOpening, LogSinkWriting:
+		return "writing log message to"
+	case LogSinkClosing:
+		return "closing"
+	default:
+		return "rotating"
+	}
+}
+
+// reportSinkError delivers a failure to the registered callback. Every failure
+// is reported so the caller can measure how long one persists.
+func (s *Logger) reportSinkError(op string, err error) {
+	s.sinkFailing.Store(true)
+	s.mu.RLock()
+	f := s.sinkErr
+	s.mu.RUnlock()
+	if f != nil {
+		f(op, err)
+	}
+}
+
+// sinkRecovered reports a successful write after a failure, once.
+func (s *Logger) sinkRecovered() {
+	if !s.sinkFailing.Swap(false) {
+		return
+	}
+	s.mu.RLock()
+	f := s.sinkErr
+	s.mu.RUnlock()
+	if f != nil {
+		f("", nil)
 	}
 }
 
