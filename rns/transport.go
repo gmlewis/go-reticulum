@@ -3544,12 +3544,20 @@ func (ts *TransportSystem) forwardPathRequest(packet *Packet, source interfaces.
 	}
 }
 
+// forwardPathResponseToRequesters relays a PATH_RESPONSE announce to every
+// co-located client that asked for the destination's path, and reports whether
+// it served at least one of them.
+//
+// The pending-entry bookkeeping is deliberately left to the caller: the entry
+// must still be present when handleAnnounce runs, because the ingress-limit
+// gate consults it and a pending path request bypasses the hold. Consuming it
+// here would make the shared instance hold the very announce that answers the
+// request, so it would serve the requestor a path it then refused to record —
+// and the requestor's link request would be unroutable.
 func (ts *TransportSystem) forwardPathResponseToRequesters(packet *Packet, source interfaces.Interface) bool {
 	if packet == nil || source == nil {
 		return false
 	}
-	destinationKey := string(packet.DestinationHash)
-
 	type sendJob struct {
 		iface interfaces.Interface
 		raw   []byte
@@ -3557,7 +3565,7 @@ func (ts *TransportSystem) forwardPathResponseToRequesters(packet *Packet, sourc
 
 	ts.mu.Lock()
 	ts.ensureStateLocked()
-	requesters := ts.pendingPathRequests[destinationKey]
+	requesters := ts.pendingPathRequests[string(packet.DestinationHash)]
 	if len(requesters) == 0 {
 		ts.mu.Unlock()
 		return false
@@ -3587,7 +3595,6 @@ func (ts *TransportSystem) forwardPathResponseToRequesters(packet *Packet, sourc
 		ts.mu.Unlock()
 		return false
 	}
-	delete(ts.pendingPathRequests, destinationKey)
 	ts.mu.Unlock()
 
 	// The response MUST be re-framed as Header2 with this node's transport
@@ -6744,11 +6751,30 @@ func (ts *TransportSystem) processInboundPacket(packet *Packet) {
 	// Announce propagation
 	if packet.PacketType == PacketAnnounce {
 		if packet.Context == ContextPathResponse {
-			ts.forwardPathResponseToRequesters(packet, iface)
+			// Install the response before relaying it. A response that answers
+			// an outstanding path request is exempt from the ingress-limit
+			// hold, so this is where the instance records the path the
+			// requestor is about to be given. Relaying it while the instance
+			// still refuses to record it hands the requestor a path that its
+			// own link request cannot follow.
+			ts.handleAnnounce(packet, iface)
+			if ts.forwardPathResponseToRequesters(packet, iface) {
+				ts.clearPendingPathRequesters(packet.DestinationHash)
+			}
+			return
 		}
 		ts.handleAnnounce(packet, iface)
 		return
 	}
+}
+
+// clearPendingPathRequesters forgets the interfaces that asked for the
+// destination's path once a path response has been relayed to them.
+func (ts *TransportSystem) clearPendingPathRequesters(destinationHash []byte) {
+	ts.mu.Lock()
+	ts.ensureStateLocked()
+	delete(ts.pendingPathRequests, string(destinationHash))
+	ts.mu.Unlock()
 }
 
 func copyBytes(in []byte) []byte {

@@ -103,7 +103,7 @@ prefixes=(
   rns-clean-ratchet- rns-retain-clean- rns-void-queues- rns-persist-reentrant-
   rns-pathtable-midpersist- rns-preset-log- rns-pubtofile- rns-location-cmd-
   rns-entropy-test- rns-prune-paths rns-shared-learns rns-receipt-timeout-
-  rns-shared-pathreq rns-hub-pathreq
+  rns-shared-pathreq rns-hub-pathreq rns-pathresp-hold
   lxmf-int- lxmf-peer- lxmf-tcp- lxmf-topo- py-interop-
   nomadnet-rrc- gonet-
   gonomadnet-test- gonomadnet-tc- gonomadnet-bench-config
